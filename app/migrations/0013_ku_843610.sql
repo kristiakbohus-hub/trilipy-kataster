@@ -1,0 +1,1 @@
+-- 0013_ku_843610.sql — SUPERSEDED migraciou 0014 (plny import 7970 parciel). Ponechane (uz aplikovane).

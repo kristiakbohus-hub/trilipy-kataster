@@ -1,0 +1,29 @@
+{
+  // Samostatné (mimo-Higgsfield) nasadenie TRI LIPY KATASTER na Cloudflare Workers.
+  // Higgsfield deploy tento súbor NEpoužíva (generuje si vlastný config) — je len pre CI `wrangler deploy --config wrangler.cf.jsonc`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "trilipy-kataster",
+  "main": "dist/server/server.js",
+  "compatibility_date": "2025-05-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "none"
+  },
+  "vars": { "HF_ENV": "prod", "APP_SLUG": "trilipy-kataster" },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "trilipy-kataster",
+      "database_id": "84e03920-b41c-4b56-a66f-a46c3fce0d62",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "kv_namespaces": [
+    { "binding": "KV", "id": "6cf426515df54988b48980352ed07c1e" }
+  ]
+  // R2 (STORAGE) zámerne vynechané — je opt-in a guardované v kóde; bez neho beží mapa aj celý kataster,
+  // odpadne len upload ÚP rastrov. Keď zapneš R2 v CF dashboarde, doplní sa sem "r2_buckets".
+}

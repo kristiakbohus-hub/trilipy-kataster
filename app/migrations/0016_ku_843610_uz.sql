@@ -1,0 +1,1 @@
+-- 0016_ku_843610_uz.sql — SUPERSEDED 0017 (A+B). Ponechane (uz aplikovane).

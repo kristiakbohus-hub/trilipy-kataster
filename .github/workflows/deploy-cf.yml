@@ -1,0 +1,32 @@
+name: Deploy to Cloudflare (mimo Higgsfield)
+
+# Pri každom pushi do main: build + aplikuj D1 migrácie + deploy na Cloudflare Workers.
+# = auto sync: keď sa zmení kód, verejná (heslom chránená) verzia sa sama nasadí.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install deps
+        run: bun install
+      - name: Build (SSR Worker + assets)
+        run: bun run build
+      - name: Apply D1 migrations (remote)
+        run: bunx wrangler d1 migrations apply trilipy-kataster --remote --config wrangler.cf.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - name: Deploy Worker
+        run: bunx wrangler deploy --config wrangler.cf.jsonc
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
