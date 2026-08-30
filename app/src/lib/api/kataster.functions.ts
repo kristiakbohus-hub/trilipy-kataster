@@ -266,7 +266,18 @@ type NlHit = {
 export const nlQuery = createServerFn({ method: "POST" })
   .validator(z.object({ query: z.string(), role: roleSchema, sort: z.enum(["score", "area", "owners"]).optional() }))
   .handler(async ({ data }) => {
-    const s = data.query.trim().toLowerCase();
+    const raw = data.query.trim();
+    const s = raw.toLowerCase();
+    const role = data.role as Role;
+
+    // ——— intent: naprieč doménami (LV signály + vlastníci + trhové inzeráty) ———
+    const marketIntent = /pred[aá]|kúp|kup\b|prenáj|nájom|najom|inzer|\bcena|cen[yu]\b|€|eur\b|lacn|pod\s*cen|\bbyt|byty|domy|pozem|\bchat|rodinn|za\s*m2|za\s*m²|€\/m/.test(s);
+    const ico = raw.match(/\b(\d{5,8})\b/);
+    const capName = raw.match(/\b([A-ZÁ-ŽČŠŽŤĎĽŇÔÄ][a-zá-žčšžťďľňôäíéóúýŕĺ]{2,})\b/);
+    const ownerIntent = ownerAccess(role) === "full"
+      && ((!!ico && /ičo|ico|firm|s\.?r\.?o|a\.?s\.?|spol/.test(s)) || (!marketIntent && !!capName));
+
+    // ——— 1) LV signály (skórované, naprieč všetkými k.ú.) ———
     const cond: string[] = []; const args: unknown[] = [];
     if (/nevyspor|absent/.test(s)) cond.push("sig.absenter_ratio > 0");
     if (/\bspf\b|štát|stat/.test(s)) cond.push("sig.has_spf = 1");
@@ -275,15 +286,17 @@ export const nlQuery = createServerFn({ method: "POST" })
     if (/bez.?[tť]arch|čist/.test(s)) cond.push("sig.clean_title = 1");
     const mco = s.match(/(\d+)\s*(spoluvlast|podiel|vlastník)/); if (mco) { cond.push("sig.co_owners >= ?"); args.push(Number(mco[1])); }
     const ma = s.match(/nad\s*(\d{3,})/); if (ma) { cond.push("sig.total_area >= ?"); args.push(Number(ma[1])); }
+    // LV sekcia sa naplní len ak dopyt naozaj mieri na signály (inak by "Novák"/"byt" vrátili celú DB)
+    const lvRelevant = cond.length > 0;
     const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
-    const rows = await q<NlHit>(
+    const rows = lvRelevant ? await q<NlHit>(
       `SELECT sig.dataset_id, d.ku_name, sig.lv_no, sig.co_owners, sig.has_spf, sig.dedic, sig.buildable,
               sig.clean_title, sig.absenter_ratio, sig.total_area, sig.oldest_birth_year
-       FROM lv_signals sig JOIN datasets d ON d.id = sig.dataset_id ${where} LIMIT 4000`, args);
+       FROM lv_signals sig JOIN datasets d ON d.id = sig.dataset_id ${where} LIMIT 4000`, args) : [];
     const w = { co: 0.3, spf: 0.25, dedic: 0.15, buildable: 0.15, absenter: 0.1, clean: 0.05 };
     const wsum = w.co + w.spf + w.dedic + w.buildable + w.absenter + w.clean;
     const scored = rows.map((r) => {
-      const raw = (w.co * Math.min(r.co_owners ?? 0, 20)) / 20 + w.spf * (r.has_spf ?? 0) + w.dedic * (r.dedic ?? 0)
+      const rawScore = (w.co * Math.min(r.co_owners ?? 0, 20)) / 20 + w.spf * (r.has_spf ?? 0) + w.dedic * (r.dedic ?? 0)
         + w.buildable * (r.buildable ?? 0) + w.absenter * (r.absenter_ratio ?? 0) + w.clean * (r.clean_title ?? 0);
       const reasons: string[] = [];
       if ((r.co_owners ?? 0) >= 5) reasons.push(`${r.co_owners} spoluvlastníkov`);
@@ -293,11 +306,56 @@ export const nlQuery = createServerFn({ method: "POST" })
       if ((r.absenter_ratio ?? 0) > 0) reasons.push(`absentéri ${Math.round((r.absenter_ratio ?? 0) * 100)} %`);
       if (r.clean_title) reasons.push("bez tiarch");
       return { dataset_id: r.dataset_id, ku_name: r.ku_name, lv_no: r.lv_no, co_owners: r.co_owners ?? 0,
-        total_area: r.total_area ?? 0, score: Math.round((100 * raw) / wsum), reasons };
+        total_area: r.total_area ?? 0, score: Math.round((100 * rawScore) / wsum), reasons };
     });
     const sort = data.sort ?? "score";
     scored.sort((a, b) => sort === "area" ? b.total_area - a.total_area : sort === "owners" ? b.co_owners - a.co_owners : b.score - a.score);
-    return { count: scored.length, results: scored.slice(0, 80) };
+
+    // ——— 2) Vlastníci (rolovo gatované, naprieč k.ú.) ———
+    let owners: { access: ReturnType<typeof ownerAccess>; count: number; results: OwnerGroup[] } = { access: ownerAccess(role), count: 0, results: [] };
+    if (ownerIntent) {
+      const term = ico ? ico[1] : (capName ? capName[1] : "");
+      if (term) {
+        const orows = await q<OwnerHit>(
+          `SELECT o.name, o.is_company, o.ico, o.birth_date, o.dataset_id, d.ku_name AS ku_name, o.lv_no, o.share
+           FROM lv_owners o JOIN datasets d ON d.id = o.dataset_id
+           WHERE ${ico ? "o.ico = ?" : "o.name LIKE ?"} ORDER BY o.name LIMIT 400`,
+          [ico ? term : `%${term}%`]);
+        const map = new Map<string, OwnerGroup>();
+        for (const r of orows) {
+          const key = (r.ico && r.is_company) ? `ico:${r.ico}` : `${r.name}|${r.birth_date ?? ""}`;
+          let g = map.get(key);
+          if (!g) { g = { name: r.name, is_company: r.is_company, ico: r.ico, birth_date: r.birth_date, occurrences: [], lvCount: 0, kuCount: 0 }; map.set(key, g); }
+          g.occurrences.push({ dataset_id: r.dataset_id, ku_name: r.ku_name, lv_no: r.lv_no, share: r.share });
+        }
+        const results = Array.from(map.values())
+          .map((g) => ({ ...g, lvCount: g.occurrences.length, kuCount: new Set(g.occurrences.map((o) => o.dataset_id)).size }))
+          .sort((a, b) => b.lvCount - a.lvCount).slice(0, 60);
+        owners = { access: "full", count: results.length, results };
+      }
+    }
+
+    // ——— 3) Trhové inzeráty (verejná inzercia, naprieč SR) ———
+    let market: { count: number; results: MarketListing[] } = { count: 0, results: [] };
+    if (marketIntent) {
+      const mw: string[] = [`(price_eur IS NULL OR price_eur <= ${PRICE_MAX})`]; const ma2: unknown[] = [];
+      const ptype = /pozem/.test(s) ? "pozemok" : /\bbyt|byty/.test(s) ? "byt" : /\bdom|domy|rodinn/.test(s) ? "dom" : /chat/.test(s) ? "chata" : null;
+      if (ptype) { mw.push("ptype = ?"); ma2.push(ptype); }
+      if (capName) { mw.push("(obec LIKE ? OR okres LIKE ?)"); ma2.push(`%${capName[1]}%`, `%${capName[1]}%`); }
+      const pm = s.match(/(?:do|pod)\s*(\d{3,})/); if (pm) { mw.push("price_eur <= ?"); ma2.push(Number(pm[1])); }
+      if (/prenáj|nájom|najom/.test(s)) { mw.push("deal LIKE ?"); ma2.push("%prenáj%"); }
+      const lastFull = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='last_full'"))[0]?.value;
+      if (lastFull) { mw.push("last_seen >= ?"); ma2.push(lastFull); }
+      const mrows = await q<MarketListing>(
+        `SELECT ${ML_COLS} FROM market_listings WHERE ${mw.join(" AND ")} ORDER BY (ppm2 IS NULL), ppm2 ASC, price_eur ASC LIMIT 60`, ma2);
+      market = { count: mrows.length, results: mrows };
+    }
+
+    return {
+      lv: { count: scored.length, results: scored.slice(0, 80) },
+      owners,
+      market,
+    };
   });
 
 // ——— Owners pre jednu parcelu (identify, rolovo gatované) ———
