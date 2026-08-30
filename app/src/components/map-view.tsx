@@ -193,6 +193,10 @@ export function MapView({
   const [medians, setMedians] = useState<{ pozemok: number | null; byt: number | null } | null>(null);
   type NearListing = Awaited<ReturnType<typeof getMarketListingsNear>>[number];
   const [nearListings, setNearListings] = useState<NearListing[]>([]);
+  // Trh: prehliadanie inzerátov pre celý viditeľný výrez (toggle, nezávislé od výberu parcely)
+  const [marketBrowse, setMarketBrowse] = useState(false);
+  const [browsePins, setBrowsePins] = useState<NearListing[]>([]);
+  const [pinSel, setPinSel] = useState<NearListing | null>(null);
   type UpZone = Awaited<ReturnType<typeof getParcelZone>>;
   const [upZone, setUpZone] = useState<UpZone>(null);
   const [upZones, setUpZones] = useState<Awaited<ReturnType<typeof listUpZones>>>([]);
@@ -329,6 +333,9 @@ export function MapView({
   // ——— BPEJ zóny (mapová vrstva, farebne podľa kódu) ———
   const [bpejZones, setBpejZones] = useState<{ code: string; skupina: number | null; geometry_json: string }[]>([]);
   const [bpejOn, setBpejOn] = useState(false);
+  // Farebný režim parciel: none = obrys · bpej = choropleth podľa skupiny kvality (1 zelená → 9 červená)
+  const [colorMode, setColorMode] = useState<"none" | "bpej">("none");
+  const vectorSvgRef = useRef<SVGSVGElement>(null);
   useEffect(() => {
     if (!datasetId) { setBpejZones([]); return; }
     let alive = true;
@@ -471,6 +478,19 @@ export function MapView({
     },
     [view, size, res],
   );
+
+  // Trh browse: načítaj inzeráty pre stred aktuálneho výrezu (debounced), keď je toggle zapnutý.
+  useEffect(() => {
+    if (!marketBrowse || !view || size.w === 0) { setBrowsePins([]); return; }
+    const c = toLngLat(view.X, view.Y);
+    const halfKm = Math.min(60, Math.max(2, (Math.hypot(size.w, size.h) * res) / 2000));
+    let alive = true;
+    const t = setTimeout(() => {
+      getMarketListingsNear({ data: { lat: c.lat, lng: c.lng, radiusKm: halfKm } })
+        .then((r) => { if (alive) setBrowsePins(r); }).catch(() => {});
+    }, 350);
+    return () => { alive = false; clearTimeout(t); };
+  }, [marketBrowse, view, res, size]);
 
   const enabledWms = allWms.filter((w) => wmsOn[w.id]);
 
@@ -626,6 +646,41 @@ export function MapView({
       );
     }
   }, []);
+
+  // Export aktuálneho vektorového pohľadu (parcely + popisy + výber) do PNG.
+  // Same-origin SVG → bez CORS; ortofoto/WMS podklad sa rasterizovať nedá (cross-origin), preto export = katastrálna kresba na papieri.
+  const exportPng = useCallback(() => {
+    const svg = vectorSvgRef.current;
+    if (!svg || size.w === 0) return;
+    const clone = svg.cloneNode(true) as SVGSVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width", String(size.w));
+    clone.setAttribute("height", String(size.h));
+    clone.removeAttribute("style"); // odstráň drag transform
+    const svgStr = new XMLSerializer().serializeToString(clone);
+    const src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgStr);
+    const scale = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = size.w * scale; canvas.height = size.h * scale;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const img = new Image();
+    img.onload = () => {
+      ctx.fillStyle = "#f7f5ef"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const name = (datasetName ?? "kataster").replace(/[^\wÀ-ɏ.-]+/g, "_");
+        a.href = url; a.download = `${name}_parcely.png`;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }, "image/png");
+    };
+    img.onerror = () => pushEvent("Export PNG zlyhal — skús to znova.");
+    img.src = src;
+  }, [size, datasetName, pushEvent]);
 
   // Watchlist — záložky parciel (localStorage) pre feedback/prieskum
   const [marks, setMarks] = useState<{ id: string; no: string }[]>([]);
@@ -974,7 +1029,7 @@ export function MapView({
 
         {/* Parcely + selection + meranie */}
         {view ? (
-          <svg className="absolute inset-0" width={size.w} height={size.h} style={{ transform: dragT }}>
+          <svg ref={vectorSvgRef} className="absolute inset-0" width={size.w} height={size.h} style={{ transform: dragT }}>
             {showParcels ? (
               <g style={{ opacity: parcelOpacity }}>
                 {[...shownRings].sort((a, b) => (knIsE(a.parcel.kn_type) ? 1 : 0) - (knIsE(b.parcel.kn_type) ? 1 : 0)).map(({ parcel, ring }) => {
@@ -986,11 +1041,13 @@ export function MapView({
                   const isSel = selection.includes(parcel.id);
                   const isHover = hoverId === parcel.id;
                   const c = project(parcel.centroid_lng ?? ring[0][0], parcel.centroid_lat ?? ring[0][1]);
+                  const bpejFill = colorMode === "bpej" && parcel.bpej_skupina && BPEJ_SKUPINA_COLORS[parcel.bpej_skupina]
+                    ? BPEJ_SKUPINA_COLORS[parcel.bpej_skupina] + "66" : null;
                   return (
                     <g key={parcel.id}>
                       <path
                         d={d}
-                        fill={isSel ? "#c9a45c55" : isHover ? col + "33" : "none"}
+                        fill={isSel ? "#c9a45c55" : isHover ? col + "33" : bpejFill ?? "none"}
                         stroke={isSel ? "#9a7b3e" : col}
                         strokeWidth={isSel ? 2.6 : isHover ? 1.8 : view.zoom >= 17 ? 1.2 : view.zoom >= 15 ? 0.9 : view.zoom >= 13 ? 0.65 : 0.5}
                         strokeOpacity={isSel || isHover ? 1 : isE ? 0.9 : 0.75}
@@ -1104,6 +1161,47 @@ export function MapView({
           </div>
         ) : null}
 
+        {/* Trhové inzeráty vo výreze — klikateľné piny (prehliadanie trhu) */}
+        {marketBrowse && view ? (
+          <div className="pointer-events-none absolute inset-0" style={{ transform: dragT }}>
+            {browsePins.map((l, li) => {
+              if (l.lat == null || l.lng == null) return null;
+              const p = project(l.lng, l.lat);
+              if (p.x < -20 || p.x > size.w + 20 || p.y < -20 || p.y > size.h + 20) return null;
+              const opp = !!(l.flags && (l.flags.includes("below") || l.flags.includes("drop")));
+              const active = pinSel === l;
+              return (
+                <button
+                  key={li}
+                  onClick={() => setPinSel(l)}
+                  className="pointer-events-auto absolute -translate-x-1/2 -translate-y-1/2 rounded-full border border-white shadow"
+                  style={{ left: p.x, top: p.y, width: active ? 15 : 11, height: active ? 15 : 11, background: opp ? "#5b7a58" : "#c9a45c" }}
+                  title={l.title ?? "inzerát"}
+                />
+              );
+            })}
+          </div>
+        ) : null}
+
+        {/* Trh: popup detailu vybraného inzerátu */}
+        {pinSel ? (
+          <div className="absolute bottom-16 left-3 z-30 w-[300px] rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur">
+            <div className="mb-1 flex items-start justify-between gap-2">
+              <div className="font-semibold text-fg">{pinSel.title ?? "Inzerát"}</div>
+              <button onClick={() => setPinSel(null)} className="shrink-0 text-muted hover:text-fg" title="Zavrieť">✕</button>
+            </div>
+            <div className="text-muted">
+              {[pinSel.ptype, pinSel.deal, pinSel.obec ?? pinSel.okres].filter(Boolean).join(" · ")}
+              {pinSel.area_m2 ? ` · ${pinSel.area_m2.toLocaleString("sk-SK")} m²` : ""}
+            </div>
+            <div className="mt-1 flex items-center gap-3">
+              <span className="text-sm font-semibold text-fg">{pinSel.price_eur != null ? pinSel.price_eur.toLocaleString("sk-SK") + " €" : "—"}</span>
+              <span className="tabular-nums text-muted">{pinSel.ppm2 != null ? Math.round(pinSel.ppm2).toLocaleString("sk-SK") + " €/m²" : ""}</span>
+            </div>
+            {pinSel.url ? <a href={pinSel.url} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block rounded-md border border-line px-2 py-1 text-fg hover:border-ink">Otvoriť inzerát ↗</a> : null}
+          </div>
+        ) : null}
+
         {/* Overlay (netransformovaný): box výber + snap marker */}
         <svg className="pointer-events-none absolute inset-0" width={size.w} height={size.h}>
           {box ? (
@@ -1173,6 +1271,43 @@ export function MapView({
           className="flex items-center justify-center gap-1 rounded-lg border border-line bg-surface/95 px-2 py-1.5 text-xs text-muted backdrop-blur hover:text-fg">
           📍 Moja poloha
         </button>
+
+        <button
+          onClick={() => setMarketBrowse((v) => { const nv = !v; if (!nv) setPinSel(null); return nv; })}
+          title="Zobraziť trhové inzeráty vo výreze mapy (klik na pin = detail)"
+          className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (marketBrowse ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
+          🏷️ Trh vo výreze{marketBrowse ? ` (${browsePins.length})` : ""}
+        </button>
+
+        <div className="flex gap-1.5">
+          <button
+            onClick={() => setColorMode((m) => (m === "bpej" ? "none" : "bpej"))}
+            title="Zafarbiť parcely podľa skupiny kvality pôdy (BPEJ 1–9)"
+            className={"flex flex-1 items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (colorMode === "bpej" ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
+            🌿 Bonita
+          </button>
+          <button
+            onClick={exportPng}
+            title="Export vektorového pohľadu (parcely + popisy + výber) do PNG. Ortofoto podklad nie je súčasťou (CORS)."
+            className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-line bg-surface/95 px-2 py-1.5 text-xs text-muted backdrop-blur hover:text-fg">
+            📷 PNG
+          </button>
+        </div>
+
+        {colorMode === "bpej" ? (
+          <div className="rounded-lg border border-line bg-surface/95 p-2 text-[10px] backdrop-blur">
+            <div className="mb-1 font-medium text-fg">Bonita pôdy (skupina)</div>
+            <div className="flex items-end gap-0.5">
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((g) => (
+                <div key={g} className="flex flex-1 flex-col items-center gap-0.5">
+                  <span className="h-3 w-full rounded-sm" style={{ background: BPEJ_SKUPINA_COLORS[g] }} />
+                  <span className="text-muted">{g}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-1 flex justify-between text-muted"><span>najkvalitnejšia</span><span>najmenej</span></div>
+          </div>
+        ) : null}
 
         {marks.length > 0 ? (
           <div className="rounded-lg border border-line bg-surface/95 p-2 text-xs backdrop-blur">
