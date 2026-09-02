@@ -281,19 +281,38 @@ function VypisPage() {
         ) : (
           /* ——— VÝPIS Z LV (Časti A/B/C) ——— */
           <>
+            {(c.signals || c.settledSummary.total > 0) ? (
+              <Section title="Analytické signály & skóre (interné — nie súčasť úradného výpisu)">
+                {c.signals ? (
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
+                    <span className="text-muted">Skóre príležitosti:</span>
+                    <b className="text-2xl tabular-nums text-fg">{c.signals.score}</b>
+                    {c.signals.reasons.length ? <span className="text-muted">{c.signals.reasons.join(" · ")}</span> : null}
+                  </div>
+                ) : <div className="text-sm text-muted">Pre toto LV zatiaľ nemáme vypočítané signály.</div>}
+                {c.settledSummary.total > 0 ? (
+                  <div className="mt-1 text-[12px] text-muted">
+                    Vysporiadanosť C-KN parciel na LV: <b className="text-fg">{c.settledSummary.settled}</b> vysporiadaných,{" "}
+                    <b className="text-fg">{c.settledSummary.unsettled}</b> nevysporiadaných z {c.settledSummary.total}.
+                  </div>
+                ) : null}
+                <div className="mt-1 text-[11px] text-muted">Skóre = vážený indikátor príležitosti (spoluvlastníci, SPF/štát, dedičské, stavebný potenciál, absentéri, čistý titul). Pracovný nástroj, nie právny záver.</div>
+              </Section>
+            ) : null}
             {parts.A ? (
               <Section title="Časť A — Majetková podstata">
                 {/* Parcely registra „C" — katastrálna mapa */}
                 <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Parcely registra „C" evidované na katastrálnej mape</div>
                 {c.parcelsC.length ? (
                   <Table
-                    head={["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie", "BPEJ skup.", "Odňatie – trvalé"]}
+                    head={["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie", "Vysporiadané", "BPEJ", "Odňatie – trvalé"]}
                     rows={c.parcelsC.map((p) => [
                       p.parcel_no,
                       m2(p.area_m2),
                       p.drp_text ?? "—",
                       p.placement ?? "—",
-                      p.skupina != null ? `${p.skupina}/9` : "—",
+                      p.settled === 1 ? "áno" : p.settled === 0 ? "nie" : "—",
+                      p.bpej ? `${p.bpej}${p.skupina != null ? ` (${p.skupina}/9)` : ""}` : (p.skupina != null ? `${p.skupina}/9` : "—"),
                       p.odnatie_trvale != null ? `${eur(p.odnatie_trvale)} €` : "—",
                     ])}
                     mono={[0]}

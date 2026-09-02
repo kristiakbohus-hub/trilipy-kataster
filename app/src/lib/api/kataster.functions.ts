@@ -541,9 +541,9 @@ export const getLvVypis = createServerFn({ method: "POST" })
     const titles = access === "full" ? titleRows.filter((t) => t.kind === "titul").map((t) => t.txt) : [];
     const tarchy = access === "full" ? titleRows.filter((t) => t.kind === "tarcha").map((t) => t.txt) : [];
 
-    // Odňatie (BPEJ) + celok (evidenčný list) pre C-KN parcely tohto LV — zdroj `parcels`.
-    const pRows = await q<{ parcel_no: string; celok: number | null; bpej_skupina: number | null; odnatie_eur: number | null }>(
-      "SELECT parcel_no, celok, bpej_skupina, odnatie_eur FROM parcels WHERE dataset_id = ? AND lv_no = ? AND (kn_type IS NULL OR kn_type NOT LIKE 'E%')",
+    // Odňatie (BPEJ) + celok (evidenčný list) + vysporiadanosť pre C-KN parcely tohto LV — zdroj `parcels`.
+    const pRows = await q<{ parcel_no: string; celok: number | null; bpej_skupina: number | null; bpej: string | null; odnatie_eur: number | null; settled: number | null }>(
+      "SELECT parcel_no, celok, bpej_skupina, bpej, odnatie_eur, settled FROM parcels WHERE dataset_id = ? AND lv_no = ? AND (kn_type IS NULL OR kn_type NOT LIKE 'E%')",
       [data.datasetId, data.lvNo],
     );
     const pByNo = new Map(pRows.map((r) => [r.parcel_no, r]));
@@ -553,6 +553,8 @@ export const getLvVypis = createServerFn({ method: "POST" })
       return {
         ...p,
         skupina: info?.bpej_skupina ?? null,
+        bpej: info?.bpej ?? null,
+        settled: info?.settled ?? null,
         sadzba,
         odnatie_trvale: sadzba != null ? p.area_m2 * sadzba : null,
         odnatie_docasne: sadzba != null ? (p.area_m2 * sadzba) / 100 : null,
@@ -590,7 +592,32 @@ export const getLvVypis = createServerFn({ method: "POST" })
     const totalAreaC = parcelsCEnriched.reduce((a, p) => a + (p.area_m2 || 0), 0);
     const totalAreaE = parcelsE.reduce((a, p) => a + (p.area_m2 || 0), 0);
 
-    return { dataset, lvNo: data.lvNo, parcelsC: parcelsCEnriched, parcelsE, buildings, owners, titles, tarchy, titlesCount, tarchyCount, access, count, evidencne, odnatie, totalAreaC, totalAreaE };
+    // Analytické signály + skóre príležitosti (rovnaké váhy ako /prilezitosti a NL prieskum)
+    const sig = (await q<{ co_owners: number; has_spf: number; oldest_birth_year: number | null; dedic: number; buildable: number; clean_title: number; absenter_ratio: number; total_area: number }>(
+      "SELECT co_owners, has_spf, oldest_birth_year, dedic, buildable, clean_title, absenter_ratio, total_area FROM lv_signals WHERE dataset_id = ? AND lv_no = ?",
+      [data.datasetId, data.lvNo]))[0] ?? null;
+    let signals: null | { co_owners: number; has_spf: number; dedic: number; buildable: number; clean_title: number; absenter_ratio: number; oldest_birth_year: number | null; score: number; reasons: string[] } = null;
+    if (sig) {
+      const w = { co: 0.3, spf: 0.25, dedic: 0.15, buildable: 0.15, absenter: 0.1, clean: 0.05 };
+      const wsum = w.co + w.spf + w.dedic + w.buildable + w.absenter + w.clean;
+      const raw = (w.co * Math.min(sig.co_owners ?? 0, 20)) / 20 + w.spf * (sig.has_spf ?? 0) + w.dedic * (sig.dedic ?? 0)
+        + w.buildable * (sig.buildable ?? 0) + w.absenter * (sig.absenter_ratio ?? 0) + w.clean * (sig.clean_title ?? 0);
+      const reasons: string[] = [];
+      if ((sig.co_owners ?? 0) >= 5) reasons.push(`${sig.co_owners} spoluvlastníkov`);
+      if (sig.has_spf) reasons.push("SPF / štát");
+      if (sig.dedic) reasons.push(`dedičské${sig.oldest_birth_year ? ` (${sig.oldest_birth_year})` : ""}`);
+      if (sig.buildable) reasons.push("stavebný potenciál");
+      if ((sig.absenter_ratio ?? 0) > 0) reasons.push(`absentéri ${Math.round((sig.absenter_ratio ?? 0) * 100)} %`);
+      if (sig.clean_title) reasons.push("bez tiarch");
+      signals = { co_owners: sig.co_owners ?? 0, has_spf: sig.has_spf ?? 0, dedic: sig.dedic ?? 0, buildable: sig.buildable ?? 0, clean_title: sig.clean_title ?? 0, absenter_ratio: sig.absenter_ratio ?? 0, oldest_birth_year: sig.oldest_birth_year, score: Math.round((100 * raw) / wsum), reasons };
+    }
+    const settledSummary = {
+      total: parcelsCEnriched.length,
+      settled: parcelsCEnriched.filter((p) => p.settled === 1).length,
+      unsettled: parcelsCEnriched.filter((p) => p.settled === 0).length,
+    };
+
+    return { dataset, lvNo: data.lvNo, parcelsC: parcelsCEnriched, parcelsE, buildings, owners, titles, tarchy, titlesCount, tarchyCount, access, count, evidencne, odnatie, totalAreaC, totalAreaE, signals, settledSummary };
   });
 
 // ESKN kataster WMS podľa kraja (auto-connect pri importe). Endpoint je per-kraj MapServer.
@@ -1907,11 +1934,58 @@ const DRUH_POZEMKU: Record<number, string> = {
 const UMIESTNENIE_POZEMKU: Record<number, string> = {
   1: "v zastavanom území (intravilán)", 2: "mimo zastavaného územia (extravilán)",
 };
+export type EsknOurParcel = {
+  dataset_id: string; parcel_id: string; parcel_no: string; lv_no: number | null; ku_name: string | null;
+  area_m2: number | null; use_type: string | null; kn_type: string | null;
+  bpej: string | null; bpej_skupina: number | null; settled: number | null; celok: number | null;
+  co_owners: number | null; has_spf: number | null; score: number | null;
+};
 export type EsknParcel = {
   found: boolean; parcel_no: string | null; area_m2: number | null; druh_pozemku: string | null;
   umiestnenie: string | null; ku_id: number | null; lv_id: number | null;
-  lat: number; lng: number; cached?: boolean; ageDays?: number; message?: string;
+  lat: number; lng: number; ours?: EsknOurParcel | null; cached?: boolean; ageDays?: number; message?: string;
 };
+// Nájdi NAŠU parcelu pre daný bod naprieč VŠETKÝMI k.ú. (nezávisle od načítaného datasetu) + opportunity skóre.
+type OurCand = {
+  parcel_id: string; dataset_id: string; parcel_no: string; lv_no: number | null; area_m2: number | null;
+  use_type: string | null; kn_type: string | null; bpej: string | null; bpej_skupina: number | null;
+  settled: number | null; celok: number | null; centroid_lat: number | null; centroid_lng: number | null; ku_name: string | null;
+};
+async function lookupOurParcel(lat: number, lng: number, esknNo: string | null): Promise<EsknOurParcel | null> {
+  const d = 0.0009;
+  const cands = await q<OurCand>(
+    `SELECT p.id AS parcel_id, p.dataset_id, p.parcel_no, p.lv_no, p.area_m2, p.use_type, p.kn_type,
+            p.bpej, p.bpej_skupina, p.settled, p.celok, p.centroid_lat, p.centroid_lng, d.ku_name
+     FROM parcels p JOIN datasets d ON d.id = p.dataset_id
+     WHERE p.centroid_lat BETWEEN ? AND ? AND p.centroid_lng BETWEEN ? AND ? AND p.geometry_json IS NOT NULL
+     LIMIT 200`,
+    [lat - d, lat + d, lng - d, lng + d]);
+  if (!cands.length) return null;
+  const dist = (c: OurCand) => ((c.centroid_lat ?? 0) - lat) ** 2 + ((c.centroid_lng ?? 0) - lng) ** 2;
+  const byNo = esknNo ? cands.find((c) => String(c.parcel_no) === esknNo) : undefined;
+  const pick = byNo ?? [...cands].sort((a, b) => dist(a) - dist(b))[0];
+  let score: number | null = null, co_owners: number | null = null, has_spf: number | null = null;
+  if (pick.lv_no != null) {
+    const sig = (await q<{ co_owners: number; has_spf: number; dedic: number; buildable: number; clean_title: number; absenter_ratio: number }>(
+      "SELECT co_owners, has_spf, dedic, buildable, clean_title, absenter_ratio FROM lv_signals WHERE dataset_id = ? AND lv_no = ?",
+      [pick.dataset_id, pick.lv_no]))[0];
+    if (sig) {
+      co_owners = sig.co_owners ?? 0; has_spf = sig.has_spf ?? 0;
+      const w = { co: 0.3, spf: 0.25, dedic: 0.15, buildable: 0.15, absenter: 0.1, clean: 0.05 };
+      const wsum = w.co + w.spf + w.dedic + w.buildable + w.absenter + w.clean;
+      const raw = (w.co * Math.min(sig.co_owners ?? 0, 20)) / 20 + w.spf * (sig.has_spf ?? 0) + w.dedic * (sig.dedic ?? 0)
+        + w.buildable * (sig.buildable ?? 0) + w.absenter * (sig.absenter_ratio ?? 0) + w.clean * (sig.clean_title ?? 0);
+      score = Math.round((100 * raw) / wsum);
+    }
+  }
+  return {
+    dataset_id: pick.dataset_id, parcel_id: pick.parcel_id, parcel_no: pick.parcel_no, lv_no: pick.lv_no,
+    ku_name: pick.ku_name, area_m2: pick.area_m2, use_type: pick.use_type, kn_type: pick.kn_type,
+    bpej: pick.bpej, bpej_skupina: pick.bpej_skupina, settled: pick.settled, celok: pick.celok,
+    co_owners, has_spf, score,
+  };
+}
+
 export const esknIdentify = createServerFn({ method: "POST" })
   .validator(z.object({ lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<EsknParcel> => {
@@ -1945,7 +2019,9 @@ export const esknIdentify = createServerFn({ method: "POST" })
         ku_id: numAttr("Identifikátor katastrálneho územia"),
         lv_id: numAttr("Identifikátor listu vlastníctva"),
       };
-      if (out.found) await regCacheWrite(key, "eskn", out);
+      // Naše vybudované dáta pre túto parcelu (naprieč VŠETKÝMI k.ú.)
+      out.ours = await lookupOurParcel(data.lat, data.lng, parcel_no);
+      if (out.found || out.ours) await regCacheWrite(key, "eskn", out);
       return out;
     } catch {
       return { ...base, message: "ESKN nedostupné — skús znova." };

@@ -90,7 +90,7 @@ function parseRing(geo: string | null): Ring | null {
   }
 }
 
-const ZMIN = 12, ZMAX = 20;
+const ZMIN = 12, ZMAX = 21;
 
 // BPEJ farba — hash kódu na odtieň (fallback, keď skupina nie je známa).
 function bpejColor(code: string): string {
@@ -1216,28 +1216,50 @@ export function MapView({
           </div>
         ) : null}
 
-        {/* Živý ESKN identify — panel pre ľubovoľnú parcelu v SR */}
+        {/* Živý ESKN identify — panel pre ľubovoľnú parcelu v SR (ESKN + VŠETKY naše dáta) */}
         {esknMode && (esknHit || esknBusy) ? (
-          <div className="absolute left-1/2 top-16 z-30 w-[320px] -translate-x-1/2 rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur">
+          <div className="absolute left-1/2 top-16 z-30 max-h-[72vh] w-[340px] -translate-x-1/2 overflow-y-auto rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur">
             <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="font-semibold text-fg">🇸🇰 ESKN parcela (ÚGKK, naživo)</span>
+              <span className="font-semibold text-fg">Parcela — ESKN + naše dáta</span>
               <button onClick={() => setEsknHit(null)} className="text-muted hover:text-fg" title="Zavrieť">✕</button>
             </div>
             {esknBusy ? (
               <div className="py-2 text-muted">Načítavam z národného ESKN…</div>
-            ) : esknHit && esknHit.found ? (
-              <div className="space-y-0.5">
-                <div className="text-sm font-medium text-fg">Parcela C č. {esknHit.parcel_no}</div>
-                <div className="text-muted">Výmera: <b className="text-fg">{esknHit.area_m2?.toLocaleString("sk-SK") ?? "—"} m²</b></div>
-                <div className="text-muted">Druh pozemku: {esknHit.druh_pozemku ?? "—"}</div>
-                <div className="text-muted">Umiestnenie: {esknHit.umiestnenie ?? "—"}</div>
-                {esknHit.ku_id ? <div className="text-muted">k.ú. identifikátor: {esknHit.ku_id}</div> : null}
-                <a href={`https://zbgis.skgeodesy.sk/mkzbgis/sk/kataster?pos=${esknHit.lat.toFixed(6)},${esknHit.lng.toFixed(6)},19`} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block rounded-md border border-line px-2 py-1 text-fg hover:border-ink">Otvoriť v ZBGIS ↗</a>
-                <div className="mt-1 text-[10px] text-muted">Vlastníci/LV sú na oficiálnom portáli — verejná ESKN mapa ich nevydáva.{esknHit.cached ? " (z cache)" : ""}</div>
+            ) : esknHit ? (
+              <div className="space-y-2">
+                {/* ESKN autoritatívne */}
+                {esknHit.found ? (
+                  <div className="space-y-0.5">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">🇸🇰 ESKN (ÚGKK, naživo)</div>
+                    <div className="text-sm font-medium text-fg">Parcela C č. {esknHit.parcel_no}</div>
+                    <div className="text-muted">Výmera: <b className="text-fg">{esknHit.area_m2?.toLocaleString("sk-SK") ?? "—"} m²</b></div>
+                    <div className="text-muted">Druh pozemku: {esknHit.druh_pozemku ?? "—"}</div>
+                    <div className="text-muted">Umiestnenie: {esknHit.umiestnenie ?? "—"}</div>
+                    <a href={`https://zbgis.skgeodesy.sk/mkzbgis/sk/kataster?pos=${esknHit.lat.toFixed(6)},${esknHit.lng.toFixed(6)},19`} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block rounded-md border border-line px-2 py-1 text-fg hover:border-ink">Otvoriť v ZBGIS ↗</a>
+                  </div>
+                ) : (
+                  <div className="text-muted">{esknHit.message ?? "Na tomto mieste nie je parcela registra C v ESKN."}</div>
+                )}
+
+                {/* Naše vybudované dáta (naprieč všetkými k.ú.) */}
+                {esknHit.ours ? (
+                  <div className="space-y-0.5 rounded-lg border border-brand/40 bg-brand/5 p-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-brand">📋 Naše dáta — {esknHit.ours.ku_name ?? "?"}</div>
+                    <div className="text-muted">Parcela <b className="text-fg">{esknHit.ours.parcel_no}</b>{esknHit.ours.kn_type ? ` · ${esknHit.ours.kn_type}` : ""} · {esknHit.ours.area_m2?.toLocaleString("sk-SK") ?? "—"} m²{esknHit.ours.use_type ? ` · ${esknHit.ours.use_type}` : ""}</div>
+                    {esknHit.ours.lv_no != null ? <div className="text-muted">LV č. <b className="text-fg">{esknHit.ours.lv_no}</b>{esknHit.ours.co_owners != null ? ` · ${esknHit.ours.co_owners} spoluvlastníkov` : ""}</div> : null}
+                    <div className="text-muted">Vysporiadanosť: {esknHit.ours.settled === 1 ? "vysporiadaná" : esknHit.ours.settled === 0 ? "nevysporiadaná" : "—"}{esknHit.ours.has_spf ? " · SPF/štát" : ""}</div>
+                    {esknHit.ours.bpej ? <div className="text-muted">BPEJ {esknHit.ours.bpej}{esknHit.ours.bpej_skupina ? ` · skupina ${esknHit.ours.bpej_skupina}` : ""}</div> : null}
+                    {esknHit.ours.score != null ? <div className="text-muted">Skóre príležitosti: <b className="text-fg">{esknHit.ours.score}</b></div> : null}
+                    {esknHit.ours.lv_no != null ? (
+                      <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: esknHit.ours.dataset_id, lvNo: String(esknHit.ours.lv_no) }} search={{ typ: "vypis" as const }} className="mt-1 inline-block rounded-md border border-ink bg-ink px-2 py-1 text-cream hover:opacity-90">Výpis z LV — všetky údaje ↗</Link>
+                    ) : null}
+                  </div>
+                ) : esknHit.found ? (
+                  <div className="text-[10px] text-muted">Túto parcelu zatiaľ nemáme v našich k.ú. — zobrazené len ESKN. Vlastníci/LV sú na oficiálnom portáli.</div>
+                ) : null}
+                {esknHit.cached ? <div className="text-[10px] text-muted">(z cache)</div> : null}
               </div>
-            ) : (
-              <div className="py-2 text-muted">{esknHit?.message ?? "Na tomto mieste nie je parcela registra C."}</div>
-            )}
+            ) : null}
           </div>
         ) : null}
 
