@@ -241,6 +241,10 @@ export function MapView({
   const [esknMode, setEsknMode] = useState(true);       // klik = live ESKN identify (default zapnuté)
   const [esknHit, setEsknHit] = useState<EsknParcel | null>(null);
   const [esknBusy, setEsknBusy] = useState(false);
+  // Kompletný obraz parcely po kliku: limity (všetky ArcGIS/WMS vrstvy) + trh + ÚP zóna — agregované pre ľubovoľnú parcelu v SR
+  const [esknLimits, setEsknLimits] = useState<Limits | null>(null);
+  const [esknMarket, setEsknMarket] = useState<NearListing[]>([]);
+  const [esknZone, setEsknZone] = useState<UpZone | null>(null);
   // ÚP dokumenty obce (auto-fetch)
   const [upDocs, setUpDocs] = useState<Awaited<ReturnType<typeof getUpDocs>>>([]);
   const [upChanges, setUpChanges] = useState<Awaited<ReturnType<typeof getUpChanges>>>([]);
@@ -706,11 +710,25 @@ export function MapView({
   // Živý ESKN identify — klik kdekoľvek v SR → atribúty parcely z ÚGKK ESKN
   const runEsknIdentify = useCallback((lng: number, lat: number) => {
     setEsknBusy(true);
+    setEsknLimits(null); setEsknMarket([]); setEsknZone(null);
     esknIdentify({ data: { lat, lng } })
       .then((r) => { setEsknHit(r); pushEvent(r.found ? `ESKN parcela ${r.parcel_no} — ${r.area_m2 ?? "?"} m².` : "ESKN: na tomto mieste nie je parcela C."); })
       .catch(() => setEsknHit({ found: false, parcel_no: null, area_m2: null, druh_pozemku: null, umiestnenie: null, ku_id: null, lv_id: null, lat, lng, message: "ESKN nedostupné." }))
       .finally(() => setEsknBusy(false));
+    // Kompletný obraz — národné zdroje (limity výstavby zo všetkých ArcGIS/WMS registrov + trh) pre ľubovoľnú parcelu v SR
+    getParcelLimits({ data: { lat, lng } }).then((l) => setEsknLimits(l)).catch(() => {});
+    getMarketListingsNear({ data: { lat, lng, radiusKm: 5 } }).then((m) => setEsknMarket(m)).catch(() => {});
   }, [pushEvent]);
+
+  // ÚP zóna pre ESKN parcelu — kde máme importovaný územný plán (podľa nášho datasetu)
+  useEffect(() => {
+    const o = esknHit?.ours;
+    if (!o?.dataset_id || !esknHit) return;
+    let alive = true;
+    getParcelZone({ data: { datasetId: o.dataset_id, lat: esknHit.lat, lng: esknHit.lng } })
+      .then((z) => { if (alive) setEsknZone(z); }).catch(() => {});
+    return () => { alive = false; };
+  }, [esknHit]);
 
   // Watchlist — záložky parciel (localStorage) pre feedback/prieskum
   const [marks, setMarks] = useState<{ id: string; no: string }[]>([]);
@@ -1285,6 +1303,39 @@ export function MapView({
                 ) : esknHit.found ? (
                   <div className="text-[10px] text-muted">Túto parcelu zatiaľ nemáme v našich k.ú. — zobrazené len ESKN. Vlastníci/LV sú na oficiálnom portáli.</div>
                 ) : null}
+
+                {/* Územný plán — funkčná zóna (kde máme importovaný ÚP) */}
+                {esknZone ? (
+                  <div className="space-y-0.5 rounded-lg border border-line bg-surface-2/30 p-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">🗺️ Územný plán — funkčná zóna</div>
+                    <div className="text-fg">{esknZone.name ?? "—"}{esknZone.code ? ` (${esknZone.code})` : ""}</div>
+                    {esknZone.character ? <div className="text-muted">Charakter: {esknZone.character}</div> : null}
+                    {esknZone.pripustne ? <div className="text-muted">Prípustné: {esknZone.pripustne}</div> : null}
+                  </div>
+                ) : null}
+
+                {/* Limity výstavby — všetky úradné ArcGIS/WMS registre (geohazardy, les, voda, chránené…) */}
+                {esknLimits ? (
+                  <div className="rounded-lg border border-line bg-surface-2/30 p-2">
+                    <LimitsPanel data={esknLimits} />
+                  </div>
+                ) : null}
+
+                {/* Trh v okolí + orientačná hodnota (predchodca AVM) */}
+                {esknMarket.length > 0 ? (() => {
+                  const poz = esknMarket.filter((m) => m.ptype === "pozemok" && m.ppm2 != null).map((m) => m.ppm2 as number).sort((a, b) => a - b);
+                  const med = poz.length ? poz[Math.floor(poz.length / 2)] : null;
+                  const area = esknHit.area_m2 ?? esknHit.ours?.area_m2 ?? null;
+                  const est = med != null && area != null ? Math.round(med * area) : null;
+                  return (
+                    <div className="space-y-0.5 rounded-lg border border-line bg-surface-2/30 p-2">
+                      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">💶 Trh v okolí (do 5 km)</div>
+                      <div className="text-muted">{esknMarket.length} inzerátov{med != null ? ` · medián pozemkov ${Math.round(med).toLocaleString("sk-SK")} €/m²` : ""}</div>
+                      {est != null ? <div className="text-muted">Orient. hodnota: <b className="text-fg">{est.toLocaleString("sk-SK")} €</b> <span className="text-[10px]">(výmera × medián, nie znal. posudok)</span></div> : null}
+                    </div>
+                  );
+                })() : null}
+
                 {esknHit.cached ? <div className="text-[10px] text-muted">(z cache)</div> : null}
               </div>
             ) : null}
