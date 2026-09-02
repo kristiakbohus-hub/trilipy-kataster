@@ -1898,6 +1898,60 @@ export const getParcelLimits = createServerFn({ method: "POST" })
     return out;
   });
 
+// ——— Živý ESKN identify: klik na ĽUBOVOĽNÚ parcelu v SR → atribúty z národného ÚGKK ESKN (ArcGIS) ———
+// Proxy cez worker (bez CORS), fail-soft, cache 7 dní. Nezávislé od našich importovaných k.ú.
+const DRUH_POZEMKU: Record<number, string> = {
+  1: "orná pôda", 2: "chmeľnica", 3: "vinica", 4: "záhrada", 5: "ovocný sad",
+  6: "trvalý trávny porast", 7: "lesný pozemok", 8: "vodná plocha", 9: "zastavaná plocha a nádvorie", 10: "ostatná plocha",
+};
+const UMIESTNENIE_POZEMKU: Record<number, string> = {
+  1: "v zastavanom území (intravilán)", 2: "mimo zastavaného územia (extravilán)",
+};
+export type EsknParcel = {
+  found: boolean; parcel_no: string | null; area_m2: number | null; druh_pozemku: string | null;
+  umiestnenie: string | null; ku_id: number | null; lv_id: number | null;
+  lat: number; lng: number; cached?: boolean; ageDays?: number; message?: string;
+};
+export const esknIdentify = createServerFn({ method: "POST" })
+  .validator(z.object({ lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<EsknParcel> => {
+    const base: EsknParcel = { found: false, parcel_no: null, area_m2: null, druh_pozemku: null, umiestnenie: null, ku_id: null, lv_id: null, lat: data.lat, lng: data.lng };
+    const key = `eskn:${data.lat.toFixed(5)}:${data.lng.toFixed(5)}`;
+    const cached = await regCacheRead(key, !!data.refresh, 7 * 24 * 3600);
+    if (cached) return { ...(cached.payload as EsknParcel), cached: true, ageDays: cached.ageDays };
+    const dd = 0.0012;
+    const ext = `${data.lng - dd},${data.lat - dd},${data.lng + dd},${data.lat + dd}`;
+    const url = `https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer/identify?geometry=${data.lng},${data.lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:9&tolerance=3&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=false&f=json`;
+    try {
+      const j = asObj(await fetchJsonTimed(url, 12000)) ?? {};
+      const results = Array.isArray(j.results) ? j.results : [];
+      const hit = results.find((r) => asObj(r)?.layerId === 9) ?? results[0];
+      const a = asObj(asObj(hit)?.attributes) ?? {};
+      const numAttr = (k: string): number | null => {
+        const v = a[k];
+        const n = typeof v === "string" ? Number(v.replace(/\s/g, "").replace(",", ".")) : (typeof v === "number" ? v : null);
+        return n != null && isFinite(n) ? n : null;
+      };
+      const parcel_no = a["Parcelné číslo"] != null ? String(a["Parcelné číslo"]) : null;
+      const druhCode = numAttr("Identifikátor druhu pozemku");
+      const umCode = numAttr("Identifikátor umiestnenia pozemku");
+      const out: EsknParcel = {
+        ...base,
+        found: !!parcel_no,
+        parcel_no,
+        area_m2: numAttr("Výmera SPI (m2)"),
+        druh_pozemku: druhCode != null ? (DRUH_POZEMKU[druhCode] ?? `kód ${druhCode}`) : null,
+        umiestnenie: umCode != null ? (UMIESTNENIE_POZEMKU[umCode] ?? null) : null,
+        ku_id: numAttr("Identifikátor katastrálneho územia"),
+        lv_id: numAttr("Identifikátor listu vlastníctva"),
+      };
+      if (out.found) await regCacheWrite(key, "eskn", out);
+      return out;
+    } catch {
+      return { ...base, message: "ESKN nedostupné — skús znova." };
+    }
+  });
+
 // ——— Územný plán: register publikovaných dokumentov obce (auto-fetch z webygroup CMS a pod.) ———
 export type UpDoc = { id: number; title: string | null; url: string | null; kind: string | null };
 function classifyUpDoc(t: string): string {

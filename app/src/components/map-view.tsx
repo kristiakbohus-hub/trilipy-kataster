@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import type { PointerEvent as RPointerEvent, WheelEvent as RWheelEvent, ReactNode } from "react";
 import type { LvOwner, Parcel, Role } from "../lib/domain";
 import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
-import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear } from "../lib/api/kataster.functions";
+import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, type EsknParcel } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
 import { marketValueEur } from "../lib/domain";
 import { DEV_DEFAULTS } from "../lib/development";
@@ -90,7 +90,7 @@ function parseRing(geo: string | null): Ring | null {
   }
 }
 
-const ZMIN = 12, ZMAX = 19;
+const ZMIN = 12, ZMAX = 20;
 
 // BPEJ farba — hash kódu na odtieň (fallback, keď skupina nie je známa).
 function bpejColor(code: string): string {
@@ -227,6 +227,10 @@ export function MapView({
   const [legendOpen, setLegendOpen] = useState(false);
   const [limOn, setLimOn] = useState<Record<string, boolean>>({});   // úradné limity ako prekrytie
   const [limOp, setLimOp] = useState<Record<string, number>>({});
+  // Živý celoSR ESKN: identify ľubovoľnej parcely v SR (nezávisle od našich k.ú.)
+  const [esknMode, setEsknMode] = useState(false);
+  const [esknHit, setEsknHit] = useState<EsknParcel | null>(null);
+  const [esknBusy, setEsknBusy] = useState(false);
   // ÚP dokumenty obce (auto-fetch)
   const [upDocs, setUpDocs] = useState<Awaited<ReturnType<typeof getUpDocs>>>([]);
   const [upChanges, setUpChanges] = useState<Awaited<ReturnType<typeof getUpChanges>>>([]);
@@ -682,6 +686,15 @@ export function MapView({
     img.src = src;
   }, [size, datasetName, pushEvent]);
 
+  // Živý ESKN identify — klik kdekoľvek v SR → atribúty parcely z ÚGKK ESKN
+  const runEsknIdentify = useCallback((lng: number, lat: number) => {
+    setEsknBusy(true);
+    esknIdentify({ data: { lat, lng } })
+      .then((r) => { setEsknHit(r); pushEvent(r.found ? `ESKN parcela ${r.parcel_no} — ${r.area_m2 ?? "?"} m².` : "ESKN: na tomto mieste nie je parcela C."); })
+      .catch(() => setEsknHit({ found: false, parcel_no: null, area_m2: null, druh_pozemku: null, umiestnenie: null, ku_id: null, lv_id: null, lat, lng, message: "ESKN nedostupné." }))
+      .finally(() => setEsknBusy(false));
+  }, [pushEvent]);
+
   // Watchlist — záložky parciel (localStorage) pre feedback/prieskum
   const [marks, setMarks] = useState<{ id: string; no: string }[]>([]);
   useEffect(() => { try { const s = localStorage.getItem("tlkc.marks"); if (s) setMarks(JSON.parse(s)); } catch { /* ignore */ } }, []);
@@ -839,6 +852,7 @@ export function MapView({
         setIdentified(null);
         if (!(e.ctrlKey || e.metaKey || e.shiftKey)) setSelection([]);
       }
+      if (esknMode) { const ll = unproject(x, y); runEsknIdentify(ll.lng, ll.lat); }
     }
   };
 
@@ -1202,6 +1216,31 @@ export function MapView({
           </div>
         ) : null}
 
+        {/* Živý ESKN identify — panel pre ľubovoľnú parcelu v SR */}
+        {esknMode && (esknHit || esknBusy) ? (
+          <div className="absolute left-1/2 top-16 z-30 w-[320px] -translate-x-1/2 rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="font-semibold text-fg">🇸🇰 ESKN parcela (ÚGKK, naživo)</span>
+              <button onClick={() => setEsknHit(null)} className="text-muted hover:text-fg" title="Zavrieť">✕</button>
+            </div>
+            {esknBusy ? (
+              <div className="py-2 text-muted">Načítavam z národného ESKN…</div>
+            ) : esknHit && esknHit.found ? (
+              <div className="space-y-0.5">
+                <div className="text-sm font-medium text-fg">Parcela C č. {esknHit.parcel_no}</div>
+                <div className="text-muted">Výmera: <b className="text-fg">{esknHit.area_m2?.toLocaleString("sk-SK") ?? "—"} m²</b></div>
+                <div className="text-muted">Druh pozemku: {esknHit.druh_pozemku ?? "—"}</div>
+                <div className="text-muted">Umiestnenie: {esknHit.umiestnenie ?? "—"}</div>
+                {esknHit.ku_id ? <div className="text-muted">k.ú. identifikátor: {esknHit.ku_id}</div> : null}
+                <a href={`https://zbgis.skgeodesy.sk/mkzbgis/sk/kataster?pos=${esknHit.lat.toFixed(6)},${esknHit.lng.toFixed(6)},19`} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block rounded-md border border-line px-2 py-1 text-fg hover:border-ink">Otvoriť v ZBGIS ↗</a>
+                <div className="mt-1 text-[10px] text-muted">Vlastníci/LV sú na oficiálnom portáli — verejná ESKN mapa ich nevydáva.{esknHit.cached ? " (z cache)" : ""}</div>
+              </div>
+            ) : (
+              <div className="py-2 text-muted">{esknHit?.message ?? "Na tomto mieste nie je parcela registra C."}</div>
+            )}
+          </div>
+        ) : null}
+
         {/* Overlay (netransformovaný): box výber + snap marker */}
         <svg className="pointer-events-none absolute inset-0" width={size.w} height={size.h}>
           {box ? (
@@ -1293,6 +1332,19 @@ export function MapView({
             📷 PNG
           </button>
         </div>
+
+        <button
+          onClick={() => setEsknMode((v) => {
+            const nv = !v;
+            setLimOn((s) => ({ ...s, eskn: nv }));
+            if (!nv) setEsknHit(null);
+            else pushEvent("Celý ESKN zapnutý — klik na mapu identifikuje ľubovoľnú parcelu v SR.");
+            return nv;
+          })}
+          title="Zapnúť národný ESKN kataster ÚGKK na celej mape + klik = live identify ľubovoľnej parcely v SR"
+          className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (esknMode ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
+          🇸🇰 Celý ESKN{esknMode ? " · klik = identify" : ""}
+        </button>
 
         {colorMode === "bpej" ? (
           <div className="rounded-lg border border-line bg-surface/95 p-2 text-[10px] backdrop-blur">
