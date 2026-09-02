@@ -10,6 +10,9 @@ type WmsRow = { id: number; name: string; url: string; layers: string; format: s
 const toWmsDef = (rows: WmsRow[]): WmsDef[] =>
   rows.map((r) => ({ id: `custom-${r.id}`, name: r.name, url: r.url, layers: r.layers, format: r.format, attribution: "vlastná WMS", reliable: false }));
 
+// ESKN-first: mapa sa otvára na národnom pohľade na celé SR (ESKN default podklad); k.ú. sú vrstvy navrchu.
+const SR_VIEW = { lat: 48.72, lng: 19.5, zoom: 7.4 };
+
 export const Route = createFileRoute("/mapa")({
   head: () => ({ meta: [{ title: "Mapa / GIS — TRI LIPY KATASTER CORE" }] }),
   loader: async () => {
@@ -36,6 +39,7 @@ function MapPage() {
   const [loading, setLoading] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [fs, setFs] = useState(false);
+  const [userNavigated, setUserNavigated] = useState(false);  // false = otvor národne (ESKN); true = fitnuté na zvolené k.ú.
 
   // pridať WMS
   const [wName, setWName] = useState("");
@@ -65,6 +69,7 @@ function MapPage() {
 
   async function switchDataset(id: string) {
     setDatasetId(id);
+    setUserNavigated(true);   // skok na konkrétne k.ú. → fitni naň (nie národný pohľad)
     setFocusId(null);
     setLoading(true);
     try {
@@ -138,7 +143,7 @@ function MapPage() {
       <div className={fs ? "fixed inset-0 z-40 bg-paper" : "relative h-[62vh] min-h-[440px] w-full"}>
         {datasetId ? (
           <div className="absolute left-3 top-3 z-30">
-            <MapSearch datasetId={datasetId} role={role} onPick={setFocusId} />
+            <MapSearch datasetId={datasetId} datasets={datasets} role={role} onPick={setFocusId} onPickDataset={switchDataset} />
           </div>
         ) : null}
         <button
@@ -150,7 +155,7 @@ function MapPage() {
         </button>
         {parcels.length > 0 ? (
           <MapView
-            key={datasetId ?? "none"}
+            key={`${datasetId ?? "none"}-${userNavigated}`}
             parcels={parcels}
             datasetName={current?.ku_name}
             datasetId={datasetId ?? undefined}
@@ -159,6 +164,7 @@ function MapPage() {
             wmsExtra={toWmsDef(wms)}
             opportunities={opps}
             focusParcelId={focusId}
+            initialCenter={userNavigated ? null : SR_VIEW}
           />
         ) : (
           <div className="grid h-full place-items-center rounded-xl border border-dashed border-line bg-surface/50 text-sm text-muted">
@@ -201,12 +207,16 @@ const NATIONAL_WMS = [
   { name: "ZBGIS základná mapa", url: "https://zbgisws.skgeodesy.sk/zbgis_wms_featureinfo/service.svc/get", layers: "0", format: "image/png" },
 ];
 
-// ——— ZBGIS-style vyhľadávanie na mape: parcela / LV / vlastník → fokus ———
-function MapSearch({ datasetId, role, onPick }: { datasetId: string; role: Role; onPick: (id: string) => void }) {
+// ——— ZBGIS-style vyhľadávanie na mape: k.ú. / parcela / LV / vlastník → skok / fokus ———
+function MapSearch({ datasetId, datasets, role, onPick, onPickDataset }: { datasetId: string; datasets: Dataset[]; role: Role; onPick: (id: string) => void; onPickDataset: (id: string) => void }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState<Awaited<ReturnType<typeof searchDataset>> | null>(null);
   const [open, setOpen] = useState(false);
   const tRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const kuMatches = q.trim().length >= 2
+    ? datasets.filter((d) => d.ku_name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8)
+    : [];
 
   function onChange(v: string) {
     setQ(v); setOpen(true);
@@ -220,18 +230,30 @@ function MapSearch({ datasetId, role, onPick }: { datasetId: string; role: Role;
     if (!id) return;
     onPick(id); setOpen(false); setQ(label);
   }
+  function pickKu(id: string, label: string) {
+    onPickDataset(id); setOpen(false); setQ(label);
+  }
+  const hasResults = kuMatches.length + (res ? res.parcels.length + res.lvs.length + res.owners.length : 0) > 0;
   return (
     <div className="w-[320px] max-w-[calc(100vw-2rem)]">
       <input
         value={q}
         onChange={(e) => onChange(e.target.value)}
         onFocus={() => setOpen(true)}
-        placeholder="Hľadať: parcela / LV / vlastník…"
+        placeholder="Hľadať: k.ú. / parcela / LV / vlastník…"
         className="w-full rounded-full border border-line bg-paper px-4 py-2 text-sm text-fg shadow-lg outline-none focus:border-brand"
       />
-      {open && res && res.parcels.length + res.lvs.length + res.owners.length > 0 ? (
+      {open && hasResults ? (
         <div className="mt-1 max-h-[52vh] overflow-y-auto rounded-xl border border-line bg-paper shadow-xl">
-          {res.parcels.map((p) => (
+          {kuMatches.map((d) => (
+            <button key={`ku-${d.id}`} onClick={() => pickKu(d.id, d.ku_name)}
+              className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
+              <span className="rounded bg-ink/10 px-1.5 py-0.5 text-[10px] font-bold text-fg">k.ú.</span>
+              <span className="truncate text-sm text-fg">{d.ku_name}</span>
+              <span className="ml-auto shrink-0 text-[11px] text-muted">{d.kn_type}</span>
+            </button>
+          ))}
+          {(res?.parcels ?? []).map((p) => (
             <button key={`p-${p.id}`} onClick={() => pick(p.id, `parcela ${p.parcel_no}`)}
               className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
               <span className="rounded bg-brand/15 px-1.5 py-0.5 text-[10px] font-bold text-brand">C-KN</span>
@@ -239,7 +261,7 @@ function MapSearch({ datasetId, role, onPick }: { datasetId: string; role: Role;
               <span className="ml-auto shrink-0 text-[11px] text-muted">{p.use_type ?? ""} · {p.area_m2} m²</span>
             </button>
           ))}
-          {res.lvs.map((l) => (
+          {(res?.lvs ?? []).map((l) => (
             <button key={`l-${l.lv_no}`} onClick={() => pick(l.parcel_id, `LV ${l.lv_no}`)}
               className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
               <span className="rounded bg-green/15 px-1.5 py-0.5 text-[10px] font-bold text-green">LV</span>
@@ -247,7 +269,7 @@ function MapSearch({ datasetId, role, onPick }: { datasetId: string; role: Role;
               <span className="ml-auto shrink-0 text-[11px] text-muted">{l.n} parciel</span>
             </button>
           ))}
-          {res.owners.map((o, i) => (
+          {(res?.owners ?? []).map((o, i) => (
             <button key={`o-${i}`} onClick={() => pick(o.parcel_id, o.name)}
               className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
               <span className="rounded bg-ink/10 px-1.5 py-0.5 text-[10px] font-bold text-fg">V</span>

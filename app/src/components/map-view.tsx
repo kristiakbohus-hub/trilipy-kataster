@@ -90,7 +90,7 @@ function parseRing(geo: string | null): Ring | null {
   }
 }
 
-const ZMIN = 12, ZMAX = 21;
+const ZMIN = 7, ZMAX = 21;   // 7 = národný pohľad na celé SR (ESKN-first), 21 = plný ESKN detail
 
 // BPEJ farba — hash kódu na odtieň (fallback, keď skupina nie je známa).
 function bpejColor(code: string): string {
@@ -157,7 +157,7 @@ function arcgisExport(l: LimitLayer, X: number, Y: number, res: number, w: numbe
 const ESKN_BASE: LimitLayer = { id: "eskn", name: "ESKN kataster — celé SR (ÚGKK)", url: "https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer", layers: "1,4,5,7,10,14", attribution: "ÚGKK ESKN" };
 // Dynamické dpi tak, aby efektívna mierka ostala v okne kreslenia ESKN (~1:1500) pri každom zoome.
 function esknDpiFor(res: number): number {
-  return Math.max(4, Math.min(96, Math.round((1500 * 0.0254) / res)));
+  return Math.max(1, Math.min(96, Math.round((1500 * 0.0254) / res)));
 }
 
 export function MapView({
@@ -169,6 +169,7 @@ export function MapView({
   wmsExtra = [],
   opportunities = [],
   focusParcelId = null,
+  initialCenter = null,
 }: {
   parcels: Parcel[];
   datasetName?: string;
@@ -178,6 +179,7 @@ export function MapView({
   wmsExtra?: WmsDef[];
   opportunities?: { parcel_id: string; score: number; kind: string }[];
   focusParcelId?: string | null;
+  initialCenter?: { lat: number; lng: number; zoom: number } | null;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -468,10 +470,17 @@ export function MapView({
   }, [size, rings]);
 
   useEffect(() => {
-    if (view || size.w === 0 || rings.length === 0) return;
+    if (view || size.w === 0) return;
+    if (initialCenter) {                 // ESKN-first: otvor na národnom SR pohľade (nezávisle od datasetu)
+      const m = toMerc(initialCenter.lng, initialCenter.lat);
+      setView({ X: m.x, Y: m.y, zoom: initialCenter.zoom });
+      pushEvent("Národný ESKN pohľad — priblíž alebo vyhľadaj miesto.");
+      return;
+    }
+    if (rings.length === 0) return;
     fitAll();
     pushEvent(`Dataset načítaný — ${rings.length} parciel, LocalCanvas engine.`);
-  }, [view, size, rings, fitAll, pushEvent]);
+  }, [view, size, rings, fitAll, pushEvent, initialCenter]);
 
   const res = view ? BASE_RES / 2 ** view.zoom : BASE_RES;
 
