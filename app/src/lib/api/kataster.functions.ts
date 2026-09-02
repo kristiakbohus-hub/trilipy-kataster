@@ -1935,7 +1935,7 @@ const UMIESTNENIE_POZEMKU: Record<number, string> = {
   1: "v zastavanom území (intravilán)", 2: "mimo zastavaného územia (extravilán)",
 };
 export type EsknOurParcel = {
-  dataset_id: string; parcel_id: string; parcel_no: string; lv_no: number | null; ku_name: string | null;
+  dataset_id: string; parcel_id: string; parcel_no: string; lv_no: number | null; ku_name: string | null; okres: string | null;
   area_m2: number | null; use_type: string | null; kn_type: string | null;
   bpej: string | null; bpej_skupina: number | null; settled: number | null; celok: number | null;
   co_owners: number | null; has_spf: number | null; score: number | null;
@@ -1953,25 +1953,31 @@ export type EsknParcel = {
 // ——— AVM (automatický odhad hodnoty) — comparables z trhu + úpravy podľa druhu/umiestnenia/BPEJ/veľkosti/vysporiadanosti ———
 // Orientačný model, NIE znalecký posudok. Sadzby sú laditeľné (kataster profík vie dodať reálne čísla).
 const AG_BASE_PPM2: Record<number, number> = { 1: 1.5, 2: 2.0, 3: 3.0, 4: 6.0, 5: 5.0, 6: 1.0, 7: 0.6, 8: 0.3, 10: 2.5 };
-async function computeAvm(lat: number, lng: number, area: number | null, druhCode: number | null, umCode: number | null, bpejSkupina: number | null, settled: number | null): Promise<AvmResult> {
+async function computeAvm(lat: number, lng: number, area: number | null, druhCode: number | null, umCode: number | null, bpejSkupina: number | null, settled: number | null, okres: string | null): Promise<AvmResult> {
   const empty: AvmResult = { estimate_eur: null, low_eur: null, high_eur: null, ppm2: null, klass: "neznáme", comps: 0, confidence: "nízka", factors: [] };
   if (!area || area <= 0) return empty;
-  const d = 0.13; // ~14 km box comparables
+  const d = 0.13; // ~14 km box comparables (geokódované inzeráty)
   const comps = await q<{ ppm2: number }>(
     "SELECT ppm2 FROM market_listings WHERE ptype='pozemok' AND ppm2 IS NOT NULL AND ppm2 BETWEEN 0.5 AND 1500 AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
     [lat - d, lat + d, lng - d, lng + d]);
+  // báza €/m² pre stavebný pozemok: 1) medián geokódovaných inzerátov, 2) fallback market_index podľa okresu (netreba geokódovanie)
+  const band = comps.map((c) => c.ppm2).filter((p) => p >= 15).sort((a, b) => a - b);
+  let buildBase: number | null = band.length >= 3 ? band[Math.floor(band.length / 2)] : null;
+  let baseSrc = buildBase != null ? `medián stavebných inzerátov ${Math.round(buildBase)} €/m²` : "";
+  if (buildBase == null && okres) {
+    const mi = await q<{ m: number }>("SELECT median_eur_m2 AS m FROM market_index WHERE okres = ? AND ptype='pozemok' AND obec IS NULL ORDER BY day DESC LIMIT 1", [okres]);
+    if (mi[0]?.m) { buildBase = mi[0].m; baseSrc = `medián pozemkov okres ${okres} ${Math.round(buildBase)} €/m²`; }
+  }
   const buildable = umCode === 1 || druhCode === 9;
   const factors: string[] = [];
   let ppm2: number | null = null;
   let klass = "";
   if (buildable) {
-    const band = comps.map((c) => c.ppm2).filter((p) => p >= 15).sort((a, b) => a - b);
-    const med = band.length ? band[Math.floor(band.length / 2)] : null;
-    if (med != null) {
+    if (buildBase != null) {
       const sizeF = area <= 1500 ? 1 : area <= 5000 ? 0.9 : area <= 20000 ? 0.78 : 0.65;
-      ppm2 = med * sizeF;
+      ppm2 = buildBase * sizeF;
       klass = umCode === 1 ? "stavebný / intravilán" : "zastavaná plocha";
-      factors.push(`medián stavebných inzerátov ${Math.round(med)} €/m²`);
+      factors.push(baseSrc);
       if (sizeF < 1) factors.push(`veľkosť ×${sizeF}`);
     }
   } else {
@@ -1986,21 +1992,26 @@ async function computeAvm(lat: number, lng: number, area: number | null, druhCod
   if (settled === 0) { ppm2 = ppm2 * 0.8; factors.push("nevysporiadaná ×0.8"); }
   const est = Math.round(area * ppm2);
   const spread = buildable ? 0.3 : 0.4;
-  const buildComps = comps.filter((c) => c.ppm2 >= 15).length;
-  const confidence: AvmResult["confidence"] = buildable ? (buildComps >= 8 ? "vysoká" : comps.length >= 3 ? "stredná" : "nízka") : "stredná";
+  const confidence: AvmResult["confidence"] = buildable ? (band.length >= 8 ? "vysoká" : (band.length >= 3 || okres) ? "stredná" : "nízka") : "stredná";
   return { estimate_eur: est, low_eur: Math.round(est * (1 - spread)), high_eur: Math.round(est * (1 + spread)), ppm2: Math.round(ppm2 * 100) / 100, klass, comps: comps.length, confidence, factors };
 }
 // Nájdi NAŠU parcelu pre daný bod naprieč VŠETKÝMI k.ú. (nezávisle od načítaného datasetu) + opportunity skóre.
 type OurCand = {
   parcel_id: string; dataset_id: string; parcel_no: string; lv_no: number | null; area_m2: number | null;
   use_type: string | null; kn_type: string | null; bpej: string | null; bpej_skupina: number | null;
-  settled: number | null; celok: number | null; centroid_lat: number | null; centroid_lng: number | null; ku_name: string | null;
+  settled: number | null; celok: number | null; centroid_lat: number | null; centroid_lng: number | null; ku_name: string | null; region: string | null;
 };
+// Okres z dataset.region (napr. "okres Čadca · Kysuce" → "Čadca")
+function okresFromRegion(region: string | null): string | null {
+  if (!region) return null;
+  const m = region.match(/okres\s+([A-Za-zÁ-ž.\s-]+?)(?:\s*·|$)/);
+  return m ? m[1].trim() : null;
+}
 async function lookupOurParcel(lat: number, lng: number, esknNo: string | null): Promise<EsknOurParcel | null> {
   const d = 0.0009;
   const cands = await q<OurCand>(
     `SELECT p.id AS parcel_id, p.dataset_id, p.parcel_no, p.lv_no, p.area_m2, p.use_type, p.kn_type,
-            p.bpej, p.bpej_skupina, p.settled, p.celok, p.centroid_lat, p.centroid_lng, d.ku_name
+            p.bpej, p.bpej_skupina, p.settled, p.celok, p.centroid_lat, p.centroid_lng, d.ku_name, d.region
      FROM parcels p JOIN datasets d ON d.id = p.dataset_id
      WHERE p.centroid_lat BETWEEN ? AND ? AND p.centroid_lng BETWEEN ? AND ? AND p.geometry_json IS NOT NULL
      LIMIT 200`,
@@ -2025,7 +2036,7 @@ async function lookupOurParcel(lat: number, lng: number, esknNo: string | null):
   }
   return {
     dataset_id: pick.dataset_id, parcel_id: pick.parcel_id, parcel_no: pick.parcel_no, lv_no: pick.lv_no,
-    ku_name: pick.ku_name, area_m2: pick.area_m2, use_type: pick.use_type, kn_type: pick.kn_type,
+    ku_name: pick.ku_name, okres: okresFromRegion(pick.region), area_m2: pick.area_m2, use_type: pick.use_type, kn_type: pick.kn_type,
     bpej: pick.bpej, bpej_skupina: pick.bpej_skupina, settled: pick.settled, celok: pick.celok,
     co_owners, has_spf, score,
   };
@@ -2035,7 +2046,7 @@ export const esknIdentify = createServerFn({ method: "POST" })
   .validator(z.object({ lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<EsknParcel> => {
     const base: EsknParcel = { found: false, parcel_no: null, area_m2: null, druh_pozemku: null, umiestnenie: null, ku_id: null, lv_id: null, lat: data.lat, lng: data.lng };
-    const key = `eskn:${data.lat.toFixed(5)}:${data.lng.toFixed(5)}`;
+    const key = `eskn2:${data.lat.toFixed(5)}:${data.lng.toFixed(5)}`;
     const cached = await regCacheRead(key, !!data.refresh, 7 * 24 * 3600);
     if (cached) return { ...(cached.payload as EsknParcel), cached: true, ageDays: cached.ageDays };
     const dd = 0.0012;
@@ -2071,7 +2082,7 @@ export const esknIdentify = createServerFn({ method: "POST" })
     }
     // Best-effort obohatenie — nesmie zhodiť ESKN výsledok ani zobraziť zavádzajúcu hlášku
     try { out.ours = await lookupOurParcel(data.lat, data.lng, out.parcel_no); } catch { /* ignore */ }
-    try { out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null); } catch { /* ignore */ }
+    try { out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null, out.ours?.okres ?? null); } catch { /* ignore */ }
     try { if (out.found || out.ours) await regCacheWrite(key, "eskn", out); } catch { /* ignore */ }
     return out;
   });

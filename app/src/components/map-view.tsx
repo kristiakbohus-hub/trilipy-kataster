@@ -154,7 +154,9 @@ function arcgisExport(l: LimitLayer, X: number, Y: number, res: number, w: numbe
   return `${l.url}/export?${p.toString()}`;
 }
 // ESKN podklad ako samostatná definícia (nezávislý od LIMIT_LAYERS toggle) — celoSR kataster, default vrstva.
-const ESKN_BASE: LimitLayer = { id: "eskn", name: "ESKN kataster — celé SR (ÚGKK)", url: "https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer", layers: "1,4,5,7,10,14", attribution: "ÚGKK ESKN" };
+const ESKN_BASE: LimitLayer = { id: "eskn", name: "ESKN register C — celé SR (ÚGKK)", url: "https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer", layers: "1,4,5,7,10,14", attribution: "ÚGKK ESKN" };
+// ESKN register E (určený operát) — parcely E-KN sú samostatná služba VRM/uo (layer 2 plocha, 0 číslo).
+const ESKN_BASE_E: LimitLayer = { id: "eskn-e", name: "ESKN register E (určený operát)", url: "https://kataster.skgeodesy.sk/eskn/rest/services/VRM/uo/MapServer", layers: "0,2", attribution: "ÚGKK ESKN" };
 // Dynamické dpi tak, aby efektívna mierka ostala v okne kreslenia ESKN (~1:1500) pri každom zoome.
 function esknDpiFor(res: number): number {
   return Math.max(1, Math.min(96, Math.round((1500 * 0.0254) / res)));
@@ -949,7 +951,18 @@ export function MapView({
             })()
           : null}
 
-        {/* ESKN kataster — DEFAULT celoSR podklad (dynamické dpi → parcely viditeľné pri každom zoome, ako ZBGIS) */}
+        {/* ESKN register E (určený operát) — pod C-KN, aby čísla C ostali navrchu */}
+        {view && size.w > 0 && esknBaseOn ? (
+          <img
+            key="eskn-base-e"
+            src={arcgisExport(ESKN_BASE_E, view.X, view.Y, res, size.w, size.h, esknDpiFor(res))}
+            alt="ESKN register E (ÚGKK)"
+            draggable={false}
+            style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h, transform: dragT, opacity: 0.75, userSelect: "none", pointerEvents: "none" }}
+          />
+        ) : null}
+
+        {/* ESKN register C — DEFAULT celoSR podklad (dynamické dpi → parcely viditeľné pri každom zoome, ako ZBGIS) */}
         {view && size.w > 0 && esknBaseOn ? (
           <img
             key="eskn-base"
