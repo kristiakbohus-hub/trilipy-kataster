@@ -136,21 +136,28 @@ function wmsGetMap(def: WmsDef, X: number, Y: number, res: number, w: number, h:
 // ——— Limity výstavby ako zapínateľné úradné vrstvy (ArcGIS export → transparentné PNG) ———
 type LimitLayer = { id: string; name: string; url: string; layers: string; attribution: string };
 const LIMIT_LAYERS: LimitLayer[] = [
-  { id: "eskn", name: "ESKN kataster — celé SK (ÚGKK)", url: "https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer", layers: "1,4,5,7,10,14", attribution: "ÚGKK ESKN" },
   { id: "zosuvy", name: "Zosuvy / svahové deformácie", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/zosuvy_vect/MapServer", layers: "2,3,4", attribution: "ŠGÚDŠ" },
   { id: "env", name: "Env. záťaže / skládky", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/skladky_vect/MapServer", layers: "0,1", attribution: "ŠGÚDŠ" },
   { id: "banske", name: "Staré banské diela", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/sbd_vect/MapServer", layers: "0,1,2", attribution: "ŠGÚDŠ" },
   { id: "les", name: "Lesné pozemky (JPRL)", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/JPRL/MapServer", layers: "0", attribution: "NLC" },
   { id: "toky", name: "Vodné toky", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/TokySR/MapServer", layers: "0", attribution: "NLC" },
 ];
-function arcgisExport(l: LimitLayer, X: number, Y: number, res: number, w: number, h: number): string {
+function arcgisExport(l: LimitLayer, X: number, Y: number, res: number, w: number, h: number, dpi?: number): string {
   const minx = X - (w / 2) * res, maxx = X + (w / 2) * res;
   const miny = Y - (h / 2) * res, maxy = Y + (h / 2) * res;
   const p = new URLSearchParams({
     bbox: `${minx},${miny},${maxx},${maxy}`, bboxSR: "3857", imageSR: "3857",
     size: `${w},${h}`, format: "png32", transparent: "true", layers: `show:${l.layers}`, f: "image",
   });
+  // dpi-trik: znížením dpi ArcGIS „uverí" menšej mierke → ESKN parcely sa vykreslia aj pri nižšom priblížení (ako ZBGIS).
+  if (dpi) p.set("dpi", String(dpi));
   return `${l.url}/export?${p.toString()}`;
+}
+// ESKN podklad ako samostatná definícia (nezávislý od LIMIT_LAYERS toggle) — celoSR kataster, default vrstva.
+const ESKN_BASE: LimitLayer = { id: "eskn", name: "ESKN kataster — celé SR (ÚGKK)", url: "https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer", layers: "1,4,5,7,10,14", attribution: "ÚGKK ESKN" };
+// Dynamické dpi tak, aby efektívna mierka ostala v okne kreslenia ESKN (~1:1500) pri každom zoome.
+function esknDpiFor(res: number): number {
+  return Math.max(4, Math.min(96, Math.round((1500 * 0.0254) / res)));
 }
 
 export function MapView({
@@ -227,8 +234,9 @@ export function MapView({
   const [legendOpen, setLegendOpen] = useState(false);
   const [limOn, setLimOn] = useState<Record<string, boolean>>({});   // úradné limity ako prekrytie
   const [limOp, setLimOp] = useState<Record<string, number>>({});
-  // Živý celoSR ESKN: identify ľubovoľnej parcely v SR (nezávisle od našich k.ú.)
-  const [esknMode, setEsknMode] = useState(false);
+  // ESKN-first: národný ÚGKK kataster ako DEFAULT podklad + identify ľubovoľnej parcely v SR
+  const [esknBaseOn, setEsknBaseOn] = useState(true);   // ESKN kataster ako default celoSR vrstva
+  const [esknMode, setEsknMode] = useState(true);       // klik = live ESKN identify (default zapnuté)
   const [esknHit, setEsknHit] = useState<EsknParcel | null>(null);
   const [esknBusy, setEsknBusy] = useState(false);
   // ÚP dokumenty obce (auto-fetch)
@@ -914,6 +922,17 @@ export function MapView({
             })()
           : null}
 
+        {/* ESKN kataster — DEFAULT celoSR podklad (dynamické dpi → parcely viditeľné pri každom zoome, ako ZBGIS) */}
+        {view && size.w > 0 && esknBaseOn ? (
+          <img
+            key="eskn-base"
+            src={arcgisExport(ESKN_BASE, view.X, view.Y, res, size.w, size.h, esknDpiFor(res))}
+            alt="ESKN kataster (ÚGKK)"
+            draggable={false}
+            style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h, transform: dragT, opacity: 0.95, userSelect: "none", pointerEvents: "none" }}
+          />
+        ) : null}
+
         {/* WMS rastrové vrstvy (stack, fail-soft) */}
         {view && size.w > 0
           ? enabledWms.map((w) => (
@@ -1356,16 +1375,10 @@ export function MapView({
         </div>
 
         <button
-          onClick={() => setEsknMode((v) => {
-            const nv = !v;
-            setLimOn((s) => ({ ...s, eskn: nv }));
-            if (!nv) setEsknHit(null);
-            else pushEvent("Celý ESKN zapnutý — klik na mapu identifikuje ľubovoľnú parcelu v SR.");
-            return nv;
-          })}
-          title="Zapnúť národný ESKN kataster ÚGKK na celej mape + klik = live identify ľubovoľnej parcely v SR"
-          className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (esknMode ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
-          🇸🇰 Celý ESKN{esknMode ? " · klik = identify" : ""}
+          onClick={() => { const nv = !esknBaseOn; setEsknBaseOn(nv); setEsknMode(nv); if (!nv) setEsknHit(null); pushEvent(nv ? "ESKN kataster zapnutý — default podklad + klik = identify." : "ESKN kataster vypnutý."); }}
+          title="ESKN národný kataster (ÚGKK) ako podklad na celom SR + klik = live identify ľubovoľnej parcely"
+          className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (esknBaseOn ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
+          🇸🇰 ESKN kataster{esknBaseOn ? " · zapnutý" : ""}
         </button>
 
         {colorMode === "bpej" ? (
