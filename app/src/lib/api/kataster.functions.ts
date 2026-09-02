@@ -1940,11 +1940,56 @@ export type EsknOurParcel = {
   bpej: string | null; bpej_skupina: number | null; settled: number | null; celok: number | null;
   co_owners: number | null; has_spf: number | null; score: number | null;
 };
+export type AvmResult = {
+  estimate_eur: number | null; low_eur: number | null; high_eur: number | null;
+  ppm2: number | null; klass: string; comps: number; confidence: "vysoká" | "stredná" | "nízka"; factors: string[];
+};
 export type EsknParcel = {
   found: boolean; parcel_no: string | null; area_m2: number | null; druh_pozemku: string | null;
   umiestnenie: string | null; ku_id: number | null; lv_id: number | null;
-  lat: number; lng: number; ours?: EsknOurParcel | null; cached?: boolean; ageDays?: number; message?: string;
+  lat: number; lng: number; ours?: EsknOurParcel | null; avm?: AvmResult | null; cached?: boolean; ageDays?: number; message?: string;
 };
+
+// ——— AVM (automatický odhad hodnoty) — comparables z trhu + úpravy podľa druhu/umiestnenia/BPEJ/veľkosti/vysporiadanosti ———
+// Orientačný model, NIE znalecký posudok. Sadzby sú laditeľné (kataster profík vie dodať reálne čísla).
+const AG_BASE_PPM2: Record<number, number> = { 1: 1.5, 2: 2.0, 3: 3.0, 4: 6.0, 5: 5.0, 6: 1.0, 7: 0.6, 8: 0.3, 10: 2.5 };
+async function computeAvm(lat: number, lng: number, area: number | null, druhCode: number | null, umCode: number | null, bpejSkupina: number | null, settled: number | null): Promise<AvmResult> {
+  const empty: AvmResult = { estimate_eur: null, low_eur: null, high_eur: null, ppm2: null, klass: "neznáme", comps: 0, confidence: "nízka", factors: [] };
+  if (!area || area <= 0) return empty;
+  const d = 0.13; // ~14 km box comparables
+  const comps = await q<{ ppm2: number }>(
+    "SELECT ppm2 FROM market_listings WHERE ptype='pozemok' AND ppm2 IS NOT NULL AND ppm2 BETWEEN 0.5 AND 1500 AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?",
+    [lat - d, lat + d, lng - d, lng + d]);
+  const buildable = umCode === 1 || druhCode === 9;
+  const factors: string[] = [];
+  let ppm2: number | null = null;
+  let klass = "";
+  if (buildable) {
+    const band = comps.map((c) => c.ppm2).filter((p) => p >= 15).sort((a, b) => a - b);
+    const med = band.length ? band[Math.floor(band.length / 2)] : null;
+    if (med != null) {
+      const sizeF = area <= 1500 ? 1 : area <= 5000 ? 0.9 : area <= 20000 ? 0.78 : 0.65;
+      ppm2 = med * sizeF;
+      klass = umCode === 1 ? "stavebný / intravilán" : "zastavaná plocha";
+      factors.push(`medián stavebných inzerátov ${Math.round(med)} €/m²`);
+      if (sizeF < 1) factors.push(`veľkosť ×${sizeF}`);
+    }
+  } else {
+    const base = (druhCode != null && AG_BASE_PPM2[druhCode]) ? AG_BASE_PPM2[druhCode] : 1.5;
+    let f = base;
+    factors.push(`poľnohosp. základ ${base} €/m²`);
+    if (bpejSkupina != null) { const bf = Math.max(0.5, Math.min(1.4, 1.4 - (bpejSkupina - 1) * 0.1)); f = f * bf; factors.push(`BPEJ skupina ${bpejSkupina} ×${bf.toFixed(2)}`); }
+    ppm2 = f;
+    klass = druhCode === 7 ? "lesný pozemok" : druhCode === 8 ? "vodná plocha" : "poľnohospodárska pôda";
+  }
+  if (ppm2 == null) return { ...empty, comps: comps.length };
+  if (settled === 0) { ppm2 = ppm2 * 0.8; factors.push("nevysporiadaná ×0.8"); }
+  const est = Math.round(area * ppm2);
+  const spread = buildable ? 0.3 : 0.4;
+  const buildComps = comps.filter((c) => c.ppm2 >= 15).length;
+  const confidence: AvmResult["confidence"] = buildable ? (buildComps >= 8 ? "vysoká" : comps.length >= 3 ? "stredná" : "nízka") : "stredná";
+  return { estimate_eur: est, low_eur: Math.round(est * (1 - spread)), high_eur: Math.round(est * (1 + spread)), ppm2: Math.round(ppm2 * 100) / 100, klass, comps: comps.length, confidence, factors };
+}
 // Nájdi NAŠU parcelu pre daný bod naprieč VŠETKÝMI k.ú. (nezávisle od načítaného datasetu) + opportunity skóre.
 type OurCand = {
   parcel_id: string; dataset_id: string; parcel_no: string; lv_no: number | null; area_m2: number | null;
@@ -2021,6 +2066,8 @@ export const esknIdentify = createServerFn({ method: "POST" })
       };
       // Naše vybudované dáta pre túto parcelu (naprieč VŠETKÝMI k.ú.)
       out.ours = await lookupOurParcel(data.lat, data.lng, parcel_no);
+      // AVM — orientačný odhad hodnoty z comparables + úprav
+      out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null);
       if (out.found || out.ours) await regCacheWrite(key, "eskn", out);
       return out;
     } catch {

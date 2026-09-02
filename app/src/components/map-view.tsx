@@ -1321,20 +1321,27 @@ export function MapView({
                   </div>
                 ) : null}
 
-                {/* Trh v okolí + orientačná hodnota (predchodca AVM) */}
-                {esknMarket.length > 0 ? (() => {
-                  const poz = esknMarket.filter((m) => m.ptype === "pozemok" && m.ppm2 != null).map((m) => m.ppm2 as number).sort((a, b) => a - b);
-                  const med = poz.length ? poz[Math.floor(poz.length / 2)] : null;
-                  const area = esknHit.area_m2 ?? esknHit.ours?.area_m2 ?? null;
-                  const est = med != null && area != null ? Math.round(med * area) : null;
-                  return (
-                    <div className="space-y-0.5 rounded-lg border border-line bg-surface-2/30 p-2">
-                      <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">💶 Trh v okolí (do 5 km)</div>
-                      <div className="text-muted">{esknMarket.length} inzerátov{med != null ? ` · medián pozemkov ${Math.round(med).toLocaleString("sk-SK")} €/m²` : ""}</div>
-                      {est != null ? <div className="text-muted">Orient. hodnota: <b className="text-fg">{est.toLocaleString("sk-SK")} €</b> <span className="text-[10px]">(výmera × medián, nie znal. posudok)</span></div> : null}
+                {/* AVM — automatický odhad hodnoty */}
+                {esknHit.avm && esknHit.avm.estimate_eur != null ? (
+                  <div className="space-y-0.5 rounded-lg border border-brand/40 bg-brand/5 p-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-brand">💶 AVM — odhad hodnoty</span>
+                      <span className="rounded-full border border-line px-1.5 py-0.5 text-[9px] text-muted">spoľahlivosť: {esknHit.avm.confidence}</span>
                     </div>
-                  );
-                })() : null}
+                    <div className="text-lg font-bold tabular-nums text-fg">{esknHit.avm.estimate_eur.toLocaleString("sk-SK")} €</div>
+                    <div className="text-[11px] text-muted">rozpätie {esknHit.avm.low_eur?.toLocaleString("sk-SK")}–{esknHit.avm.high_eur?.toLocaleString("sk-SK")} € · {esknHit.avm.ppm2} €/m² · {esknHit.avm.klass}</div>
+                    {esknHit.avm.factors.length ? <div className="text-[10px] text-muted">{esknHit.avm.factors.join(" · ")}</div> : null}
+                    <div className="text-[10px] text-muted">Comparables: {esknHit.avm.comps} inzerátov v okolí. Orientačný odhad — nie znalecký posudok.</div>
+                  </div>
+                ) : null}
+
+                {/* Trh v okolí — inzeráty */}
+                {esknMarket.length > 0 ? (
+                  <div className="space-y-0.5 rounded-lg border border-line bg-surface-2/30 p-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">🏷️ Trh v okolí (do 5 km)</div>
+                    <div className="text-muted">{esknMarket.length} inzerátov v okolí (zapni „Trh vo výreze" pre piny).</div>
+                  </div>
+                ) : null}
 
                 {esknHit.cached ? <div className="text-[10px] text-muted">(z cache)</div> : null}
               </div>
