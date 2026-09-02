@@ -1202,7 +1202,7 @@ export const lookupRpo = createServerFn({ method: "POST" })
     try {
       const ctrl = new AbortController();
       const to = setTimeout(() => ctrl.abort(), 7000);
-      const res = await fetch(url, { headers: { accept: "application/json" }, signal: ctrl.signal });
+      const res = await fetch(url, { headers: { accept: "application/json", "user-agent": "tri-lipy/1.0 (kataster)" }, signal: ctrl.signal });
       clearTimeout(to);
       if (!res.ok) return { ok: false, results: [], message: `RPO odpovedalo ${res.status}.` };
       const json = (await res.json()) as { results?: unknown[] };
@@ -1479,7 +1479,7 @@ async function fetchJsonTimed(url: string, ms = 9000): Promise<unknown> {
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), ms);
   try {
-    const res = await fetch(url, { headers: { accept: "application/json" }, signal: ctrl.signal });
+    const res = await fetch(url, { headers: { accept: "application/json", "user-agent": "tri-lipy/1.0 (kataster)" }, signal: ctrl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } finally { clearTimeout(to); }
@@ -2041,6 +2041,8 @@ export const esknIdentify = createServerFn({ method: "POST" })
     const dd = 0.0012;
     const ext = `${data.lng - dd},${data.lat - dd},${data.lng + dd},${data.lat + dd}`;
     const url = `https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer/identify?geometry=${data.lng},${data.lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:9&tolerance=3&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=false&f=json`;
+    let out: EsknParcel = { ...base };
+    let druhCode: number | null = null, umCode: number | null = null;
     try {
       const j = asObj(await fetchJsonTimed(url, 12000)) ?? {};
       const results = Array.isArray(j.results) ? j.results : [];
@@ -2052,9 +2054,9 @@ export const esknIdentify = createServerFn({ method: "POST" })
         return n != null && isFinite(n) ? n : null;
       };
       const parcel_no = a["Parcelné číslo"] != null ? String(a["Parcelné číslo"]) : null;
-      const druhCode = numAttr("Identifikátor druhu pozemku");
-      const umCode = numAttr("Identifikátor umiestnenia pozemku");
-      const out: EsknParcel = {
+      druhCode = numAttr("Identifikátor druhu pozemku");
+      umCode = numAttr("Identifikátor umiestnenia pozemku");
+      out = {
         ...base,
         found: !!parcel_no,
         parcel_no,
@@ -2064,15 +2066,14 @@ export const esknIdentify = createServerFn({ method: "POST" })
         ku_id: numAttr("Identifikátor katastrálneho územia"),
         lv_id: numAttr("Identifikátor listu vlastníctva"),
       };
-      // Naše vybudované dáta pre túto parcelu (naprieč VŠETKÝMI k.ú.)
-      out.ours = await lookupOurParcel(data.lat, data.lng, parcel_no);
-      // AVM — orientačný odhad hodnoty z comparables + úprav
-      out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null);
-      if (out.found || out.ours) await regCacheWrite(key, "eskn", out);
-      return out;
     } catch {
-      return { ...base, message: "ESKN nedostupné — skús znova." };
+      out = { ...base, message: "ESKN nedostupné — skús znova." };
     }
+    // Best-effort obohatenie — nesmie zhodiť ESKN výsledok ani zobraziť zavádzajúcu hlášku
+    try { out.ours = await lookupOurParcel(data.lat, data.lng, out.parcel_no); } catch { /* ignore */ }
+    try { out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null); } catch { /* ignore */ }
+    try { if (out.found || out.ours) await regCacheWrite(key, "eskn", out); } catch { /* ignore */ }
+    return out;
   });
 
 // ——— Územný plán: register publikovaných dokumentov obce (auto-fetch z webygroup CMS a pod.) ———
