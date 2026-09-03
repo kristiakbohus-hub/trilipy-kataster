@@ -1635,7 +1635,7 @@ const normOkres = (okresRow: unknown, obec: unknown): string | null => {
 };
 export const refreshMarketData = createServerFn({ method: "POST" })
   .validator(z.object({ role: roleSchema, url: z.string().url().optional() }))
-  .handler(async ({ data }): Promise<{ ok: boolean; index: number; opps: number; generated?: string; chunks?: number; message?: string }> => {
+  .handler(async ({ data }): Promise<{ ok: boolean; index: number; opps: number; generated?: string; chunks?: number; phChunks?: number; message?: string }> => {
     const role = data.role as Role;
     if (!canRunPipeline(role)) return { ok: false, index: 0, opps: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
@@ -1663,9 +1663,11 @@ export const refreshMarketData = createServerFn({ method: "POST" })
     if (generated) await DB.prepare("INSERT INTO market_meta (key,value) VALUES ('generated',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(generated).run();
     const chunks = typeof j.listings_chunks === "number" ? j.listings_chunks : 0;
     await DB.prepare("INSERT INTO market_meta (key,value) VALUES ('listings_chunks',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(chunks)).run();
+    const phChunks = typeof j.pricehistory_chunks === "number" ? j.pricehistory_chunks : 0;
+    await DB.prepare("INSERT INTO market_meta (key,value) VALUES ('pricehistory_chunks',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(String(phChunks)).run();
     if (asVal(j.mode) === "full" && generated) await DB.prepare("INSERT INTO market_meta (key,value) VALUES ('last_full',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(generated).run();
     await logAudit("market.refresh", role, `Trhové dáta: ${idxStmts.length} index, ${oppStmts.length} príležitostí, ${chunks} chunkov.`);
-    return { ok: true, index: idxStmts.length, opps: oppStmts.length, generated, chunks };
+    return { ok: true, index: idxStmts.length, opps: oppStmts.length, generated, chunks, phChunks };
   });
 
 // Chunkovaný ingest inzerátov (market-listings-<i>.json) — Worker fetchne chunk a upsertne (história navždy).
@@ -1693,6 +1695,37 @@ export const refreshMarketListings = createServerFn({ method: "POST" })
       .bind(s(o.source) ?? "bazos", s(o.ext_id), s(o.url), s(o.title), s(o.ptype), s(o.deal), s(o.obec), s(o.psc), num(o.lat), num(o.lng), area, num(o.rooms), price, ppm2, s(o.first_seen ?? o.listed), s(o.last_seen), priceSane(num(o.first_price ?? o.price_eur ?? o.price)), s(o.flags), okres); });
     for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
     return { ok: true, count: stmts.length };
+  });
+
+// ——— Per-inzerát história ceny: ingest chunku (market-pricehistory-<i>.json) + fetch krivky ———
+export const refreshMarketPriceHistory = createServerFn({ method: "POST" })
+  .validator(z.object({ url: z.string().url(), role: roleSchema }))
+  .handler(async ({ data }): Promise<{ ok: boolean; count: number; message?: string }> => {
+    const role = data.role as Role;
+    if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
+    let arr: unknown[];
+    try { const j = await fetchJsonTimed(data.url, 20000); arr = Array.isArray(j) ? j : asArr((asObj(j) ?? {}).history); }
+    catch (e) { return { ok: false, count: 0, message: e instanceof Error ? e.message : "Fetch zlyhal." }; }
+    const num = (v: unknown): number | null => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" && !isNaN(Number(v)) ? Number(v) : null);
+    const s = (v: unknown) => asVal(v);
+    const valid = arr.filter((o0) => { const o = asObj(o0) ?? {}; return o.ext_id != null && o.day != null; });
+    const stmts = valid.map((o0) => {
+      const o = asObj(o0) ?? {};
+      return DB.prepare(
+        "INSERT INTO market_price_history (source,ext_id,day,price_eur,ppm2) VALUES (?,?,?,?,?) ON CONFLICT(source,ext_id,day) DO UPDATE SET price_eur=excluded.price_eur,ppm2=excluded.ppm2")
+        .bind(s(o.source) ?? "bazos", s(o.ext_id), s(o.day), num(o.price_eur ?? o.price), num(o.ppm2));
+    });
+    for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
+    return { ok: true, count: stmts.length };
+  });
+
+export type PricePoint = { day: string; price_eur: number | null; ppm2: number | null };
+export const getListingPriceHistory = createServerFn({ method: "POST" })
+  .validator(z.object({ source: z.string(), ext_id: z.string() }))
+  .handler(async ({ data }): Promise<PricePoint[]> => {
+    return await q<PricePoint>("SELECT day, price_eur, ppm2 FROM market_price_history WHERE source = ? AND ext_id = ? ORDER BY day", [data.source, data.ext_id]);
   });
 
 export type MarketListing = {
@@ -1786,7 +1819,7 @@ export const getMarketSeries = createServerFn({ method: "POST" })
 
 // ——— Trhová história: pohyb cien v čase podľa podmienok (market_index denne) + najväčšie cenové pohyby inzerátov ———
 export type PriceTrendPoint = { day: string; median_eur_m2: number; p25: number | null; p75: number | null; cnt: number };
-export type PriceMover = { title: string | null; url: string | null; obec: string | null; area_m2: number | null; first_price: number | null; price_eur: number | null; ppm2: number | null; last_seen: string | null; drop_pct: number };
+export type PriceMover = { source: string | null; ext_id: string | null; title: string | null; url: string | null; obec: string | null; area_m2: number | null; first_price: number | null; price_eur: number | null; ppm2: number | null; last_seen: string | null; drop_pct: number };
 export const getMarketHistory = createServerFn({ method: "POST" })
   .validator(z.object({ okres: z.string().optional(), obec: z.string().optional(), ptype: z.string(), deal: z.string().optional() }))
   .handler(async ({ data }): Promise<{ series: PriceTrendPoint[]; movers: PriceMover[]; deal: string; ptype: string }> => {
@@ -1801,7 +1834,7 @@ export const getMarketHistory = createServerFn({ method: "POST" })
     const lw: string[] = ["ptype = ?", "first_price IS NOT NULL", "price_eur IS NOT NULL", "first_price <> price_eur", `price_eur <= ${PRICE_MAX}`]; const la: unknown[] = [data.ptype];
     if (data.obec) { lw.push("obec = ?"); la.push(data.obec); } else if (data.okres) { lw.push("okres = ?"); la.push(data.okres); }
     const rows = await q<Omit<PriceMover, "drop_pct">>(
-      `SELECT title, url, obec, area_m2, first_price, price_eur, ppm2, last_seen FROM market_listings WHERE ${lw.join(" AND ")} ORDER BY ABS(price_eur - first_price) DESC LIMIT 40`, la);
+      `SELECT source, ext_id, title, url, obec, area_m2, first_price, price_eur, ppm2, last_seen FROM market_listings WHERE ${lw.join(" AND ")} ORDER BY ABS(price_eur - first_price) DESC LIMIT 40`, la);
     const movers: PriceMover[] = rows.map((r) => ({ ...r, drop_pct: r.first_price && r.price_eur ? Math.round((1 - r.price_eur / r.first_price) * 100) : 0 }));
     return { series, movers, deal, ptype: data.ptype };
   });

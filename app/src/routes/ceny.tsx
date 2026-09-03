@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities, refreshMarketData, refreshMarketListings, getMarketListings, type MarketTreeRow } from "../lib/api/kataster.functions";
+import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities, refreshMarketData, refreshMarketListings, refreshMarketPriceHistory, getMarketListings, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
 import { Card, Disclaimer, SectionHeader, Badge } from "../components/kit";
 
@@ -112,7 +112,14 @@ function CenyPage() {
         if (rr.ok) ing += rr.count;
         setMsg(`Načítavam inzeráty… ${i + 1}/${r.chunks} (${ing})`);
       }
-      setMsg(`Načítané: ${r.index} index, ${r.opps} príležitostí, ${ing} inzerátov${r.generated ? ` (dáta z ${r.generated})` : ""}.`);
+      let ph = 0;
+      for (let i = 0; i < (r.phChunks ?? 0); i++) {
+        const phUrl = base.replace("market-data.json", `market-pricehistory-${i}.json`);
+        const rr = await refreshMarketPriceHistory({ data: { role, url: phUrl } }).catch(() => ({ ok: false, count: 0 }));
+        if (rr.ok) ph += rr.count;
+        setMsg(`Načítavam cenové krivky… ${i + 1}/${r.phChunks} (${ph})`);
+      }
+      setMsg(`Načítané: ${r.index} index, ${r.opps} príležitostí, ${ing} inzerátov, ${ph} cenových snímok${r.generated ? ` (dáta z ${r.generated})` : ""}.`);
       setStats(await getMarketStats());
       setTree(await getMarketTree({ data: { deal: "predaj" } }).catch(() => []));
     } catch (e) { setMsg(e instanceof Error ? e.message : "Chyba."); } finally { setBusy(false); }

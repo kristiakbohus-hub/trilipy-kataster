@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { getMarketHistory, getMarketTree, type MarketTreeRow } from "../lib/api/kataster.functions";
+import { getMarketHistory, getMarketTree, getListingPriceHistory, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { Card, SectionHeader, Disclaimer } from "../components/kit";
 
 export const Route = createFileRoute("/trhova-historia")({
@@ -52,6 +52,28 @@ function TrendChart({ series }: { series: Awaited<ReturnType<typeof getMarketHis
   );
 }
 
+function Sparkline({ pts }: { pts: { day: string; price_eur: number | null }[] }) {
+  const fpts = pts.filter((p) => p.price_eur != null);
+  if (fpts.length < 2) return <div className="py-1 text-[11px] text-muted">Zatiaľ len 1 cenový bod — krivka narastie s dňami zberu.</div>;
+  const W = 340, H = 64, pad = 8;
+  const vals = fpts.map((p) => p.price_eur as number);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const x = (i: number) => pad + (i / (fpts.length - 1)) * (W - 2 * pad);
+  const y = (v: number) => pad + (1 - (v - min) / (max - min || 1)) * (H - 2 * pad - 8);
+  const line = fpts.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)} ${y(p.price_eur as number).toFixed(1)}`).join(" ");
+  return (
+    <svg width={W} height={H} className="max-w-full" role="img" aria-label="Krivka ceny inzerátu">
+      <path d={line} fill="none" stroke="#9a7b3e" strokeWidth={1.5} />
+      {fpts.map((p, i) => (
+        <g key={i}>
+          <circle cx={x(i)} cy={y(p.price_eur as number)} r={2.5} fill="#9a7b3e" />
+          <text x={x(i)} y={H - 1} textAnchor="middle" fontSize={8} fill="#8a8578">{p.day.slice(5)}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 function TrhovaHistoriaPage() {
   const { tree, init } = Route.useLoaderData();
   const [okres, setOkres] = useState("Čadca");
@@ -70,6 +92,15 @@ function TrhovaHistoriaPage() {
     setBusy(true);
     try { setRes(await getMarketHistory({ data: { okres: o || undefined, ptype: pt, deal: dl } })); }
     finally { setBusy(false); }
+  }
+
+  const [openMover, setOpenMover] = useState<number | null>(null);
+  const [curve, setCurve] = useState<Awaited<ReturnType<typeof getListingPriceHistory>>>([]);
+  async function openCurve(i: number, m: (typeof res.movers)[number]) {
+    if (openMover === i) { setOpenMover(null); return; }
+    setOpenMover(i); setCurve([]);
+    if (!m.source || !m.ext_id) return;
+    try { setCurve(await getListingPriceHistory({ data: { source: m.source, ext_id: m.ext_id } })); } catch { setCurve([]); }
   }
 
   const s = res.series;
@@ -123,19 +154,22 @@ function TrhovaHistoriaPage() {
         ) : (
           <div className="mt-2 divide-y divide-line">
             {res.movers.slice(0, 25).map((m, i) => (
-              <div key={i} className="flex items-center gap-3 py-2">
-                <div className="w-14 shrink-0 text-center">
-                  <div className={"text-sm font-bold tabular-nums " + (m.drop_pct > 0 ? "text-[#3f5a3c]" : "text-[#9c4a40]")}>{m.drop_pct > 0 ? "−" : "+"}{Math.abs(m.drop_pct)}%</div>
+              <div key={i} className="py-2">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => void openCurve(i, m)} title="Zobraziť krivku ceny" className="w-14 shrink-0 text-center">
+                    <div className={"text-sm font-bold tabular-nums " + (m.drop_pct > 0 ? "text-[#3f5a3c]" : "text-[#9c4a40]")}>{m.drop_pct > 0 ? "−" : "+"}{Math.abs(m.drop_pct)}%</div>
+                  </button>
+                  <button onClick={() => void openCurve(i, m)} className="min-w-0 flex-1 text-left">
+                    <div className="truncate text-sm text-fg">{m.title || "inzerát"}</div>
+                    <div className="truncate text-[12px] text-muted">{m.obec ?? "—"}{m.area_m2 ? ` · ${m.area_m2.toLocaleString("sk-SK")} m²` : ""} · {openMover === i ? "▴ krivka" : "▾ krivka"}</div>
+                  </button>
+                  <div className="shrink-0 text-right text-xs">
+                    <div className="text-muted line-through">{eur(m.first_price)} €</div>
+                    <div className="font-semibold text-fg">{eur(m.price_eur)} €</div>
+                  </div>
+                  {m.url ? <a href={m.url} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-md border border-line px-2 py-1 text-xs text-fg hover:border-ink">↗</a> : null}
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm text-fg">{m.title || "inzerát"}</div>
-                  <div className="truncate text-[12px] text-muted">{m.obec ?? "—"}{m.area_m2 ? ` · ${m.area_m2.toLocaleString("sk-SK")} m²` : ""}</div>
-                </div>
-                <div className="shrink-0 text-right text-xs">
-                  <div className="text-muted line-through">{eur(m.first_price)} €</div>
-                  <div className="font-semibold text-fg">{eur(m.price_eur)} €</div>
-                </div>
-                {m.url ? <a href={m.url} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-md border border-line px-2 py-1 text-xs text-fg hover:border-ink">↗</a> : null}
+                {openMover === i ? <div className="mt-1 rounded-md border border-line bg-surface-2/30 p-2"><Sparkline pts={curve} /></div> : null}
               </div>
             ))}
           </div>
