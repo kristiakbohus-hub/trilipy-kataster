@@ -1784,6 +1784,28 @@ export const getMarketSeries = createServerFn({ method: "POST" })
       "SELECT day,median_eur_m2,cnt FROM market_index WHERE okres=? AND ptype=? AND deal=? AND obec IS NULL ORDER BY day", [data.okres, data.ptype, data.deal]);
   });
 
+// ——— Trhová história: pohyb cien v čase podľa podmienok (market_index denne) + najväčšie cenové pohyby inzerátov ———
+export type PriceTrendPoint = { day: string; median_eur_m2: number; p25: number | null; p75: number | null; cnt: number };
+export type PriceMover = { title: string | null; url: string | null; obec: string | null; area_m2: number | null; first_price: number | null; price_eur: number | null; ppm2: number | null; last_seen: string | null; drop_pct: number };
+export const getMarketHistory = createServerFn({ method: "POST" })
+  .validator(z.object({ okres: z.string().optional(), obec: z.string().optional(), ptype: z.string(), deal: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ series: PriceTrendPoint[]; movers: PriceMover[]; deal: string; ptype: string }> => {
+    const deal = data.deal ?? "predaj";
+    const w: string[] = ["ptype = ?", "deal = ?"]; const a: unknown[] = [data.ptype, deal];
+    if (data.obec) { w.push("obec = ?"); a.push(data.obec); }
+    else if (data.okres) { w.push("okres = ?", "obec IS NULL"); a.push(data.okres); }
+    else { w.push("okres IS NULL", "obec IS NULL"); }
+    const series = await q<PriceTrendPoint>(
+      `SELECT day, median_eur_m2, p25, p75, cnt FROM market_index WHERE ${w.join(" AND ")} ORDER BY day`, a);
+    // najväčšie pohyby cien (pôvodná → aktuálna) pre podmienky — z market_listings (first_price vs price_eur)
+    const lw: string[] = ["ptype = ?", "first_price IS NOT NULL", "price_eur IS NOT NULL", "first_price <> price_eur", `price_eur <= ${PRICE_MAX}`]; const la: unknown[] = [data.ptype];
+    if (data.obec) { lw.push("obec = ?"); la.push(data.obec); } else if (data.okres) { lw.push("okres = ?"); la.push(data.okres); }
+    const rows = await q<Omit<PriceMover, "drop_pct">>(
+      `SELECT title, url, obec, area_m2, first_price, price_eur, ppm2, last_seen FROM market_listings WHERE ${lw.join(" AND ")} ORDER BY ABS(price_eur - first_price) DESC LIMIT 40`, la);
+    const movers: PriceMover[] = rows.map((r) => ({ ...r, drop_pct: r.first_price && r.price_eur ? Math.round((1 - r.price_eur / r.first_price) * 100) : 0 }));
+    return { series, movers, deal, ptype: data.ptype };
+  });
+
 export type MarketOpp = {
   source: string | null; url: string | null; title: string | null; ptype: string | null; deal: string | null;
   okres: string | null; obec: string | null; area_m2: number | null; price_eur: number | null; price_per_m2: number | null;

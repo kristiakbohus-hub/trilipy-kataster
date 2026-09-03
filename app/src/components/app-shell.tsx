@@ -20,6 +20,7 @@ const NAV: { to: AppPath; label: string; icon: string }[] = [
   { to: "/reporty", label: "Reporty", icon: "report" },
   { to: "/pravny-referent", label: "Právny referent", icon: "report" },
   { to: "/ceny", label: "Trhové ceny", icon: "target" },
+  { to: "/trhova-historia", label: "Trhová história", icon: "report" },
   { to: "/system", label: "System Status", icon: "shield" },
 ];
 

@@ -14,6 +14,7 @@ export type AppPath =
   | "/reporty"
   | "/prilezitosti"
   | "/prieskum"
+  | "/trhova-historia"
   | "/deals"
   | "/pravny-referent"
   | "/ceny"

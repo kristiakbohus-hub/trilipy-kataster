@@ -14,6 +14,7 @@ import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SystemRouteImport } from './routes/system'
 import { Route as PrilezitostiRouteImport } from './routes/prilezitosti'
 import { Route as PrieskumRouteImport } from './routes/prieskum'
+import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
 import { Route as ReportyRouteImport } from './routes/reporty'
 import { Route as ImportRouteImport } from './routes/import'
 import { Route as CasesRouteImport } from './routes/cases'
@@ -56,6 +57,11 @@ const PrilezitostiRoute = PrilezitostiRouteImport.update({
 const PrieskumRoute = PrieskumRouteImport.update({
   id: '/prieskum',
   path: '/prieskum',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TrhovaHistoriaRoute = TrhovaHistoriaRouteImport.update({
+  id: '/trhova-historia',
+  path: '/trhova-historia',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportyRoute = ReportyRouteImport.update({
@@ -161,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/reporty': typeof ReportyRoute
   '/prilezitosti': typeof PrilezitostiRoute
   '/prieskum': typeof PrieskumRoute
+  '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
   '/system': typeof SystemRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByTo {
   '/reporty': typeof ReportyRoute
   '/prilezitosti': typeof PrilezitostiRoute
   '/prieskum': typeof PrieskumRoute
+  '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
   '/system': typeof SystemRoute
@@ -212,6 +220,7 @@ export interface FileRoutesById {
   '/reporty': typeof ReportyRoute
   '/prilezitosti': typeof PrilezitostiRoute
   '/prieskum': typeof PrieskumRoute
+  '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
   '/system': typeof SystemRoute
@@ -239,6 +248,7 @@ export interface FileRouteTypes {
     | '/reporty'
     | '/prilezitosti'
     | '/prieskum'
+    | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
     | '/system'
@@ -264,6 +274,7 @@ export interface FileRouteTypes {
     | '/reporty'
     | '/prilezitosti'
     | '/prieskum'
+    | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
     | '/system'
@@ -289,6 +300,7 @@ export interface FileRouteTypes {
     | '/reporty'
     | '/prilezitosti'
     | '/prieskum'
+    | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
     | '/system'
@@ -313,6 +325,7 @@ export interface RootRouteChildren {
   ReportyRoute: typeof ReportyRoute
   PrilezitostiRoute: typeof PrilezitostiRoute
   PrieskumRoute: typeof PrieskumRoute
+  TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
   PravnyReferentRoute: typeof PravnyReferentRoute
   CenyRoute: typeof CenyRoute
   SystemRoute: typeof SystemRoute
@@ -369,6 +382,13 @@ declare module '@tanstack/react-router' {
       path: '/prieskum'
       fullPath: '/prieskum'
       preLoaderRoute: typeof PrieskumRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/trhova-historia': {
+      id: '/trhova-historia'
+      path: '/trhova-historia'
+      fullPath: '/trhova-historia'
+      preLoaderRoute: typeof TrhovaHistoriaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reporty': {
@@ -505,6 +525,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportyRoute: ReportyRoute,
   PrilezitostiRoute: PrilezitostiRoute,
   PrieskumRoute: PrieskumRoute,
+  TrhovaHistoriaRoute: TrhovaHistoriaRoute,
   PravnyReferentRoute: PravnyReferentRoute,
   CenyRoute: CenyRoute,
   SystemRoute: SystemRoute,
