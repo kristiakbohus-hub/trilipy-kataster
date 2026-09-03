@@ -1972,11 +1972,11 @@ export function MapView({
               <div className="text-muted">LV {identified.lv_no} · {idOwners.count} vlastníkov — <span style={{ color: "#9a7b3e" }}>chránené</span> (rola).</div>
             )}
           </div>
-          {/* Inzeráty v okolí (trhové ceny) */}
+          {/* Inzeráty v okolí (trhové ceny) — skladacie */}
           {nearListings.length ? (
-            <div className="mt-3 rounded-md border border-line bg-surface-2/30 p-2 text-xs">
-              <div className="mb-1 font-semibold text-fg">🏷️ Inzeráty v okolí ({nearListings.length})</div>
-              <div className="max-h-52 space-y-0.5 overflow-y-auto">
+            <details className="mt-3 rounded-md border border-line bg-surface-2/30 p-2 text-xs">
+              <summary className="cursor-pointer font-semibold text-fg">🏷️ Inzeráty v okolí ({nearListings.length})</summary>
+              <div className="mt-1 max-h-52 space-y-0.5 overflow-y-auto">
                 {nearListings.slice(0, 30).map((l, i) => (
                   <div key={i} className="flex items-center justify-between gap-2 border-b border-line/40 py-0.5">
                     <a href={l.url ?? "#"} target="_blank" rel="noreferrer" className="min-w-0 truncate text-fg hover:underline">{l.title ?? "inzerát"}</a>
@@ -1985,7 +1985,7 @@ export function MapView({
                 ))}
               </div>
               <div className="mt-1 text-[10px] text-muted">Poloha ~stred obce (bazos). Zelené piny na mape = pod trhom / zníženie.</div>
-            </div>
+            </details>
           ) : null}
 
           {/* Development potenciál — ÚP rekapitulácia + kalkulačka + skóre */}
@@ -2025,11 +2025,12 @@ export function MapView({
             </div>
           ) : null}
 
-          {/* Limity výstavby — úradné registre (ŠGÚDŠ geohazardy, NLC lesy/vodné toky) */}
+          {/* Limity výstavby — úradné registre (ŠGÚDŠ geohazardy, NLC lesy/vodné toky) — skladacie */}
           {identified.centroid_lat != null && identified.centroid_lng != null && limits ? (
-            <div className="mt-3 rounded-md border border-line bg-surface-2/20 p-2">
-              <LimitsPanel data={limits} />
-            </div>
+            <details open className="mt-3 rounded-md border border-line bg-surface-2/20 p-2">
+              <summary className="cursor-pointer text-sm font-semibold text-fg">Limity výstavby{limits.items.filter((i) => i.hit).length ? ` · ${limits.items.filter((i) => i.hit).length} zásah` : " · bez zásahu"}</summary>
+              <div className="mt-1"><LimitsPanel data={limits} /></div>
+            </details>
           ) : null}
 
           {/* Rozbaliteľné celé LV — majetková podstata (C+E), stavby, vlastníci, hodnota */}
