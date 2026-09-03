@@ -21,12 +21,17 @@ function DealRadarPage() {
   const [minScore, setMinScore] = useState(0);
   const [res, setRes] = useState(init);
   const [busy, setBusy] = useState(false);
+  const [lvSort, setLvSort] = useState<"score" | "eur">("score");
 
   const okresy = useMemo(() => {
     const s = new Set<string>();
     for (const r of tree) if (r.grain === "okres" && r.okres) s.add(r.okres);
     return [...s].sort((a, b) => a.localeCompare(b, "sk"));
   }, [tree]);
+
+  const lvSorted = useMemo(() =>
+    [...res.lv].sort((a, b) => lvSort === "eur" ? (b.avm_eur ?? 0) - (a.avm_eur ?? 0) : b.score - a.score),
+    [res.lv, lvSort]);
 
   async function run(o = okres, ms = minScore) {
     setBusy(true);
@@ -63,17 +68,29 @@ function DealRadarPage() {
       </Card>
 
       <Card className="p-4">
-        <SectionHeader title={`LV príležitosti (${res.lv.length})`} hint="skórované naprieč k.ú." />
+        <div className="flex items-start justify-between gap-2">
+          <SectionHeader title={`LV príležitosti (${res.lv.length})`} hint="skórované naprieč k.ú." />
+          <div className="flex shrink-0 items-center gap-1 rounded-lg border border-line p-0.5 text-xs">
+            <button onClick={() => setLvSort("score")}
+              className={"rounded-md px-2 py-1 " + (lvSort === "score" ? "bg-surface-2 font-medium text-fg" : "text-muted hover:text-fg")}>skóre</button>
+            <button onClick={() => setLvSort("eur")}
+              className={"rounded-md px-2 py-1 " + (lvSort === "eur" ? "bg-surface-2 font-medium text-fg" : "text-muted hover:text-fg")}>€ potenciál</button>
+          </div>
+        </div>
         {res.lv.length === 0 ? (
           <div className="py-4 text-center text-sm text-muted">Žiadne LV nad prahom skóre.</div>
         ) : (
           <div className="mt-2 divide-y divide-line">
-            {res.lv.map((r) => (
+            {lvSorted.map((r) => (
               <div key={`${r.dataset_id}-${r.lv_no}`} className="flex items-center gap-3 py-2">
-                <div className="w-10 shrink-0 text-center"><div className="text-lg font-bold tabular-nums text-fg">{r.score}</div></div>
+                <div className="w-10 shrink-0 text-center"><div className="text-lg font-bold tabular-nums text-fg">{r.score}</div><div className="text-[9px] text-muted">skóre</div></div>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-fg">LV {r.lv_no} · {r.ku_name}</div>
+                  <div className="text-sm font-medium text-fg">LV {r.lv_no} · {r.ku_name}{r.okres ? <span className="text-muted"> · {r.okres}</span> : null}</div>
                   <div className="truncate text-[12px] text-muted">{r.reasons.join(" · ") || "—"} · {r.total_area.toLocaleString("sk-SK")} m²</div>
+                </div>
+                <div className="w-24 shrink-0 text-right">
+                  <div className="text-sm font-semibold tabular-nums text-fg">{r.avm_eur != null ? `~${eur(r.avm_eur)} €` : "—"}</div>
+                  <div className="text-[9px] text-muted">orient. hodnota</div>
                 </div>
                 <div className="flex shrink-0 gap-2 text-xs">
                   <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: r.dataset_id, lvNo: String(r.lv_no) }} search={{ typ: "vypis" as const }} className="rounded-md border border-line px-2 py-1 text-fg hover:border-ink">Výpis</Link>

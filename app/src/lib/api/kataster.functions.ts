@@ -1856,19 +1856,30 @@ export const getMarketOpportunities = createServerFn({ method: "POST" })
   });
 
 // ——— Deal radar: kombinovaný ranking najlepších príležitostí naprieč SR (LV signály + trhové pod cenou) ———
-export type RadarLv = { dataset_id: string; ku_name: string; lv_no: number; score: number; reasons: string[]; co_owners: number; total_area: number; has_spf: number };
+export type RadarLv = { dataset_id: string; ku_name: string; lv_no: number; score: number; reasons: string[]; co_owners: number; total_area: number; has_spf: number; okres: string | null; avm_eur: number | null };
 export const getDealRadar = createServerFn({ method: "POST" })
   .validator(z.object({ okres: z.string().optional(), minScore: z.number().optional(), limit: z.number().optional() }))
   .handler(async ({ data }): Promise<{ lv: RadarLv[]; market: MarketOpp[] }> => {
     const limit = data.limit ?? 40;
-    const lvRows = await q<NlHit>(
-      `SELECT sig.dataset_id, d.ku_name, sig.lv_no, sig.co_owners, sig.has_spf, sig.dedic, sig.buildable, sig.clean_title, sig.absenter_ratio, sig.total_area, sig.oldest_birth_year
+    const lvRows = await q<NlHit & { region: string | null }>(
+      `SELECT sig.dataset_id, d.ku_name, d.region, sig.lv_no, sig.co_owners, sig.has_spf, sig.dedic, sig.buildable, sig.clean_title, sig.absenter_ratio, sig.total_area, sig.oldest_birth_year
        FROM lv_signals sig JOIN datasets d ON d.id = sig.dataset_id ${data.okres ? "WHERE d.region LIKE ?" : ""} LIMIT 8000`,
       data.okres ? [`%${data.okres}%`] : []);
+    // okresný stavebný medián €/m² (pozemok) pre orientačný € potenciál LV
+    const medRows = await q<{ okres: string | null; med: number | null }>(
+      `SELECT okres, AVG(median_eur_m2) med FROM market_index WHERE ptype='pozemok' AND deal='predaj' AND okres IS NOT NULL GROUP BY okres`, []);
+    const medByOkres = new Map<string, number>();
+    for (const r of medRows) if (r.okres && r.med) medByOkres.set(r.okres, r.med);
+    const medAll = medByOkres.size ? [...medByOkres.values()].reduce((a, b) => a + b, 0) / medByOkres.size : 30;
     const w = { co: 0.3, spf: 0.25, dedic: 0.15, buildable: 0.15, absenter: 0.1, clean: 0.05 };
     const wsum = w.co + w.spf + w.dedic + w.buildable + w.absenter + w.clean;
     const minScore = data.minScore ?? 0;
     const lv = lvRows.map((r) => {
+      const okres = okresFromRegion(r.region ?? null);
+      const med = (okres && medByOkres.get(okres)) || medAll;
+      // buildable → stavebný medián; inak poľnohosp. sadzba (~5 % z medianu, cap 3 €/m²)
+      const ppm2 = r.buildable ? med : Math.min(med * 0.05, 3);
+      const avm_eur = (r.total_area ?? 0) > 0 && ppm2 > 0 ? Math.round((r.total_area ?? 0) * ppm2) : null;
       const raw = (w.co * Math.min(r.co_owners ?? 0, 20)) / 20 + w.spf * (r.has_spf ?? 0) + w.dedic * (r.dedic ?? 0)
         + w.buildable * (r.buildable ?? 0) + w.absenter * (r.absenter_ratio ?? 0) + w.clean * (r.clean_title ?? 0);
       const reasons: string[] = [];
@@ -1878,7 +1889,7 @@ export const getDealRadar = createServerFn({ method: "POST" })
       if (r.buildable) reasons.push("stavebný potenciál");
       if ((r.absenter_ratio ?? 0) > 0) reasons.push(`absentéri ${Math.round((r.absenter_ratio ?? 0) * 100)} %`);
       if (r.clean_title) reasons.push("bez tiarch");
-      return { dataset_id: r.dataset_id, ku_name: r.ku_name, lv_no: r.lv_no, score: Math.round((100 * raw) / wsum), reasons, co_owners: r.co_owners ?? 0, total_area: r.total_area ?? 0, has_spf: r.has_spf ?? 0 };
+      return { dataset_id: r.dataset_id, ku_name: r.ku_name, lv_no: r.lv_no, score: Math.round((100 * raw) / wsum), reasons, co_owners: r.co_owners ?? 0, total_area: r.total_area ?? 0, has_spf: r.has_spf ?? 0, okres, avm_eur };
     }).filter((r) => r.score >= minScore).sort((a, b) => b.score - a.score).slice(0, limit);
     const mw: string[] = ["(below_market_pct IS NOT NULL OR price_drop_pct IS NOT NULL)"]; const ma: unknown[] = [];
     // sanity filtre proti chybne parsovaným inzerátom (1 €, 0.8 €/m², −99 % pod trhom)
