@@ -13,6 +13,7 @@ const NAV: { to: AppPath; label: string; icon: string }[] = [
   { to: "/vlastnici", label: "Vlastníci", icon: "target" },
   { to: "/zoning", label: "Územný plán & prístup", icon: "zone" },
   { to: "/prilezitosti", label: "Príležitosti", icon: "target" },
+  { to: "/deal-radar", label: "Deal radar", icon: "target" },
   { to: "/prieskum", label: "NL prieskum", icon: "target" },
   { to: "/deals", label: "Deal pipeline", icon: "folder" },
   { to: "/cases", label: "Cases", icon: "folder" },

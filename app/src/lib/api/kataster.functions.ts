@@ -1855,6 +1855,38 @@ export const getMarketOpportunities = createServerFn({ method: "POST" })
       `SELECT source,url,title,ptype,deal,okres,obec,area_m2,price_eur,price_per_m2,days_on_market,price_drop_pct,below_market_pct,flags FROM market_opportunities ${w} ORDER BY (COALESCE(below_market_pct,0)+COALESCE(price_drop_pct,0)) DESC LIMIT 100`, args);
   });
 
+// ——— Deal radar: kombinovaný ranking najlepších príležitostí naprieč SR (LV signály + trhové pod cenou) ———
+export type RadarLv = { dataset_id: string; ku_name: string; lv_no: number; score: number; reasons: string[]; co_owners: number; total_area: number; has_spf: number };
+export const getDealRadar = createServerFn({ method: "POST" })
+  .validator(z.object({ okres: z.string().optional(), minScore: z.number().optional(), limit: z.number().optional() }))
+  .handler(async ({ data }): Promise<{ lv: RadarLv[]; market: MarketOpp[] }> => {
+    const limit = data.limit ?? 40;
+    const lvRows = await q<NlHit>(
+      `SELECT sig.dataset_id, d.ku_name, sig.lv_no, sig.co_owners, sig.has_spf, sig.dedic, sig.buildable, sig.clean_title, sig.absenter_ratio, sig.total_area, sig.oldest_birth_year
+       FROM lv_signals sig JOIN datasets d ON d.id = sig.dataset_id ${data.okres ? "WHERE d.region LIKE ?" : ""} LIMIT 8000`,
+      data.okres ? [`%${data.okres}%`] : []);
+    const w = { co: 0.3, spf: 0.25, dedic: 0.15, buildable: 0.15, absenter: 0.1, clean: 0.05 };
+    const wsum = w.co + w.spf + w.dedic + w.buildable + w.absenter + w.clean;
+    const minScore = data.minScore ?? 0;
+    const lv = lvRows.map((r) => {
+      const raw = (w.co * Math.min(r.co_owners ?? 0, 20)) / 20 + w.spf * (r.has_spf ?? 0) + w.dedic * (r.dedic ?? 0)
+        + w.buildable * (r.buildable ?? 0) + w.absenter * (r.absenter_ratio ?? 0) + w.clean * (r.clean_title ?? 0);
+      const reasons: string[] = [];
+      if ((r.co_owners ?? 0) >= 5) reasons.push(`${r.co_owners} spoluvlastníkov`);
+      if (r.has_spf) reasons.push("SPF / štát");
+      if (r.dedic) reasons.push(`dedičské${r.oldest_birth_year ? ` (${r.oldest_birth_year})` : ""}`);
+      if (r.buildable) reasons.push("stavebný potenciál");
+      if ((r.absenter_ratio ?? 0) > 0) reasons.push(`absentéri ${Math.round((r.absenter_ratio ?? 0) * 100)} %`);
+      if (r.clean_title) reasons.push("bez tiarch");
+      return { dataset_id: r.dataset_id, ku_name: r.ku_name, lv_no: r.lv_no, score: Math.round((100 * raw) / wsum), reasons, co_owners: r.co_owners ?? 0, total_area: r.total_area ?? 0, has_spf: r.has_spf ?? 0 };
+    }).filter((r) => r.score >= minScore).sort((a, b) => b.score - a.score).slice(0, limit);
+    const mw: string[] = ["(below_market_pct IS NOT NULL OR price_drop_pct IS NOT NULL)"]; const ma: unknown[] = [];
+    if (data.okres) { mw.push("okres = ?"); ma.push(data.okres); }
+    const market = await q<MarketOpp>(
+      `SELECT source,url,title,ptype,deal,okres,obec,area_m2,price_eur,price_per_m2,days_on_market,price_drop_pct,below_market_pct,flags FROM market_opportunities WHERE ${mw.join(" AND ")} ORDER BY (COALESCE(below_market_pct,0)+COALESCE(price_drop_pct,0)) DESC LIMIT ?`, [...ma, limit]);
+    return { lv, market };
+  });
+
 // ——— OSM dostupnosť (doprava + občianska vybavenosť) cez Overpass API ———
 type PoiHit = { name: string | null; dist: number; drive_min: number };
 type Accessibility = { transport: Record<string, PoiHit | null>; amenities: Record<string, PoiHit | null>; infra: Record<string, PoiHit | null>; cached?: boolean; ageDays?: number };
