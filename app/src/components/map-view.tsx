@@ -1275,9 +1275,9 @@ export function MapView({
           </div>
         ) : null}
 
-        {/* Živý ESKN identify — panel pre ľubovoľnú parcelu v SR (ESKN + VŠETKY naše dáta) */}
-        {esknMode && (esknHit || esknBusy) ? (
-          <div className="absolute left-1/2 top-16 z-30 max-h-[72vh] w-[340px] -translate-x-1/2 overflow-y-auto rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur">
+        {/* Živý ESKN identify — panel len pre parcelu MIMO našich k.ú. (pri našej parcele sa ESKN+AVM zlúči do rich panela nižšie → vždy len jeden panel) */}
+        {esknMode && (esknHit || esknBusy) && !identified ? (
+          <div className="absolute left-1/2 top-16 z-30 max-h-[72vh] w-[340px] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 overflow-y-auto rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur">
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="font-semibold text-fg">Parcela — ESKN + naše dáta</span>
               <button onClick={() => setEsknHit(null)} className="text-muted hover:text-fg" title="Zavrieť">✕</button>
@@ -1858,7 +1858,7 @@ export function MapView({
           <a href="/reporty" className="mt-1.5 block text-center text-[10px] text-muted underline hover:text-fg">Report Center (evidenčný list, pack) →</a>
         </div>
       ) : identified ? (
-        <div className="absolute bottom-11 right-3 w-72 rounded-xl border border-line bg-surface/95 p-4 backdrop-blur">
+        <div className="absolute bottom-11 right-3 z-30 w-72 max-w-[calc(100vw-1.5rem)] max-h-[calc(100%-4.5rem)] overflow-y-auto rounded-xl border border-line bg-surface/95 p-4 backdrop-blur">
           <div className="flex items-start justify-between">
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted">Parcela {identified.kn_type}</div>
@@ -1878,6 +1878,23 @@ export function MapView({
             className="mt-2 w-full rounded-md border border-line bg-surface px-2 py-1 text-xs text-fg hover:border-ink">
             🔗 Susedné parcely{neighborSet ? ` (${neighborSet.size})` : ""}
           </button>
+
+          {/* ESKN (ÚGKK naživo) + AVM — zjednotené do jedného panela pre našu parcelu */}
+          {esknHit && (esknHit.found || (esknHit.avm && esknHit.avm.estimate_eur != null)) ? (
+            <div className="mt-2 space-y-1 rounded-md border border-brand/40 bg-brand/5 p-2 text-xs">
+              {esknHit.found ? (
+                <div className="text-muted">🇸🇰 ESKN: parc. {esknHit.parcel_no} · {esknHit.area_m2 ?? "?"} m²{esknHit.druh_pozemku ? ` · ${esknHit.druh_pozemku}` : ""}{esknHit.umiestnenie ? ` · ${esknHit.umiestnenie}` : ""}</div>
+              ) : null}
+              {esknHit.avm && esknHit.avm.estimate_eur != null ? (
+                <div>
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-brand">💶 AVM</span>{" "}
+                  <b className="text-fg">{esknHit.avm.estimate_eur.toLocaleString("sk-SK")} €</b>
+                  <span className="text-muted"> · {esknHit.avm.low_eur?.toLocaleString("sk-SK")}–{esknHit.avm.high_eur?.toLocaleString("sk-SK")} € · {esknHit.avm.ppm2} €/m² · {esknHit.avm.klass} · {esknHit.avm.confidence}</span>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <dl className="mt-3 space-y-1.5 text-sm">
             <Row k="Výmera" v={m2(identified.area_m2)} />
             <Row k="Druh" v={identified.use_type ?? "—"} />

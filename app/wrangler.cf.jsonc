@@ -23,7 +23,9 @@
   ],
   "kv_namespaces": [
     { "binding": "KV", "id": "6cf426515df54988b48980352ed07c1e" }
+  ],
+  // R2 zapnuté (2026-09-03) — úložisko georeferencovaných ÚP rastrov. Free tier 10 GB, bez egress poplatkov.
+  "r2_buckets": [
+    { "binding": "STORAGE", "bucket_name": "trilipy-up-rastre" }
   ]
-  // R2 (STORAGE) zámerne vynechané — je opt-in a guardované v kóde; bez neho beží mapa aj celý kataster,
-  // odpadne len upload ÚP rastrov. Keď zapneš R2 v CF dashboarde, doplní sa sem "r2_buckets".
 }
