@@ -1891,27 +1891,17 @@ export const getDealRadar = createServerFn({ method: "POST" })
       if (r.clean_title) reasons.push("bez tiarch");
       return { dataset_id: r.dataset_id, ku_name: r.ku_name, lv_no: r.lv_no, score: Math.round((100 * raw) / wsum), reasons, co_owners: r.co_owners ?? 0, total_area: r.total_area ?? 0, has_spf: r.has_spf ?? 0, okres, avm_eur };
     }).filter((r) => r.score >= minScore).sort((a, b) => b.score - a.score).slice(0, limit);
-    // Trhové príležitosti počítame NAŽIVO z market_listings vs okresný medián (market_index),
-    // NIE z market_opportunities (tá je ~99 % šum z mis-parsovaných inzerátov 1 €/−99 %).
-    // Sanity: ppm2≥2, cenové floory, below% v pásme 15–70 (mimo = takmer istá chyba parsovania).
+    // Trhové príležitosti čítame z predpočítanej market_opportunities (LACNÉ na čítanie — D1 free tier).
+    // Sanity filter proti mis-parsovaným inzerátom (1 €/0.8 €/m²/−99 %): below≤70, ppm2≥2, cenové floory.
+    // Čistotu ZDROJA rieši scraper (build_market_data má rovnaké sanity prahy) → po re-importe je tabuľka čistá.
+    const mw: string[] = ["(below_market_pct IS NOT NULL OR price_drop_pct IS NOT NULL)"]; const ma: unknown[] = [];
+    mw.push("(below_market_pct IS NULL OR below_market_pct <= 70)");
+    mw.push("(price_drop_pct IS NULL OR price_drop_pct <= 90)");
+    mw.push("(price_per_m2 IS NULL OR price_per_m2 >= 2)");
+    mw.push("((ptype IN ('dom','byt','chata','chalupa') AND price_eur >= 15000) OR (ptype NOT IN ('dom','byt','chata','chalupa') AND price_eur >= 2000))");
+    if (data.okres) { mw.push("okres = ?"); ma.push(data.okres); }
     const market = await q<MarketOpp>(
-      `WITH med AS (SELECT okres, ptype, AVG(median_eur_m2) m FROM market_index WHERE deal='predaj' AND okres IS NOT NULL GROUP BY okres, ptype)
-       SELECT L.source, L.url, L.title, L.ptype, L.deal, L.okres, L.obec, L.area_m2, L.price_eur,
-         ROUND(L.ppm2,1) AS price_per_m2,
-         CAST(julianday(L.last_seen)-julianday(L.first_seen) AS INTEGER) AS days_on_market,
-         CASE WHEN L.first_price>L.price_eur THEN ROUND((1.0 - L.price_eur*1.0/L.first_price)*100,1) ELSE NULL END AS price_drop_pct,
-         ROUND((1.0 - L.ppm2/med.m)*100,1) AS below_market_pct,
-         L.flags
-       FROM market_listings L JOIN med ON med.okres=L.okres AND med.ptype=L.ptype
-       WHERE L.deal='predaj' AND L.ppm2>=2 AND med.m>0 AND L.url IS NOT NULL
-         AND L.okres NOT IN ('Zahraničie','Česká republika')
-         AND ((L.ptype IN ('dom','byt','chata','chalupa') AND L.price_eur>=15000) OR (L.ptype NOT IN ('dom','byt','chata','chalupa') AND L.price_eur>=2000))
-         AND (1.0 - L.ppm2/med.m)*100 BETWEEN 15 AND 70
-         ${data.okres ? "AND L.okres = ?" : ""}
-       GROUP BY L.url
-       ORDER BY ((1.0 - L.ppm2/med.m)*100 + COALESCE(CASE WHEN L.first_price>L.price_eur THEN (1.0 - L.price_eur*1.0/L.first_price)*100 ELSE 0 END,0)) DESC
-       LIMIT ?`,
-      data.okres ? [data.okres, limit] : [limit]);
+      `SELECT source,url,title,ptype,deal,okres,obec,area_m2,price_eur,price_per_m2,days_on_market,price_drop_pct,below_market_pct,flags FROM market_opportunities WHERE ${mw.join(" AND ")} GROUP BY url ORDER BY (COALESCE(below_market_pct,0)+COALESCE(price_drop_pct,0)) DESC LIMIT ?`, [...ma, limit]);
     return { lv, market };
   });
 
