@@ -1881,9 +1881,14 @@ export const getDealRadar = createServerFn({ method: "POST" })
       return { dataset_id: r.dataset_id, ku_name: r.ku_name, lv_no: r.lv_no, score: Math.round((100 * raw) / wsum), reasons, co_owners: r.co_owners ?? 0, total_area: r.total_area ?? 0, has_spf: r.has_spf ?? 0 };
     }).filter((r) => r.score >= minScore).sort((a, b) => b.score - a.score).slice(0, limit);
     const mw: string[] = ["(below_market_pct IS NOT NULL OR price_drop_pct IS NOT NULL)"]; const ma: unknown[] = [];
+    // sanity filtre proti chybne parsovaným inzerátom (1 €, 0.8 €/m², −99 % pod trhom)
+    mw.push("(below_market_pct IS NULL OR below_market_pct <= 75)");
+    mw.push("(price_drop_pct IS NULL OR price_drop_pct <= 90)");
+    mw.push("(price_per_m2 IS NULL OR price_per_m2 >= 2)");
+    mw.push("((ptype IN ('dom','byt','chata','chalupa') AND price_eur >= 15000) OR (ptype NOT IN ('dom','byt','chata','chalupa') AND price_eur >= 2000))");
     if (data.okres) { mw.push("okres = ?"); ma.push(data.okres); }
     const market = await q<MarketOpp>(
-      `SELECT source,url,title,ptype,deal,okres,obec,area_m2,price_eur,price_per_m2,days_on_market,price_drop_pct,below_market_pct,flags FROM market_opportunities WHERE ${mw.join(" AND ")} ORDER BY (COALESCE(below_market_pct,0)+COALESCE(price_drop_pct,0)) DESC LIMIT ?`, [...ma, limit]);
+      `SELECT source,url,title,ptype,deal,okres,obec,area_m2,price_eur,price_per_m2,days_on_market,price_drop_pct,below_market_pct,flags FROM market_opportunities WHERE ${mw.join(" AND ")} GROUP BY url ORDER BY (COALESCE(below_market_pct,0)+COALESCE(price_drop_pct,0)) DESC LIMIT ?`, [...ma, limit]);
     return { lv, market };
   });
 
