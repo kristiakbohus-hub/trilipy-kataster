@@ -220,6 +220,43 @@ function UpTiles({ src, X, Y, res, w, h, dragT }: { src: Extract<UpSource, { kin
   return <div style={{ position: "absolute", inset: 0, transform: dragT, opacity: src.opacity ?? 0.6, pointerEvents: "none" }}>{tiles}</div>;
 }
 
+// ——— Inžinierske siete — správcovia + „vyjadrenie k existencii sietí" (detailné siete nie sú otvorené dáta v SR) ———
+function sietiLinks(lat: number, lng: number): { kind: string; op: string; url: string; note?: string }[] {
+  // Elektrina podľa distribučného územia (hrubo podľa zemepisnej dĺžky).
+  const el = lng < 18.0
+    ? { op: "ZSD — Západoslovenská distribučná", url: "https://www.zsdis.sk/Uvod/Podnikatelia/Sluzby-distribucie/Existencia-a-zakreslovanie-sieti" }
+    : lng < 20.3
+      ? { op: "SSD — Stredoslovenská distribučná", url: "https://www.ssd.sk" }
+      : { op: "VSD — Východoslovenská distribučná", url: "https://www.vsds.sk/edso/mapa" };
+  const zilina = lng >= 18.0 && lng < 19.7 && lat >= 49.0; // Kysuce / Žilina (SEVAK) — hrubý odhad
+  const voda = zilina
+    ? { op: "SEVAK — Severoslovenské vodárne a kanalizácie", url: "https://www.sevak.sk", note: undefined as string | undefined }
+    : { op: "Miestny vodárenský podnik", url: "https://www.vodarne.eu", note: "vyber podľa obce" };
+  return [
+    { kind: "⚡ Elektrina", op: el.op, url: el.url },
+    { kind: "🔥 Plyn", op: "SPP-distribúcia", url: "https://www.spp-distribucia.sk" },
+    { kind: "💧 Voda / kanalizácia", op: voda.op, url: voda.url, note: voda.note },
+    { kind: "📞 Telekom", op: "Slovak Telekom", url: "https://www.telekom.sk" },
+  ];
+}
+function SietiPanel({ lat, lng }: { lat: number; lng: number }) {
+  const items = sietiLinks(lat, lng);
+  return (
+    <details className="rounded-lg border border-line bg-surface-2/30 p-2">
+      <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wide text-muted">🛠️ Inžinierske siete — vyjadrenie správcov</summary>
+      <div className="mt-1 space-y-1">
+        <div className="text-[10px] text-muted">Detailné siete nie sú otvorené dáta — presnú polohu potvrdí správca cez „vyjadrenie k existencii sietí" pre toto miesto:</div>
+        {items.map((it) => (
+          <div key={it.kind} className="flex items-center justify-between gap-2">
+            <span className="text-muted">{it.kind}: <span className="text-fg">{it.op}</span>{it.note ? ` (${it.note})` : ""}</span>
+            <a href={it.url} target="_blank" rel="noopener noreferrer" className="shrink-0 rounded-md border border-line px-2 py-0.5 text-[11px] text-fg hover:border-ink">portál ↗</a>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function MapView({
   parcels,
   datasetName,
@@ -1440,6 +1477,9 @@ export function MapView({
                   </div>
                 ) : null}
 
+                {/* Inžinierske siete — správcovia + vyjadrenie (podľa polohy parcely) */}
+                <SietiPanel lat={esknHit.lat} lng={esknHit.lng} />
+
                 {/* AVM — automatický odhad hodnoty */}
                 {esknHit.avm && esknHit.avm.estimate_eur != null ? (
                   <div className="space-y-0.5 rounded-lg border border-brand/40 bg-brand/5 p-2">
@@ -2144,6 +2184,11 @@ export function MapView({
               <summary className="cursor-pointer text-sm font-semibold text-fg">Limity výstavby{limits.items.filter((i) => i.hit).length ? ` · ${limits.items.filter((i) => i.hit).length} zásah` : " · bez zásahu"}</summary>
               <div className="mt-1"><LimitsPanel data={limits} /></div>
             </details>
+          ) : null}
+
+          {/* Inžinierske siete — správcovia + vyjadrenie (podľa polohy parcely) */}
+          {identified.centroid_lat != null && identified.centroid_lng != null ? (
+            <div className="mt-3"><SietiPanel lat={identified.centroid_lat} lng={identified.centroid_lng} /></div>
           ) : null}
 
           {/* Rozbaliteľné celé LV — majetková podstata (C+E), stavby, vlastníci, hodnota */}
