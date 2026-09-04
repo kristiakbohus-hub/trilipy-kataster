@@ -1270,11 +1270,14 @@ export type LvSignal = {
 export const getDeals = createServerFn({ method: "POST" })
   .validator(z.object({ datasetId: z.string().optional() }))
   .handler(async ({ data }) => {
+    // Top-N podľa predpočítaného signal_score (index, migrácia 0051) — bez LIMIT vracia 76k riadkov
+    // a CF Worker prekročí resource limit. 1500 najlepších pokryje príležitosti; stránka doskóruje klientsky.
     const where = data.datasetId ? "WHERE s.dataset_id = ?" : "";
-    const args = data.datasetId ? [data.datasetId] : [];
+    const args = data.datasetId ? [data.datasetId, 1500] : [1500];
     return await q<LvSignal>(
       `SELECT s.dataset_id, s.lv_no, s.co_owners, s.has_spf, s.oldest_birth_year, s.dedic, s.buildable, s.clean_title, s.absenter_ratio, s.total_area, d.ku_name AS ku_name
-       FROM lv_signals s JOIN datasets d ON d.id = s.dataset_id ${where}`,
+       FROM lv_signals s JOIN datasets d ON d.id = s.dataset_id ${where}
+       ORDER BY s.signal_score DESC LIMIT ?`,
       args,
     );
   });
