@@ -153,6 +153,22 @@ function arcgisExport(l: LimitLayer, X: number, Y: number, res: number, w: numbe
   if (dpi) p.set("dpi", String(dpi));
   return `${l.url}/export?${p.toString()}`;
 }
+// Bbox varianty (pre dlaždicový podklad — každá dlaždica má vlastný 3857 bbox; žiadna reprojekcia).
+function wmsGetMapBox(def: WmsDef, minx: number, miny: number, maxx: number, maxy: number, w: number, h: number): string {
+  const p = new URLSearchParams({
+    service: "WMS", version: "1.3.0", request: "GetMap", layers: def.layers, styles: "",
+    crs: "EPSG:3857", format: def.format, width: String(w), height: String(h), bbox: `${minx},${miny},${maxx},${maxy}`,
+  });
+  return def.url + (def.url.includes("?") ? "&" : "?") + p.toString();
+}
+function arcgisExportBox(url: string, layers: string, minx: number, miny: number, maxx: number, maxy: number, w: number, h: number, dpi?: number): string {
+  const p = new URLSearchParams({
+    bbox: `${minx},${miny},${maxx},${maxy}`, bboxSR: "3857", imageSR: "3857",
+    size: `${w},${h}`, format: "png32", transparent: "true", layers: `show:${layers}`, f: "image",
+  });
+  if (dpi) p.set("dpi", String(dpi));
+  return `${url}/export?${p.toString()}`;
+}
 // ESKN podklad ako samostatná definícia (nezávislý od LIMIT_LAYERS toggle) — celoSR kataster, default vrstva.
 const ESKN_BASE: LimitLayer = { id: "eskn", name: "ESKN register C — celé SR (ÚGKK)", url: "https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer", layers: "1,4,5,7,10,14", attribution: "ÚGKK ESKN" };
 // ESKN register E (určený operát) — parcely E-KN sú samostatná služba VRM/uo (layer 2 plocha, 0 číslo).
@@ -196,9 +212,15 @@ const UP_SR_SOURCES: UpSource[] = [
 function extIntersects(e: readonly [number, number, number, number], minx: number, miny: number, maxx: number, maxy: number) {
   return !(e[2] < minx || e[0] > maxx || e[3] < miny || e[1] > maxy);
 }
-// Jedna XYZ dlaždicová ÚP vrstva vykreslená do aktuálneho výrezu (custom tile-grid, mapa nie je MapLibre).
-function UpTiles({ src, X, Y, res, w, h, dragT }: { src: Extract<UpSource, { kind: "xyz" }>; X: number; Y: number; res: number; w: number; h: number; dragT?: string }) {
-  const Z = Math.max(0, Math.min(src.maxZ, Math.round(Math.log2(BASE_RES / res))));
+// Generický dlaždicový layer — skladá 256px dlaždice do výrezu (custom tile-grid, mapa nie je MapLibre).
+// `tileUrl(z,x,y,box)` = XYZ šablóna (ÚP) ALEBO bbox export/WMS (ESKN/podklad — každá dlaždica vlastný 3857 bbox).
+// Plynulý pohyb ako ZBGIS: pri posune sa dotiahnu len nové dlaždice, existujúce ostávajú (browser cache).
+type TileBox = { minx: number; miny: number; maxx: number; maxy: number; res: number };
+function TileLayer({ X, Y, res, w, h, dragT, maxZ, opacity, tileUrl, keyPrefix }: {
+  X: number; Y: number; res: number; w: number; h: number; dragT?: string; maxZ: number; opacity: number;
+  tileUrl: (z: number, x: number, y: number, box: TileBox) => string; keyPrefix: string;
+}) {
+  const Z = Math.max(0, Math.min(maxZ, Math.round(Math.log2(BASE_RES / res))));
   const tileRes = BASE_RES / 2 ** Z;
   const span = tileRes * 256;
   const minx = X - (w / 2) * res, maxx = X + (w / 2) * res;
@@ -210,14 +232,19 @@ function UpTiles({ src, X, Y, res, w, h, dragT }: { src: Extract<UpSource, { kin
   const tiles: ReactNode[] = [];
   for (let tx = tx0; tx <= tx1; tx++) {
     for (let ty = ty0; ty <= ty1; ty++) {
-      const tMinX = -RMERC + tx * span, tMaxY = RMERC - ty * span;
+      const tMinX = -RMERC + tx * span, tMaxX = tMinX + span, tMaxY = RMERC - ty * span, tMinY = tMaxY - span;
       const sx = w / 2 + (tMinX - X) / res, sy = h / 2 - (tMaxY - Y) / res;
-      const url = src.url.replace("{z}", String(Z)).replace("{x}", String(tx)).replace("{y}", String(ty));
-      tiles.push(<img key={`${Z}-${tx}-${ty}`} src={url} alt="" draggable={false}
+      const url = tileUrl(Z, tx, ty, { minx: tMinX, miny: tMinY, maxx: tMaxX, maxy: tMaxY, res: tileRes });
+      tiles.push(<img key={`${keyPrefix}-${Z}-${tx}-${ty}`} src={url} alt="" draggable={false}
         style={{ position: "absolute", left: sx, top: sy, width: px + 1, height: px + 1, userSelect: "none" }} />);
     }
   }
-  return <div style={{ position: "absolute", inset: 0, transform: dragT, opacity: src.opacity ?? 0.6, pointerEvents: "none" }}>{tiles}</div>;
+  return <div style={{ position: "absolute", inset: 0, transform: dragT, opacity, pointerEvents: "none" }}>{tiles}</div>;
+}
+// ÚP overlay (XYZ dlaždice) cez generický TileLayer.
+function UpTiles({ src, X, Y, res, w, h, dragT }: { src: Extract<UpSource, { kind: "xyz" }>; X: number; Y: number; res: number; w: number; h: number; dragT?: string }) {
+  return <TileLayer keyPrefix={src.id} X={X} Y={Y} res={res} w={w} h={h} dragT={dragT} maxZ={src.maxZ} opacity={src.opacity ?? 0.6}
+    tileUrl={(z, x, y) => src.url.replace("{z}", String(z)).replace("{x}", String(x)).replace("{y}", String(y))} />;
 }
 
 // ——— Inžinierske siete — správcovia + „vyjadrenie k existencii sietí" (detailné siete nie sú otvorené dáta v SR) ———
@@ -1048,37 +1075,27 @@ export function MapView({
         onDoubleClick={(e) => { const { x, y } = localXY(e); zoomBy(1, x, y); }}
         style={{ touchAction: "none" }}
       >
-        {/* Podkladová mapa (ZBGIS base-map switcher — najspodnejšia vrstva) */}
+        {/* Podkladová mapa (ZBGIS base-map switcher) — DLAŽDICOVÁ (plynulý pohyb/zoom ako ZBGIS) */}
         {view && size.w > 0 && baseMap !== "none"
           ? (() => {
               const bd = CURATED_WMS.find((c) => c.id === baseMap);
               return bd ? (
-                <img key={`base-${baseMap}`} src={wmsGetMap(bd, view.X, view.Y, res, size.w, size.h)} alt="podklad" draggable={false}
-                  style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h, transform: dragT, userSelect: "none" }} />
+                <TileLayer key={`base-${baseMap}`} keyPrefix={`base-${baseMap}`} X={view.X} Y={view.Y} res={res} w={size.w} h={size.h} dragT={dragT} maxZ={ZMAX} opacity={1}
+                  tileUrl={(_z, _x, _y, b) => wmsGetMapBox(bd, b.minx, b.miny, b.maxx, b.maxy, 256, 256)} />
               ) : null;
             })()
           : null}
 
-        {/* ESKN register E (určený operát) — pod C-KN, aby čísla C ostali navrchu */}
+        {/* ESKN register E (určený operát) — pod C-KN; DLAŽDICOVÉ (bbox export per dlaždica) */}
         {view && size.w > 0 && esknBaseOn ? (
-          <img
-            key="eskn-base-e"
-            src={arcgisExport(ESKN_BASE_E, view.X, view.Y, res, size.w, size.h, esknDpiFor(res))}
-            alt="ESKN register E (ÚGKK)"
-            draggable={false}
-            style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h, transform: dragT, opacity: 0.75, userSelect: "none", pointerEvents: "none" }}
-          />
+          <TileLayer keyPrefix="eskn-e" X={view.X} Y={view.Y} res={res} w={size.w} h={size.h} dragT={dragT} maxZ={ZMAX} opacity={0.75}
+            tileUrl={(_z, _x, _y, b) => arcgisExportBox(ESKN_BASE_E.url, ESKN_BASE_E.layers, b.minx, b.miny, b.maxx, b.maxy, 256, 256, esknDpiFor(b.res))} />
         ) : null}
 
-        {/* ESKN register C — DEFAULT celoSR podklad (dynamické dpi → parcely viditeľné pri každom zoome, ako ZBGIS) */}
+        {/* ESKN register C — DEFAULT celoSR podklad; DLAŽDICOVÉ (dynamické dpi per dlaždica → parcely viditeľné pri každom zoome) */}
         {view && size.w > 0 && esknBaseOn ? (
-          <img
-            key="eskn-base"
-            src={arcgisExport(ESKN_BASE, view.X, view.Y, res, size.w, size.h, esknDpiFor(res))}
-            alt="ESKN kataster (ÚGKK)"
-            draggable={false}
-            style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h, transform: dragT, opacity: 0.95, userSelect: "none", pointerEvents: "none" }}
-          />
+          <TileLayer keyPrefix="eskn-c" X={view.X} Y={view.Y} res={res} w={size.w} h={size.h} dragT={dragT} maxZ={ZMAX} opacity={0.95}
+            tileUrl={(_z, _x, _y, b) => arcgisExportBox(ESKN_BASE.url, ESKN_BASE.layers, b.minx, b.miny, b.maxx, b.maxy, 256, 256, esknDpiFor(b.res))} />
         ) : null}
 
         {/* WMS rastrové vrstvy (stack, fail-soft) */}
