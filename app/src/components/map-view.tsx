@@ -1707,40 +1707,12 @@ export function MapView({
           📍 Moja poloha
         </button>
 
+        {/* ESKN/ÚP kraj/Bonita/Trh presunuté do panela „Vrstvy" (bez duplicít) */}
         <button
-          onClick={() => setMarketBrowse((v) => { const nv = !v; if (!nv) setPinSel(null); return nv; })}
-          title="Zobraziť trhové inzeráty vo výreze mapy (klik na pin = detail)"
-          className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (marketBrowse ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
-          🏷️ Trh vo výreze{marketBrowse ? ` (${browsePins.length})` : ""}
-        </button>
-
-        <div className="flex gap-1.5">
-          <button
-            onClick={() => setColorMode((m) => (m === "bpej" ? "none" : "bpej"))}
-            title="Zafarbiť parcely podľa skupiny kvality pôdy (BPEJ 1–9)"
-            className={"flex flex-1 items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (colorMode === "bpej" ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
-            🌿 Bonita
-          </button>
-          <button
-            onClick={exportPng}
-            title="Export vektorového pohľadu (parcely + popisy + výber) do PNG. Ortofoto podklad nie je súčasťou (CORS)."
-            className="flex flex-1 items-center justify-center gap-1 rounded-lg border border-line bg-surface/95 px-2 py-1.5 text-xs text-muted backdrop-blur hover:text-fg">
-            📷 PNG
-          </button>
-        </div>
-
-        <button
-          onClick={() => { const nv = !esknBaseOn; setEsknBaseOn(nv); setEsknMode(nv); if (!nv) setEsknHit(null); pushEvent(nv ? "ESKN kataster zapnutý — default podklad + klik = identify." : "ESKN kataster vypnutý."); }}
-          title="ESKN národný kataster (ÚGKK) ako podklad na celom SR + klik = live identify ľubovoľnej parcely"
-          className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (esknBaseOn ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
-          🇸🇰 ESKN kataster{esknBaseOn ? " · zapnutý" : ""}
-        </button>
-
-        <button
-          onClick={() => { const nv = !upSrOn; setUpSrOn(nv); pushEvent(nv ? "Krajský ÚP (celá SR) zapnutý — dlaždice/WMS podľa výrezu." : "Krajský ÚP vypnutý."); }}
-          title="Krajský územný plán (VÚC) — autoritatívny georeferencovaný overlay podľa výrezu. Pokryté: Žilinský (okres Čadca), Trnavský, Bratislavský, Banskobystrický. TSK/NSK/PSK/KSK pribudnú."
-          className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (upSrOn ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
-          🗺 ÚP kraj (SR){upSrOn ? " · zapnutý" : ""}
+          onClick={exportPng}
+          title="Export vektorového pohľadu (parcely + popisy + výber) do PNG. Ortofoto podklad nie je súčasťou (CORS)."
+          className="flex items-center justify-center gap-1 rounded-lg border border-line bg-surface/95 px-2 py-1.5 text-xs text-muted backdrop-blur hover:text-fg">
+          📷 Export PNG
         </button>
 
         {colorMode === "bpej" ? (
