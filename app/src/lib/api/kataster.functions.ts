@@ -1883,6 +1883,24 @@ export const getMarketOpportunities = createServerFn({ method: "POST" })
 
 // ——— Deal radar: kombinovaný ranking najlepších príležitostí naprieč SR (LV signály + trhové pod cenou) ———
 export type RadarLv = { dataset_id: string; ku_name: string; lv_no: number; score: number; reasons: string[]; co_owners: number; total_area: number; has_spf: number; okres: string | null; avm_eur: number | null };
+// ——— Národné geokódovanie (ZBGIS-style našepkávač miest/adries) — Nominatim SK ———
+export type GeoPlace = { label: string; lat: number; lng: number; kind: string };
+export const geocodePlace = createServerFn({ method: "POST" })
+  .validator(z.object({ q: z.string().min(2) }))
+  .handler(async ({ data }): Promise<GeoPlace[]> => {
+    const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=sk&limit=6&q=${encodeURIComponent(data.q.trim())}`;
+    const arr = asArr(await fetchJsonTimed(url, 6000).catch(() => []));
+    const out: GeoPlace[] = [];
+    for (const x0 of arr) {
+      const x = asObj(x0); if (!x) continue;
+      const lat = Number(x.lat), lng = Number(x.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+      const dn = String(x.display_name ?? "");
+      out.push({ label: dn.split(",").slice(0, 3).join(",").trim() || dn.slice(0, 60), lat, lng, kind: String(x.type ?? x.category ?? "miesto") });
+    }
+    return out;
+  });
+
 export type ReportParcel = {
   parcel_no: string; kn_type: string | null; area_m2: number | null; use_type: string | null;
   lv_no: number | null; celok: number | null; settled: number | null; ekn_ref: string | null;

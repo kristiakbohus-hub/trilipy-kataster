@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, searchDataset } from "../lib/api/kataster.functions";
+import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, searchDataset, geocodePlace, type GeoPlace } from "../lib/api/kataster.functions";
 import { STATUS_META, canRunPipeline, type Dataset, type MapText, type Parcel, type Role } from "../lib/domain";
 import { MapView, type WmsDef } from "../components/map-view";
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
@@ -40,6 +40,7 @@ function MapPage() {
   const [focusId, setFocusId] = useState<string | null>(null);
   const [fs, setFs] = useState(false);
   const [userNavigated, setUserNavigated] = useState(false);  // false = otvor národne (ESKN); true = fitnuté na zvolené k.ú.
+  const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; zoom: number; nonce: number } | null>(null);  // prelet na vyhľadané miesto
 
   // pridať WMS
   const [wName, setWName] = useState("");
@@ -143,7 +144,8 @@ function MapPage() {
       <div className={fs ? "fixed inset-0 z-40 bg-paper" : "relative h-[62vh] min-h-[440px] w-full"}>
         {datasetId ? (
           <div className="absolute left-3 top-3 z-30">
-            <MapSearch datasetId={datasetId} datasets={datasets} role={role} onPick={setFocusId} onPickDataset={switchDataset} />
+            <MapSearch datasetId={datasetId} datasets={datasets} role={role} onPick={setFocusId} onPickDataset={switchDataset}
+              onPickPlace={(lat, lng) => { setUserNavigated(true); setFlyTo({ lat, lng, zoom: 18, nonce: Date.now() }); }} />
           </div>
         ) : null}
         <button
@@ -165,6 +167,7 @@ function MapPage() {
             opportunities={opps}
             focusParcelId={focusId}
             initialCenter={userNavigated ? null : SR_VIEW}
+            flyTo={flyTo}
           />
         ) : (
           <div className="grid h-full place-items-center rounded-xl border border-dashed border-line bg-surface/50 text-sm text-muted">
@@ -208,11 +211,13 @@ const NATIONAL_WMS = [
 ];
 
 // ——— ZBGIS-style vyhľadávanie na mape: k.ú. / parcela / LV / vlastník → skok / fokus ———
-function MapSearch({ datasetId, datasets, role, onPick, onPickDataset }: { datasetId: string; datasets: Dataset[]; role: Role; onPick: (id: string) => void; onPickDataset: (id: string) => void }) {
+function MapSearch({ datasetId, datasets, role, onPick, onPickDataset, onPickPlace }: { datasetId: string; datasets: Dataset[]; role: Role; onPick: (id: string) => void; onPickDataset: (id: string) => void; onPickPlace: (lat: number, lng: number) => void }) {
   const [q, setQ] = useState("");
   const [res, setRes] = useState<Awaited<ReturnType<typeof searchDataset>> | null>(null);
+  const [places, setPlaces] = useState<GeoPlace[]>([]);
   const [open, setOpen] = useState(false);
   const tRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const gRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const kuMatches = q.trim().length >= 2
     ? datasets.filter((d) => d.ku_name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8)
@@ -221,10 +226,17 @@ function MapSearch({ datasetId, datasets, role, onPick, onPickDataset }: { datas
   function onChange(v: string) {
     setQ(v); setOpen(true);
     if (tRef.current) clearTimeout(tRef.current);
-    if (v.trim().length < 1) { setRes(null); return; }
+    if (gRef.current) clearTimeout(gRef.current);
+    if (v.trim().length < 1) { setRes(null); setPlaces([]); return; }
     tRef.current = setTimeout(async () => {
       try { setRes(await searchDataset({ data: { datasetId, q: v.trim(), role } })); } catch { setRes(null); }
     }, 220);
+    // národné geokódovanie (ZBGIS-style našepkávač) — dlhší debounce (Nominatim policy)
+    if (v.trim().length >= 3) {
+      gRef.current = setTimeout(async () => {
+        try { setPlaces(await geocodePlace({ data: { q: v.trim() } })); } catch { setPlaces([]); }
+      }, 400);
+    } else setPlaces([]);
   }
   function pick(id: string | null, label: string) {
     if (!id) return;
@@ -233,7 +245,10 @@ function MapSearch({ datasetId, datasets, role, onPick, onPickDataset }: { datas
   function pickKu(id: string, label: string) {
     onPickDataset(id); setOpen(false); setQ(label);
   }
-  const hasResults = kuMatches.length + (res ? res.parcels.length + res.lvs.length + res.owners.length : 0) > 0;
+  function pickPlace(p: GeoPlace) {
+    onPickPlace(p.lat, p.lng); setOpen(false); setQ(p.label);
+  }
+  const hasResults = kuMatches.length + places.length + (res ? res.parcels.length + res.lvs.length + res.owners.length : 0) > 0;
   return (
     <div className="w-[320px] max-w-[calc(100vw-2rem)]">
       <input
@@ -251,6 +266,14 @@ function MapSearch({ datasetId, datasets, role, onPick, onPickDataset }: { datas
               <span className="rounded bg-ink/10 px-1.5 py-0.5 text-[10px] font-bold text-fg">k.ú.</span>
               <span className="truncate text-sm text-fg">{d.ku_name}</span>
               <span className="ml-auto shrink-0 text-[11px] text-muted">{d.kn_type}</span>
+            </button>
+          ))}
+          {places.map((p, i) => (
+            <button key={`geo-${i}`} onClick={() => pickPlace(p)}
+              className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
+              <span className="rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand">📍</span>
+              <span className="truncate text-sm text-fg">{p.label}</span>
+              <span className="ml-auto shrink-0 text-[11px] text-muted">{p.kind}</span>
             </button>
           ))}
           {(res?.parcels ?? []).map((p) => (

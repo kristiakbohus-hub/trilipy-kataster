@@ -267,6 +267,7 @@ export function MapView({
   opportunities = [],
   focusParcelId = null,
   initialCenter = null,
+  flyTo = null,
 }: {
   parcels: Parcel[];
   datasetName?: string;
@@ -277,6 +278,7 @@ export function MapView({
   opportunities?: { parcel_id: string; score: number; kind: string }[];
   focusParcelId?: string | null;
   initialCenter?: { lat: number; lng: number; zoom: number } | null;
+  flyTo?: { lat: number; lng: number; zoom: number; nonce: number } | null;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -584,6 +586,15 @@ export function MapView({
     fitAll();
     pushEvent(`Dataset načítaný — ${rings.length} parciel, LocalCanvas engine.`);
   }, [view, size, rings, fitAll, pushEvent, initialCenter]);
+
+  // Vyhľadávanie miesta/adresy (ZBGIS-style) → prelet mapy na súradnice
+  useEffect(() => {
+    if (!flyTo) return;
+    const m = toMerc(flyTo.lng, flyTo.lat);
+    setView({ X: m.x, Y: m.y, zoom: flyTo.zoom });
+    pushEvent(`Prelet na vyhľadané miesto (${flyTo.lat.toFixed(5)}, ${flyTo.lng.toFixed(5)}).`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [flyTo?.nonce]);
 
   const res = view ? BASE_RES / 2 ** view.zoom : BASE_RES;
 
