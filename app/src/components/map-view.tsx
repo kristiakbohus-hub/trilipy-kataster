@@ -317,6 +317,7 @@ export function MapView({
   const lastMove = useRef<{ x: number; y: number; t: number } | null>(null);  // pre výpočet rýchlosti (inertia)
   const velRef = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 });          // px/ms
   const glideRef = useRef<number | null>(null);                                 // rAF id zotrvačného preletu
+  const zoomAnim = useRef<{ gx: number; gy: number; cx: number; cy: number; target: number; cur: number; raf: number | null } | null>(null);  // plynulý wheel-zoom
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [identified, setIdentified] = useState<Parcel | null>(null);
   const [idOwners, setIdOwners] = useState<IdOwners | null>(null);
@@ -627,7 +628,10 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyTo?.nonce]);
 
-  useEffect(() => () => { if (glideRef.current != null) cancelAnimationFrame(glideRef.current); }, []);
+  useEffect(() => () => {
+    if (glideRef.current != null) cancelAnimationFrame(glideRef.current);
+    if (zoomAnim.current?.raf != null) cancelAnimationFrame(zoomAnim.current.raf);
+  }, []);
 
   const res = view ? BASE_RES / 2 ** view.zoom : BASE_RES;
 
@@ -987,6 +991,7 @@ export function MapView({
     (e.target as Element).setPointerCapture?.(e.pointerId);
     dragState.current = { sx: x, sy: y, moved: false };
     if (glideRef.current != null) { cancelAnimationFrame(glideRef.current); glideRef.current = null; }
+    if (zoomAnim.current?.raf != null) { cancelAnimationFrame(zoomAnim.current.raf); zoomAnim.current = null; }
     lastMove.current = { x, y, t: performance.now() };
     velRef.current = { vx: 0, vy: 0 };
   };
@@ -1076,10 +1081,32 @@ export function MapView({
     const m = toMerc(cur.lng, cur.lat);
     setView({ X: m.x - (px - size.w / 2) * newRes, Y: m.y + (py - size.h / 2) * newRes, zoom });
   };
+  // Plynulý (animovaný) wheel-zoom ku kurzoru — ease k cieľu cez rAF (ZBGIS-feel).
+  const zoomStep = () => {
+    const za = zoomAnim.current;
+    if (!za) return;
+    za.cur += (za.target - za.cur) * 0.22;
+    const done = Math.abs(za.target - za.cur) < 0.004;
+    if (done) za.cur = za.target;
+    setView((v) => {
+      if (!v) return v;
+      const r0 = BASE_RES / 2 ** v.zoom;
+      const gx = v.X + (za.cx - size.w / 2) * r0;   // geo pod kurzorom v aktuálnom pohľade
+      const gy = v.Y - (za.cy - size.h / 2) * r0;
+      const r1 = BASE_RES / 2 ** za.cur;
+      return { X: gx - (za.cx - size.w / 2) * r1, Y: gy + (za.cy - size.h / 2) * r1, zoom: za.cur };
+    });
+    if (done) { zoomAnim.current = null; return; }
+    za.raf = requestAnimationFrame(zoomStep);
+  };
   const onWheel = (e: RWheelEvent) => {
     if (!view) return;
     const { x, y } = localXY(e);
-    zoomBy(-e.deltaY * 0.0015, x, y);
+    const prev = zoomAnim.current;
+    const base = prev ? prev.target : view.zoom;
+    const target = Math.max(ZMIN, Math.min(ZMAX, base - e.deltaY * 0.0022));
+    zoomAnim.current = { gx: 0, gy: 0, cx: x, cy: y, target, cur: prev ? prev.cur : view.zoom, raf: prev?.raf ?? null };
+    if (zoomAnim.current.raf == null) zoomAnim.current.raf = requestAnimationFrame(zoomStep);
   };
 
   // Viewport culling — pri tisícoch parciel renderuj len tie v zábere (+margin), s tvrdým stropom.
