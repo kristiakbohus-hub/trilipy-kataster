@@ -6,7 +6,7 @@ import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
 import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, type EsknParcel } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
 import { marketValueEur } from "../lib/domain";
-import { DEV_DEFAULTS } from "../lib/development";
+import { DEV_DEFAULTS, REGULATIV, type ZoneLike } from "../lib/development";
 import { AccessibilityPanel } from "./accessibility-panel";
 import { Icon } from "./kit";
 import { LegalRef } from "./legal-ref";
@@ -306,6 +306,7 @@ export function MapView({
   const [esknLimits, setEsknLimits] = useState<Limits | null>(null);
   const [esknMarket, setEsknMarket] = useState<NearListing[]>([]);
   const [esknZone, setEsknZone] = useState<UpZone | null>(null);
+  const [esknZonePick, setEsknZonePick] = useState<string>("");  // ručný výber funkčnej zóny (podľa ÚP overlay) → kalkulačka
   // ÚP dokumenty obce (auto-fetch)
   const [upDocs, setUpDocs] = useState<Awaited<ReturnType<typeof getUpDocs>>>([]);
   const [upChanges, setUpChanges] = useState<Awaited<ReturnType<typeof getUpChanges>>>([]);
@@ -771,7 +772,7 @@ export function MapView({
   // Živý ESKN identify — klik kdekoľvek v SR → atribúty parcely z ÚGKK ESKN
   const runEsknIdentify = useCallback((lng: number, lat: number) => {
     setEsknBusy(true);
-    setEsknLimits(null); setEsknMarket([]); setEsknZone(null);
+    setEsknLimits(null); setEsknMarket([]); setEsknZone(null); setEsknZonePick("");
     esknIdentify({ data: { lat, lng } })
       .then((r) => { setEsknHit(r); pushEvent(r.found ? `ESKN parcela ${r.parcel_no} — ${r.area_m2 ?? "?"} m².` : "ESKN: na tomto mieste nie je parcela C."); })
       .catch(() => setEsknHit({ found: false, parcel_no: null, area_m2: null, druh_pozemku: null, umiestnenie: null, ku_id: null, lv_id: null, lat, lng, message: "ESKN nedostupné." }))
@@ -1398,6 +1399,38 @@ export function MapView({
                     {esknZone.character ? <div className="text-muted">Charakter: {esknZone.character}</div> : null}
                     {esknZone.pripustne ? <div className="text-muted">Prípustné: {esknZone.pripustne}</div> : null}
                   </div>
+                ) : null}
+
+                {/* Zastavateľnosť / development potenciál — pre ĽUBOVOĽNÚ parcelu v SR (z ESKN druh+výmera, alebo importovaného ÚP) */}
+                {(esknHit.area_m2 ?? esknHit.ours?.area_m2) ? (
+                  <details className="rounded-lg border border-line bg-surface-2/30 p-2">
+                    <summary className="cursor-pointer text-[10px] font-semibold uppercase tracking-wide text-muted">🏗️ Zastavateľnosť (development potenciál)</summary>
+                    <div className="mt-2">
+                      <label className="block text-[10px] text-muted">Funkčná zóna (zapni „🗺 ÚP kraj (SR)" a vyber podľa farby na mape):</label>
+                      <select value={esknZonePick} onChange={(e) => setEsknZonePick(e.target.value)}
+                        className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-1.5 text-xs text-fg outline-none focus:border-brand">
+                        <option value="">Auto (z druhu pozemku / importovaného ÚP)</option>
+                        {REGULATIV.map((r) => (
+                          <option key={`${r.municipality}:${r.code}`} value={`${r.municipality}:${r.code}`}>
+                            {r.kategoria} — {r.name} ({r.code}{r.municipality !== "generic" ? " · " + r.municipality : ""})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mt-2 max-h-80 overflow-y-auto">
+                      <DevelopmentPanel
+                        areaM2={(esknHit.area_m2 ?? esknHit.ours?.area_m2) as number}
+                        useType={esknHit.druh_pozemku ?? esknHit.ours?.use_type ?? null}
+                        placement={esknHit.umiestnenie}
+                        zone={(() => {
+                          const pr = esknZonePick ? REGULATIV.find((r) => `${r.municipality}:${r.code}` === esknZonePick) : undefined;
+                          return pr
+                            ? { code: pr.code, name: pr.name, ipp: pr.ipp, izp: pr.izp, kz: pr.kz, character: pr.character, kategoria: pr.kategoria, pripustne: pr.pripustne, podmienecne: pr.podmienecne, nepripustne: pr.nepripustne } as ZoneLike
+                            : esknZone;
+                        })()}
+                      />
+                    </div>
+                  </details>
                 ) : null}
 
                 {/* Limity výstavby — všetky úradné ArcGIS/WMS registre (geohazardy, les, voda, chránené…) */}
