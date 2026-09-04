@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { getLvVypis } from "../lib/api/kataster.functions";
+import { getLvVypis, lookupRpo, lookupRpvs } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
+import type { Role } from "../lib/domain";
 import { LegalRef } from "../components/legal-ref";
 
 type Content = Awaited<ReturnType<typeof getLvVypis>>;
@@ -465,6 +466,46 @@ function shareFrac(share: string | null | undefined): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
+function CompanyRegistry({ ico, name, role }: { ico: string; name: string; role: string }) {
+  const [rpo, setRpo] = useState<Awaited<ReturnType<typeof lookupRpo>> | null>(null);
+  const [rpvs, setRpvs] = useState<Awaited<ReturnType<typeof lookupRpvs>> | null>(null);
+  const [busy, setBusy] = useState(false);
+  async function load() {
+    setBusy(true);
+    try {
+      const [a, b] = await Promise.all([
+        lookupRpo({ data: { q: ico, role: role as Role } }).catch(() => null),
+        lookupRpvs({ data: { ico, role: role as Role } }).catch(() => null),
+      ]);
+      setRpo(a); setRpvs(b);
+    } finally { setBusy(false); }
+  }
+  const r0 = rpo?.ok ? rpo.results[0] : undefined;
+  return (
+    <div className="rounded-md border border-line bg-surface-2/30 p-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-fg">{name} <span className="text-muted">· IČO {ico}</span></span>
+        {!rpo && !rpvs ? <button onClick={load} disabled={busy} className="shrink-0 rounded-md border border-line px-2 py-0.5 text-fg hover:border-ink">{busy ? "…" : "Načítať register"}</button> : null}
+      </div>
+      {r0 ? (
+        <div className="mt-1 space-y-0.5">
+          {r0.address ? <div className="text-muted">{r0.address}</div> : null}
+          <div className="text-muted">{[r0.legal_form, r0.established ? `vznik ${r0.established}` : null, r0.terminated ? `zánik ${r0.terminated}` : null].filter(Boolean).join(" · ") || "—"}</div>
+          {r0.statutory.length ? (
+            <div className="mt-1"><span className="text-[10px] uppercase tracking-wide text-muted">Štatutári (koho osloviť)</span>
+              {r0.statutory.map((s, i) => <div key={i} className="text-fg">{s.name} <span className="text-muted">· {s.role}</span></div>)}
+            </div>
+          ) : null}
+        </div>
+      ) : rpo && !rpo.ok ? <div className="mt-1 text-muted">RPO: {rpo.message ?? "bez výsledku"}.</div> : null}
+      {rpvs?.found && rpvs.kuv.length ? (
+        <div className="mt-1"><span className="text-[10px] uppercase tracking-wide text-muted">Koneční užívatelia výhod (RPVS)</span>
+          {rpvs.kuv.map((k, i) => <div key={i} className="text-fg">{k.name}{k.pep ? " · PEP" : ""}{!k.current ? " (historický)" : ""}</div>)}
+        </div>
+      ) : rpvs && !rpvs.found ? <div className="mt-1 text-muted">RPVS: {rpvs.message ?? "nie je partner verejného sektora"}.</div> : null}
+    </div>
+  );
+}
 function OwnersSection({ c, role, label }: { c: Content; role: string; label: string | null }) {
   const ku = c.dataset?.ku_name ?? "—";
   const shareM2 = (share: string | null | undefined): string => {
@@ -485,6 +526,15 @@ function OwnersSection({ c, role, label }: { c: Content; role: string; label: st
             <div className="mt-2 text-[12px] text-muted">
               Celková výmera parciel registra C na LV: <b className="text-fg">{m2(c.totalAreaC)}</b>. „Výmera podľa podielu" = celková výmera × spoluvlastnícky podiel.
             </div>
+            {(() => {
+              const firmy = c.owners.filter((o) => o.is_company && o.ico);
+              return firmy.length ? (
+                <div className="mt-3 space-y-1.5">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Firemní vlastníci — RPVS/RPO (štatutári + koneční užívatelia výhod)</div>
+                  {firmy.map((o, i) => <CompanyRegistry key={i} ico={o.ico as string} name={o.name} role={role} />)}
+                </div>
+              ) : null;
+            })()}
           </>
         ) : (
           <div className="px-1 py-2 text-sm text-muted">Bez zápisu vlastníkov.</div>
