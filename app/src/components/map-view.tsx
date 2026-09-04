@@ -162,6 +162,54 @@ function esknDpiFor(res: number): number {
   return Math.max(1, Math.min(96, Math.round((1500 * 0.0254) / res)));
 }
 
+// ——— Územné plány (celá SR) — krajské ÚP z rôznych zdrojov zjednotené do 1 overlay ———
+// Obecný parcelný ÚP nie je otvorene dostupný ako vektor; krajský (VÚC) ÚP áno (rôzne platformy).
+// ext = [minx,miny,maxx,maxy] vo WebMercator (EPSG:3857); overlay sa vykreslí len ak pretína výrez.
+const RMERC = Math.PI * R; // 20037508.34 — polovica šírky WebMercator sveta
+type UpSource =
+  | { id: string; name: string; kind: "xyz"; url: string; ext: [number, number, number, number]; maxZ: number; opacity?: number }
+  | { id: string; name: string; kind: "wms"; def: WmsDef; ext: [number, number, number, number]; opacity?: number };
+const UP_SR_SOURCES: UpSource[] = [
+  // Žilinský kraj (okres Čadca) — ArcGIS dlaždice UPN_URBANIZMUS (autoritatívne, presne georeferencované)
+  {
+    id: "zsk", name: "ÚP kraj — Žilinský", kind: "xyz",
+    url: "https://tiles-eu1.arcgis.com/gAxkiolkahuXc28I/arcgis/rest/services/UPN_URBANIZMUS/MapServer/tile/{z}/{y}/{x}",
+    ext: [2019349, 6205208, 2253779, 6402965], maxZ: 23, opacity: 0.6,
+  },
+  // Banskobystrický kraj — GeoServer WMS (vektorové funkčné plochy VÚC, EPSG:3857 reprojektované)
+  {
+    id: "bbsk", name: "ÚP kraj — Banskobystrický", kind: "wms",
+    def: { id: "bbsk-upd", name: "ÚP BBSK", url: "https://maps.geocloud.sk/geoserver/bbsk/wms", layers: "bbsk:obytne_plochy,bbsk:polyfunkcne_plochy,bbsk:plochy_priemyselnej_vyroby_a_skladov,bbsk:plochy_rekreacie_cestovneho_ruchu_a_sportu,bbsk:rekreacne_priestory", format: "image/png", attribution: "BBSK ÚPN VÚC", reliable: false },
+    ext: [1969000, 6050000, 2260000, 6330000], opacity: 0.6,
+  },
+];
+function extIntersects(e: readonly [number, number, number, number], minx: number, miny: number, maxx: number, maxy: number) {
+  return !(e[2] < minx || e[0] > maxx || e[3] < miny || e[1] > maxy);
+}
+// Jedna XYZ dlaždicová ÚP vrstva vykreslená do aktuálneho výrezu (custom tile-grid, mapa nie je MapLibre).
+function UpTiles({ src, X, Y, res, w, h, dragT }: { src: Extract<UpSource, { kind: "xyz" }>; X: number; Y: number; res: number; w: number; h: number; dragT?: string }) {
+  const Z = Math.max(0, Math.min(src.maxZ, Math.round(Math.log2(BASE_RES / res))));
+  const tileRes = BASE_RES / 2 ** Z;
+  const span = tileRes * 256;
+  const minx = X - (w / 2) * res, maxx = X + (w / 2) * res;
+  const miny = Y - (h / 2) * res, maxy = Y + (h / 2) * res;
+  const n = 2 ** Z;
+  const tx0 = Math.max(0, Math.floor((minx + RMERC) / span)), tx1 = Math.min(n - 1, Math.floor((maxx + RMERC) / span));
+  const ty0 = Math.max(0, Math.floor((RMERC - maxy) / span)), ty1 = Math.min(n - 1, Math.floor((RMERC - miny) / span));
+  const px = (tileRes / res) * 256;
+  const tiles: ReactNode[] = [];
+  for (let tx = tx0; tx <= tx1; tx++) {
+    for (let ty = ty0; ty <= ty1; ty++) {
+      const tMinX = -RMERC + tx * span, tMaxY = RMERC - ty * span;
+      const sx = w / 2 + (tMinX - X) / res, sy = h / 2 - (tMaxY - Y) / res;
+      const url = src.url.replace("{z}", String(Z)).replace("{x}", String(tx)).replace("{y}", String(ty));
+      tiles.push(<img key={`${Z}-${tx}-${ty}`} src={url} alt="" draggable={false}
+        style={{ position: "absolute", left: sx, top: sy, width: px + 1, height: px + 1, userSelect: "none" }} />);
+    }
+  }
+  return <div style={{ position: "absolute", inset: 0, transform: dragT, opacity: src.opacity ?? 0.6, pointerEvents: "none" }}>{tiles}</div>;
+}
+
 export function MapView({
   parcels,
   datasetName,
@@ -212,6 +260,7 @@ export function MapView({
   const [upZone, setUpZone] = useState<UpZone>(null);
   const [upZones, setUpZones] = useState<Awaited<ReturnType<typeof listUpZones>>>([]);
   const [upZonesOn, setUpZonesOn] = useState(false);
+  const [upSrOn, setUpSrOn] = useState(false);   // krajský ÚP (celá SR) — dlaždice/WMS overlay
   const [upImportBusy, setUpImportBusy] = useState(false);
   const [upImportMsg, setUpImportMsg] = useState<string | null>(null);
   const [selection, setSelection] = useState<string[]>([]);
@@ -986,6 +1035,20 @@ export function MapView({
             ))
           : null}
 
+        {/* Územný plán — krajský (celá SR), zjednotený overlay: dlaždice (ArcGIS) + WMS podľa výrezu */}
+        {view && size.w > 0 && upSrOn
+          ? UP_SR_SOURCES.filter((s) => extIntersects(
+              s.ext,
+              view!.X - (size.w / 2) * res, view!.Y - (size.h / 2) * res,
+              view!.X + (size.w / 2) * res, view!.Y + (size.h / 2) * res,
+            )).map((s) => s.kind === "xyz"
+              ? <UpTiles key={s.id} src={s} X={view!.X} Y={view!.Y} res={res} w={size.w} h={size.h} dragT={dragT} />
+              : (
+                <img key={s.id} src={wmsGetMap(s.def, view!.X, view!.Y, res, size.w, size.h)} alt={s.name} draggable={false}
+                  style={{ position: "absolute", left: 0, top: 0, width: size.w, height: size.h, transform: dragT, opacity: s.opacity ?? 0.6, userSelect: "none", pointerEvents: "none" }} />
+              ))
+          : null}
+
         {/* Limity výstavby — úradné vrstvy (ArcGIS export, transparentné, fail-soft) */}
         {view && size.w > 0
           ? LIMIT_LAYERS.filter((l) => limOn[l.id]).map((l) => (
@@ -1459,6 +1522,13 @@ export function MapView({
           title="ESKN národný kataster (ÚGKK) ako podklad na celom SR + klik = live identify ľubovoľnej parcely"
           className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (esknBaseOn ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
           🇸🇰 ESKN kataster{esknBaseOn ? " · zapnutý" : ""}
+        </button>
+
+        <button
+          onClick={() => { const nv = !upSrOn; setUpSrOn(nv); pushEvent(nv ? "Krajský ÚP (celá SR) zapnutý — dlaždice/WMS podľa výrezu." : "Krajský ÚP vypnutý."); }}
+          title="Krajský územný plán (VÚC) pre celú SR — autoritatívny georeferencovaný overlay podľa výrezu (Žilinský kraj vrátane okresu Čadca, ďalšie kraje pribúdajú)"
+          className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (upSrOn ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
+          🗺 ÚP kraj (SR){upSrOn ? " · zapnutý" : ""}
         </button>
 
         {colorMode === "bpej" ? (
