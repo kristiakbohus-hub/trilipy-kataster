@@ -226,8 +226,9 @@ function TileLayer({ X, Y, res, w, h, dragT, maxZ, opacity, tileUrl, keyPrefix }
   const minx = X - (w / 2) * res, maxx = X + (w / 2) * res;
   const miny = Y - (h / 2) * res, maxy = Y + (h / 2) * res;
   const n = 2 ** Z;
-  const tx0 = Math.max(0, Math.floor((minx + RMERC) / span)), tx1 = Math.min(n - 1, Math.floor((maxx + RMERC) / span));
-  const ty0 = Math.max(0, Math.floor((RMERC - maxy) / span)), ty1 = Math.min(n - 1, Math.floor((RMERC - miny) / span));
+  // overscan: 1 dlaždica navyše na každú stranu → pri posune sú okraje už načítané (žiadne prázdne miesta)
+  const tx0 = Math.max(0, Math.floor((minx + RMERC) / span) - 1), tx1 = Math.min(n - 1, Math.floor((maxx + RMERC) / span) + 1);
+  const ty0 = Math.max(0, Math.floor((RMERC - maxy) / span) - 1), ty1 = Math.min(n - 1, Math.floor((RMERC - miny) / span) + 1);
   const px = (tileRes / res) * 256;
   const tiles: ReactNode[] = [];
   for (let tx = tx0; tx <= tx1; tx++) {
@@ -313,6 +314,9 @@ export function MapView({
   const [tool, setTool] = useState<Tool>("pan");
   const [drag, setDrag] = useState<{ dx: number; dy: number } | null>(null);
   const dragState = useRef<{ sx: number; sy: number; moved: boolean } | null>(null);
+  const lastMove = useRef<{ x: number; y: number; t: number } | null>(null);  // pre výpočet rýchlosti (inertia)
+  const velRef = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 });          // px/ms
+  const glideRef = useRef<number | null>(null);                                 // rAF id zotrvačného preletu
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [identified, setIdentified] = useState<Parcel | null>(null);
   const [idOwners, setIdOwners] = useState<IdOwners | null>(null);
@@ -623,6 +627,8 @@ export function MapView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [flyTo?.nonce]);
 
+  useEffect(() => () => { if (glideRef.current != null) cancelAnimationFrame(glideRef.current); }, []);
+
   const res = view ? BASE_RES / 2 ** view.zoom : BASE_RES;
 
   const project = useCallback(
@@ -929,6 +935,26 @@ export function MapView({
   }, [rings, selection, size, pushEvent]);
 
   // ——— Pointer ———
+  // Zotrvačný prelet po pustení ťahania (ZBGIS-feel) — decay rýchlosti cez rAF, funkčný setView (bez stale view).
+  const startGlide = () => {
+    let { vx, vy } = velRef.current;
+    let speed = Math.hypot(vx, vy);
+    if (speed < 0.15) return;                          // slabé gesto → bez zotrvačnosti
+    const cap = 4;                                     // strop px/ms
+    if (speed > cap) { vx = (vx / speed) * cap; vy = (vy / speed) * cap; }
+    let last = performance.now();
+    const step = () => {
+      const now = performance.now();
+      const dt = Math.min(40, now - last); last = now;
+      vx *= 0.92; vy *= 0.92;                          // trenie
+      speed = Math.hypot(vx, vy);
+      if (speed < 0.02) { glideRef.current = null; return; }
+      const dxpx = vx * dt, dypx = vy * dt;
+      setView((v) => { if (!v) return v; const r = BASE_RES / 2 ** v.zoom; return { ...v, X: v.X - dxpx * r, Y: v.Y + dypx * r }; });
+      glideRef.current = requestAnimationFrame(step);
+    };
+    glideRef.current = requestAnimationFrame(step);
+  };
   const onPointerDown = (e: RPointerEvent) => {
     if (!view) return;
     const { x, y } = localXY(e);
@@ -960,6 +986,9 @@ export function MapView({
     }
     (e.target as Element).setPointerCapture?.(e.pointerId);
     dragState.current = { sx: x, sy: y, moved: false };
+    if (glideRef.current != null) { cancelAnimationFrame(glideRef.current); glideRef.current = null; }
+    lastMove.current = { x, y, t: performance.now() };
+    velRef.current = { vx: 0, vy: 0 };
   };
 
   const onPointerMove = (e: RPointerEvent) => {
@@ -972,7 +1001,16 @@ export function MapView({
       const dx = x - dragState.current.sx, dy = y - dragState.current.sy;
       if (Math.abs(dx) + Math.abs(dy) > 3) dragState.current.moved = true;
       if (tool === "select") setBox({ x0: dragState.current.sx, y0: dragState.current.sy, x1: x, y1: y });
-      else setDrag({ dx, dy });
+      else {
+        setDrag({ dx, dy });
+        const now = performance.now();
+        const lm = lastMove.current;
+        if (lm) {
+          const dt = now - lm.t;
+          if (dt > 0) velRef.current = { vx: (x - lm.x) / dt, vy: (y - lm.y) / dt };  // px/ms
+        }
+        lastMove.current = { x, y, t: now };
+      }
       return;
     }
     if (tool === "pan") setHoverId(hitTest(x, y)?.id ?? null);
@@ -1011,6 +1049,7 @@ export function MapView({
     if (st && drag && st.moved) {
       setView({ X: view.X - drag.dx * res, Y: view.Y + drag.dy * res, zoom: view.zoom });
       setDrag(null);
+      startGlide();   // zotrvačný dojazd (ZBGIS-feel)
       return;
     }
     setDrag(null);
