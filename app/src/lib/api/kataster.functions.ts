@@ -1857,6 +1857,21 @@ export const getMarketOpportunities = createServerFn({ method: "POST" })
 
 // ——— Deal radar: kombinovaný ranking najlepších príležitostí naprieč SR (LV signály + trhové pod cenou) ———
 export type RadarLv = { dataset_id: string; ku_name: string; lv_no: number; score: number; reasons: string[]; co_owners: number; total_area: number; has_spf: number; okres: string | null; avm_eur: number | null };
+export type ReportParcel = {
+  parcel_no: string; kn_type: string | null; area_m2: number | null; use_type: string | null;
+  lv_no: number | null; celok: number | null; settled: number | null; ekn_ref: string | null;
+  bpej: string | null; bpej_skupina: number | null; odnatie_eur: number | null;
+  centroid_lat: number | null; centroid_lng: number | null;
+};
+export const getParcelByNo = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string(), parcelNo: z.string() }))
+  .handler(async ({ data }): Promise<ReportParcel | null> => {
+    const r = await q<ReportParcel>(
+      "SELECT parcel_no,kn_type,area_m2,use_type,lv_no,celok,settled,ekn_ref,bpej,bpej_skupina,odnatie_eur,centroid_lat,centroid_lng FROM parcels WHERE dataset_id=? AND parcel_no=? LIMIT 1",
+      [data.datasetId, data.parcelNo]);
+    return r[0] ?? null;
+  });
+
 export const getDealRadar = createServerFn({ method: "POST" })
   .validator(z.object({ okres: z.string().optional(), minScore: z.number().optional(), limit: z.number().optional() }))
   .handler(async ({ data }): Promise<{ lv: RadarLv[]; market: MarketOpp[] }> => {

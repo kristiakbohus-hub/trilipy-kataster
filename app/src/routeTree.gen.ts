@@ -25,6 +25,7 @@ import { Route as MapaRouteImport } from './routes/mapa'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportyIdRouteImport } from './routes/reporty.$id'
 import { Route as VypisDatasetIdLvNoRouteImport } from './routes/vypis.$datasetId.$lvNo'
+import { Route as ReportDatasetIdParcelNoRouteImport } from './routes/report.$datasetId.$parcelNo'
 import { Route as ElDatasetIdCelokRouteImport } from './routes/el.$datasetId.$celok'
 import { Route as DatasetyIndexRouteImport } from './routes/datasety.index'
 import { Route as DatasetyIdRouteImport } from './routes/datasety.$id'
@@ -115,6 +116,11 @@ const VypisDatasetIdLvNoRoute = VypisDatasetIdLvNoRouteImport.update({
   path: '/vypis/$datasetId/$lvNo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportDatasetIdParcelNoRoute = ReportDatasetIdParcelNoRouteImport.update({
+  id: '/report/$datasetId/$parcelNo',
+  path: '/report/$datasetId/$parcelNo',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ElDatasetIdCelokRoute = ElDatasetIdCelokRouteImport.update({
   id: '/el/$datasetId/$celok',
   path: '/el/$datasetId/$celok',
@@ -183,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
+  '/report/$datasetId/$parcelNo': typeof ReportDatasetIdParcelNoRoute
   '/el/$datasetId/$celok': typeof ElDatasetIdCelokRoute
   '/upinfo/$id': typeof UpInfoIdRoute
   '/datasety/$id': typeof DatasetyIdRoute
@@ -210,6 +217,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
+  '/report/$datasetId/$parcelNo': typeof ReportDatasetIdParcelNoRoute
   '/el/$datasetId/$celok': typeof ElDatasetIdCelokRoute
   '/upinfo/$id': typeof UpInfoIdRoute
   '/datasety/$id': typeof DatasetyIdRoute
@@ -238,6 +246,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
+  '/report/$datasetId/$parcelNo': typeof ReportDatasetIdParcelNoRoute
   '/el/$datasetId/$celok': typeof ElDatasetIdCelokRoute
   '/upinfo/$id': typeof UpInfoIdRoute
   '/datasety/$id': typeof DatasetyIdRoute
@@ -267,6 +276,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
+    | '/report/$datasetId/$parcelNo'
     | '/el/$datasetId/$celok'
     | '/upinfo/$id'
     | '/datasety/$id'
@@ -294,6 +304,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
+    | '/report/$datasetId/$parcelNo'
     | '/el/$datasetId/$celok'
     | '/upinfo/$id'
     | '/datasety/$id'
@@ -347,6 +358,7 @@ export interface RootRouteChildren {
   OgcRoute: typeof OgcRoute
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
+  ReportDatasetIdParcelNoRoute: typeof ReportDatasetIdParcelNoRoute
   ElDatasetIdCelokRoute: typeof ElDatasetIdCelokRoute
   UpInfoIdRoute: typeof UpInfoIdRoute
   DatasetyIdRoute: typeof DatasetyIdRoute
@@ -495,6 +507,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportyIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/report/$datasetId/$parcelNo': {
+      id: '/report/$datasetId/$parcelNo'
+      path: '/report/$datasetId/$parcelNo'
+      fullPath: '/report/$datasetId/$parcelNo'
+      preLoaderRoute: typeof ReportDatasetIdParcelNoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vypis/$datasetId/$lvNo': {
       id: '/vypis/$datasetId/$lvNo'
       path: '/vypis/$datasetId/$lvNo'
@@ -555,6 +574,7 @@ const rootRouteChildren: RootRouteChildren = {
   OgcRoute: OgcRoute,
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,
+  ReportDatasetIdParcelNoRoute: ReportDatasetIdParcelNoRoute,
   ElDatasetIdCelokRoute: ElDatasetIdCelokRoute,
   UpInfoIdRoute: UpInfoIdRoute,
   DatasetyIdRoute: DatasetyIdRoute,

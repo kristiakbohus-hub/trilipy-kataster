@@ -2191,6 +2191,14 @@ export function MapView({
             <div className="mt-3"><SietiPanel lat={identified.centroid_lat} lng={identified.centroid_lng} /></div>
           ) : null}
 
+          {/* PDF dossier parcely — jedno-klik podklad na klienta/kolegu */}
+          {identified.parcel_no && datasetId ? (
+            <Link to="/report/$datasetId/$parcelNo" params={{ datasetId, parcelNo: identified.parcel_no }}
+              className="mt-3 flex items-center justify-center gap-1 rounded-md border border-ink bg-ink px-3 py-2 text-sm font-medium text-cream hover:opacity-90">
+              📄 PDF dossier parcely →
+            </Link>
+          ) : null}
+
           {/* Rozbaliteľné celé LV — majetková podstata (C+E), stavby, vlastníci, hodnota */}
           {identified.lv_no != null ? (
             <div className="mt-3">
