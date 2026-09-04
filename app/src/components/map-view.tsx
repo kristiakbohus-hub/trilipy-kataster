@@ -1796,6 +1796,15 @@ export function MapView({
           {catalogOpen ? (
             <div className="max-h-[46vh] space-y-3 overflow-y-auto border-t border-line px-3 py-2 text-xs">
               <div>
+                <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Celoštátne podklady</div>
+                <div className="space-y-1.5">
+                  <LayerRow label="ESKN kataster (ÚGKK)" checked={esknBaseOn} onToggle={() => { const nv = !esknBaseOn; setEsknBaseOn(nv); setEsknMode(nv); if (!nv) setEsknHit(null); }} hint="národný kataster · klik = identify" />
+                  <LayerRow label="ÚP kraj (SR)" checked={upSrOn} onToggle={() => setUpSrOn((v) => !v)} hint="krajský územný plán · dlaždice" />
+                  <LayerRow label="Bonita pôdy (choropleth)" checked={colorMode === "bpej"} onToggle={() => setColorMode((m) => (m === "bpej" ? "none" : "bpej"))} hint="skupina 1 zelená → 9 červená" />
+                  <LayerRow label="Trh vo výreze (inzeráty)" checked={marketBrowse} onToggle={() => setMarketBrowse((v) => { const nv = !v; if (!nv) setPinSel(null); return nv; })} hint="klikateľné piny inzerátov" />
+                </div>
+              </div>
+              <div>
                 <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">Katastrálne vrstvy (VGI)</div>
                 <div className="space-y-1.5">
                   <LayerRow label="Výber" checked disabled hint="navrchu" />
