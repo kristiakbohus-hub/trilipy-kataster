@@ -1634,6 +1634,24 @@ export function MapView({
         </div>
       ) : null}
 
+      {/* Mierka (scale bar) — ZBGIS-style, s korekciou na zemepisnú šírku */}
+      {view && size.w > 0 ? (() => {
+        const latRad = (toLngLat(view.X, view.Y).lat * Math.PI) / 180;
+        const mPerPx = res * Math.cos(latRad);
+        const raw = mPerPx * 90;
+        const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+        const n = raw / pow;
+        const nice = (n >= 5 ? 5 : n >= 2 ? 2 : 1) * pow;
+        const barPx = Math.round(nice / mPerPx);
+        const label = nice >= 1000 ? `${nice / 1000} km` : `${nice} m`;
+        return (
+          <div className="absolute bottom-3 left-3 z-20 select-none rounded bg-surface/80 px-1.5 py-1 backdrop-blur">
+            <div className="border-2 border-t-0 border-fg/70" style={{ width: barPx, height: 5 }} />
+            <div className="mt-0.5 text-center text-[10px] font-medium leading-none text-fg" style={{ width: barPx }}>{label}</div>
+          </div>
+        );
+      })() : null}
+
       {/* Nástroje + Layer Catalog (vľavo hore) */}
       {/* Podkladové mapy — ZBGIS-style prepínač (vpravo dole) */}
       <div className="absolute bottom-3 right-3 z-20 flex gap-1 rounded-lg border border-line bg-surface/95 p-1 text-[11px] shadow backdrop-blur">
