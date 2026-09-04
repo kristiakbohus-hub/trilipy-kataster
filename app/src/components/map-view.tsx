@@ -169,18 +169,28 @@ const RMERC = Math.PI * R; // 20037508.34 — polovica šírky WebMercator sveta
 type UpSource =
   | { id: string; name: string; kind: "xyz"; url: string; ext: [number, number, number, number]; maxZ: number; opacity?: number }
   | { id: string; name: string; kind: "wms"; def: WmsDef; ext: [number, number, number, number]; opacity?: number };
+// Krajské ÚP (VÚC) komplexné výkresy — autoritatívne georeferencované ArcGIS dlaždice (overené).
+// Chýbajú TSK/NSK/PSK/KSK (ich ÚP nie je otvorene dostupný ako služba) — doplniť keď sa nájde.
 const UP_SR_SOURCES: UpSource[] = [
-  // Žilinský kraj (okres Čadca) — ArcGIS dlaždice UPN_URBANIZMUS (autoritatívne, presne georeferencované)
   {
-    id: "zsk", name: "ÚP kraj — Žilinský", kind: "xyz",
+    id: "zsk", name: "ÚP kraj — Žilinský (okres Čadca)", kind: "xyz",
     url: "https://tiles-eu1.arcgis.com/gAxkiolkahuXc28I/arcgis/rest/services/UPN_URBANIZMUS/MapServer/tile/{z}/{y}/{x}",
     ext: [2019349, 6205208, 2253779, 6402965], maxZ: 23, opacity: 0.6,
   },
-  // Banskobystrický kraj — GeoServer WMS (vektorové funkčné plochy VÚC, EPSG:3857 reprojektované)
   {
-    id: "bbsk", name: "ÚP kraj — Banskobystrický", kind: "wms",
-    def: { id: "bbsk-upd", name: "ÚP BBSK", url: "https://maps.geocloud.sk/geoserver/bbsk/wms", layers: "bbsk:obytne_plochy,bbsk:polyfunkcne_plochy,bbsk:plochy_priemyselnej_vyroby_a_skladov,bbsk:plochy_rekreacie_cestovneho_ruchu_a_sportu,bbsk:rekreacne_priestory", format: "image/png", attribution: "BBSK ÚPN VÚC", reliable: false },
-    ext: [1969000, 6050000, 2260000, 6330000], opacity: 0.6,
+    id: "ttsk", name: "ÚP kraj — Trnavský", kind: "xyz",
+    url: "https://tiles-eu1.arcgis.com/WhQc2QZAmyA40edq/arcgis/rest/services/02___KOMPLEXN%C3%9D_V%C3%9DKRES/MapServer/tile/{z}/{y}/{x}",
+    ext: [1823911, 6028641, 2049649, 6297427], maxZ: 22, opacity: 0.6,
+  },
+  {
+    id: "bsk", name: "ÚP kraj — Bratislavský", kind: "xyz",
+    url: "https://gis.region-bsk.sk/server/rest/services/UPNR_BSK/02_Komplexny_navrh/MapServer/tile/{z}/{y}/{x}",
+    ext: [1728549, 6005128, 2099465, 6304764], maxZ: 19, opacity: 0.6,
+  },
+  {
+    id: "bbsk", name: "ÚP kraj — Banskobystrický", kind: "xyz",
+    url: "https://tiles-eu1.arcgis.com/ODrCBoJHlKVMl3Cg/arcgis/rest/services/Komplexn%C3%BD_urbanistick%C3%BD_n%C3%A1vrh_tif/MapServer/tile/{z}/{y}/{x}",
+    ext: [2041488, 6094387, 2294629, 6292016], maxZ: 23, opacity: 0.6,
   },
 ];
 function extIntersects(e: readonly [number, number, number, number], minx: number, miny: number, maxx: number, maxy: number) {
@@ -1526,7 +1536,7 @@ export function MapView({
 
         <button
           onClick={() => { const nv = !upSrOn; setUpSrOn(nv); pushEvent(nv ? "Krajský ÚP (celá SR) zapnutý — dlaždice/WMS podľa výrezu." : "Krajský ÚP vypnutý."); }}
-          title="Krajský územný plán (VÚC) pre celú SR — autoritatívny georeferencovaný overlay podľa výrezu (Žilinský kraj vrátane okresu Čadca, ďalšie kraje pribúdajú)"
+          title="Krajský územný plán (VÚC) — autoritatívny georeferencovaný overlay podľa výrezu. Pokryté: Žilinský (okres Čadca), Trnavský, Bratislavský, Banskobystrický. TSK/NSK/PSK/KSK pribudnú."
           className={"flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 text-xs backdrop-blur " + (upSrOn ? "border-brand bg-brand/10 text-fg" : "border-line bg-surface/95 text-muted hover:text-fg")}>
           🗺 ÚP kraj (SR){upSrOn ? " · zapnutý" : ""}
         </button>
