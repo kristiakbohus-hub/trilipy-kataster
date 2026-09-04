@@ -318,6 +318,7 @@ export function MapView({
   const velRef = useRef<{ vx: number; vy: number }>({ vx: 0, vy: 0 });          // px/ms
   const glideRef = useRef<number | null>(null);                                 // rAF id zotrvačného preletu
   const zoomAnim = useRef<{ gx: number; gy: number; cx: number; cy: number; target: number; cur: number; raf: number | null } | null>(null);  // plynulý wheel-zoom
+  const coordRef = useRef<HTMLDivElement | null>(null);   // súradnice kurzora (imperatívny update, bez re-renderu)
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [identified, setIdentified] = useState<Parcel | null>(null);
   const [idOwners, setIdOwners] = useState<IdOwners | null>(null);
@@ -999,6 +1000,7 @@ export function MapView({
   const onPointerMove = (e: RPointerEvent) => {
     if (!view) return;
     const { x, y } = localXY(e);
+    if (coordRef.current) { const ll = unproject(x, y); coordRef.current.textContent = `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`; }
     if (tool === "measure") {
       setSnapPt(snap ? nearestVertex(x, y) : null);
     }
@@ -1652,6 +1654,11 @@ export function MapView({
         );
       })() : null}
 
+      {/* Súradnice kurzora (ZBGIS-style, WGS84) — imperatívny update bez re-renderu */}
+      <div className="absolute bottom-3 left-1/2 z-20 hidden -translate-x-1/2 select-none rounded bg-surface/80 px-2 py-0.5 text-[10px] font-medium text-fg backdrop-blur sm:block">
+        <span ref={coordRef}>—</span> <span className="text-muted">WGS84</span>
+      </div>
+
       {/* Nástroje + Layer Catalog (vľavo hore) */}
       {/* Podkladové mapy — ZBGIS-style prepínač (vpravo dole) */}
       <div className="absolute bottom-3 right-3 z-20 flex gap-1 rounded-lg border border-line bg-surface/95 p-1 text-[11px] shadow backdrop-blur">
@@ -1668,7 +1675,17 @@ export function MapView({
         <div className="absolute right-3 top-16 z-20 flex flex-col overflow-hidden rounded-lg border border-line bg-surface/95 shadow backdrop-blur">
           <button onClick={() => setView({ X: view.X, Y: view.Y, zoom: Math.min(ZMAX, view.zoom + 1) })} title="Priblížiť" className="h-8 w-8 border-b border-line text-lg leading-none text-fg hover:bg-surface-2">+</button>
           <button onClick={() => setView({ X: view.X, Y: view.Y, zoom: Math.max(ZMIN, view.zoom - 1) })} title="Oddialiť" className="h-8 w-8 border-b border-line text-lg leading-none text-fg hover:bg-surface-2">−</button>
-          <button onClick={locateMe} title="Moja poloha (GPS)" className="h-8 w-8 text-sm leading-none text-fg hover:bg-surface-2">◎</button>
+          <button onClick={locateMe} title="Moja poloha (GPS)" className="h-8 w-8 border-b border-line text-sm leading-none text-fg hover:bg-surface-2">◎</button>
+          <button
+            onClick={() => {
+              if (!view) return;
+              const ll = toLngLat(view.X, view.Y);
+              const url = `${location.origin}${location.pathname}?${datasetId ? `ds=${encodeURIComponent(datasetId)}&` : ""}ll=${ll.lat.toFixed(6)},${ll.lng.toFixed(6)}&z=${view.zoom.toFixed(2)}`;
+              if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(() => pushEvent("Odkaz na výrez skopírovaný."), () => pushEvent(url));
+              else pushEvent(url);
+            }}
+            title="Skopírovať odkaz na tento výrez (permalink)"
+            className="h-8 w-8 text-sm leading-none text-fg hover:bg-surface-2">🔗</button>
         </div>
       ) : null}
 

@@ -58,6 +58,12 @@ function MapPage() {
     const p = sp.get("p"); const ds = sp.get("ds");
     if (ds && ds !== datasetId) { void switchDataset(ds).then(() => { if (p) setFocusId(p); }); }
     else if (p) setFocusId(p);
+    // permalink na výrez: ll=lat,lng & z=zoom → prelet
+    const ll = sp.get("ll"); const z = sp.get("z");
+    if (ll) {
+      const [latS, lngS] = ll.split(","); const lat = Number(latS), lng = Number(lngS); const zoom = z ? Number(z) : 17;
+      if (Number.isFinite(lat) && Number.isFinite(lng)) { setUserNavigated(true); setFlyTo({ lat, lng, zoom: Number.isFinite(zoom) ? zoom : 17, nonce: Date.now() }); }
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
