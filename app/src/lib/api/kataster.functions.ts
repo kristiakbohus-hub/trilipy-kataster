@@ -1182,7 +1182,7 @@ export const searchOwnersGlobal = createServerFn({ method: "POST" })
   });
 
 // ——— Živý lookup do RPO (Register právnických osôb, ŠÚ SR) — obohatenie firemných vlastníkov ———
-type RpoHit = { name: string | null; ico: string | null; address: string | null; legal_form: string | null; established: string | null; terminated: string | null; source: string };
+type RpoHit = { name: string | null; ico: string | null; address: string | null; legal_form: string | null; established: string | null; terminated: string | null; statutory: { role: string; name: string }[]; source: string };
 export const lookupRpo = createServerFn({ method: "POST" })
   .validator(z.object({ q: z.string().min(2), role: roleSchema }))
   .handler(async ({ data }): Promise<{ ok: boolean; results: RpoHit[]; message?: string }> => {
@@ -1222,12 +1222,38 @@ export const lookupRpo = createServerFn({ method: "POST" })
           name: val(first(e.fullNames)) ?? val(e.fullName) ?? null,
           ico: val(first(e.identifiers)) ?? val(e.identifier) ?? (isIco ? query : null),
           address,
-          legal_form: val(first(e.legalForms)) ?? null,
+          legal_form: val(obj(first(e.legalForms))?.value) ?? null,
           established: val(e.establishment) ?? null,
           terminated: val(e.termination) ?? null,
+          statutory: [],
           source: "RPO / ŠÚ SR (api.statistics.sk)",
         };
       });
+      // Detail najlepšej zhody (/entity/<id>) → aktuálni štatutári (koho osloviť) + právna forma.
+      const id0 = obj(first(arr))?.id;
+      if (results[0] && id0 != null) {
+        try {
+          const ctrl2 = new AbortController();
+          const to2 = setTimeout(() => ctrl2.abort(), 7000);
+          const dres = await fetch(`https://api.statistics.sk/rpo/v1/entity/${String(id0)}`, { headers: { accept: "application/json", "user-agent": "tri-lipy/1.0 (kataster)" }, signal: ctrl2.signal });
+          clearTimeout(to2);
+          if (dres.ok) {
+            const detail = obj(await dres.json()) ?? {};
+            results[0].statutory = asArr(detail.statutoryBodies)
+              .map((s0) => obj(s0))
+              .filter((o): o is Record<string, unknown> => !!o && o.validTo == null)
+              .map((o) => {
+                const pn = obj(o.personName);
+                const nm = pn ? (val(pn.formatedName) ?? val(pn.formattedName)) : null;
+                const role2 = val(o.statutoryBodyMember) ?? val(o.stakeholderType) ?? "štatutár";
+                return { role: role2 ?? "štatutár", name: nm ?? "" };
+              })
+              .filter((x) => x.name)
+              .slice(0, 8);
+            results[0].legal_form = results[0].legal_form ?? val(obj(first(detail.legalForms))?.value);
+          }
+        } catch { /* detail best-effort */ }
+      }
       await logAudit("owner.rpo.lookup", role, `RPO lookup „${query}" — ${results.length} výsledkov.`);
       return { ok: true, results };
     } catch (err) {

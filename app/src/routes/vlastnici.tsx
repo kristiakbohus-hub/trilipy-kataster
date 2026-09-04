@@ -156,6 +156,14 @@ function VlastniciPage() {
                           {c.established ? <span> · vznik {c.established}</span> : null}
                           {c.terminated ? <span style={{ color: "#9c4a40" }}> · zánik {c.terminated}</span> : null}
                         </div>
+                        {c.statutory && c.statutory.length ? (
+                          <div className="mt-1 border-t border-line/50 pt-1">
+                            <div className="text-[10px] uppercase tracking-wide text-muted">Štatutári (koho osloviť)</div>
+                            {c.statutory.map((s, si) => (
+                              <div key={si} className="text-fg">{s.name} <span className="text-muted">· {s.role}</span></div>
+                            ))}
+                          </div>
+                        ) : null}
                       </div>
                     ))}
                   </div>
