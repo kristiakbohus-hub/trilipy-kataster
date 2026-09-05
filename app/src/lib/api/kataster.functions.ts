@@ -541,6 +541,104 @@ export const logoutUser = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string() }))
   .handler(async ({ data }): Promise<{ ok: boolean }> => { await q("DELETE FROM sessions WHERE token = ?", [data.token]); return { ok: true }; });
 
+// ——— Kolaborácia: komentáre / watchlisty / denník / notifikácie ———
+async function notifyWatchers(subjectType: string, subjectId: string, exceptUserId: string, kind: string, body: string) {
+  const watchers = await q<{ user_id: string }>("SELECT DISTINCT user_id FROM watchlist WHERE subject_type=? AND subject_id=? AND user_id<>?", [subjectType, subjectId, exceptUserId]);
+  for (const w of watchers) await q("INSERT INTO notifications (user_id,kind,subject_type,subject_id,body) VALUES (?,?,?,?,?)", [w.user_id, kind, subjectType, subjectId, body]);
+}
+export type CommentRow = { id: number; user_id: string; author: string | null; body: string; created_at: string };
+export const getComments = createServerFn({ method: "POST" })
+  .validator(z.object({ subjectType: z.string(), subjectId: z.string() }))
+  .handler(async ({ data }): Promise<CommentRow[]> =>
+    q<CommentRow>("SELECT id,user_id,author,body,created_at FROM comments WHERE subject_type=? AND subject_id=? ORDER BY id DESC LIMIT 200", [data.subjectType, data.subjectId]));
+export const addComment = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), subjectType: z.string(), subjectId: z.string(), body: z.string().min(1).max(4000) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    const author = u.name ?? u.email;
+    await q("INSERT INTO comments (subject_type,subject_id,user_id,author,body) VALUES (?,?,?,?,?)", [data.subjectType, data.subjectId, u.id, author, data.body.trim()]);
+    await q("INSERT INTO activity (user_id,author,action,subject_type,subject_id,detail) VALUES (?,?,?,?,?,?)", [u.id, author, "comment.add", data.subjectType, data.subjectId, data.body.trim().slice(0, 90)]);
+    await notifyWatchers(data.subjectType, data.subjectId, u.id, "comment", `💬 ${author}: ${data.body.trim().slice(0, 70)}`);
+    return { ok: true };
+  });
+export const deleteComment = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number() }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false };
+    if (u.role === "admin") await q("DELETE FROM comments WHERE id=?", [data.id]);
+    else await q("DELETE FROM comments WHERE id=? AND user_id=?", [data.id, u.id]);
+    return { ok: true };
+  });
+
+export type WatchRow = { id: number; subject_type: string; subject_id: string; label: string | null; note: string | null; status: string; assignee_id: string | null; created_at: string };
+export const getWatchlist = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<WatchRow[]> => {
+    const u = await userFromToken(data.token);
+    if (!u) return [];
+    return q<WatchRow>("SELECT id,subject_type,subject_id,label,note,status,assignee_id,created_at FROM watchlist WHERE user_id=? OR assignee_id=? ORDER BY id DESC LIMIT 300", [u.id, u.id]);
+  });
+export const isWatched = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), subjectType: z.string(), subjectId: z.string() }))
+  .handler(async ({ data }): Promise<{ watched: boolean }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { watched: false };
+    const r = await q<{ id: number }>("SELECT id FROM watchlist WHERE user_id=? AND subject_type=? AND subject_id=?", [u.id, data.subjectType, data.subjectId]);
+    return { watched: r.length > 0 };
+  });
+export const toggleWatch = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), subjectType: z.string(), subjectId: z.string(), label: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; watched: boolean; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false, watched: false, message: "Neprihlásený." };
+    const ex = await q<{ id: number }>("SELECT id FROM watchlist WHERE user_id=? AND subject_type=? AND subject_id=?", [u.id, data.subjectType, data.subjectId]);
+    if (ex.length) { await q("DELETE FROM watchlist WHERE id=?", [ex[0].id]); return { ok: true, watched: false }; }
+    await q("INSERT INTO watchlist (user_id,subject_type,subject_id,label) VALUES (?,?,?,?)", [u.id, data.subjectType, data.subjectId, data.label ?? null]);
+    await q("INSERT INTO activity (user_id,author,action,subject_type,subject_id,detail) VALUES (?,?,?,?,?,?)", [u.id, u.name ?? u.email, "watch.add", data.subjectType, data.subjectId, data.label ?? ""]);
+    return { ok: true, watched: true };
+  });
+export const updateWatch = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number(), status: z.string().optional(), note: z.string().optional(), assigneeEmail: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    if (data.status != null) await q("UPDATE watchlist SET status=? WHERE id=? AND (user_id=? OR assignee_id=?)", [data.status, data.id, u.id, u.id]);
+    if (data.note != null) await q("UPDATE watchlist SET note=? WHERE id=? AND (user_id=? OR assignee_id=?)", [data.note, data.id, u.id, u.id]);
+    if (data.assigneeEmail != null) {
+      const a = (await q<{ id: string }>("SELECT id FROM users WHERE email=?", [data.assigneeEmail.trim().toLowerCase()]))[0];
+      if (!a) return { ok: false, message: "Kolega s týmto emailom neexistuje." };
+      const w = (await q<{ subject_type: string; subject_id: string; label: string | null }>("SELECT subject_type,subject_id,label FROM watchlist WHERE id=?", [data.id]))[0];
+      await q("UPDATE watchlist SET assignee_id=? WHERE id=? AND user_id=?", [a.id, data.id, u.id]);
+      if (w) await q("INSERT INTO notifications (user_id,kind,subject_type,subject_id,body) VALUES (?,?,?,?,?)", [a.id, "assigned", w.subject_type, w.subject_id, `📌 ${u.name ?? u.email} ti priradil: ${w.label ?? w.subject_id}`]);
+    }
+    return { ok: true };
+  });
+
+export type ActivityRow = { id: number; author: string | null; action: string; subject_type: string | null; subject_id: string | null; detail: string | null; created_at: string };
+export const getActivity = createServerFn({ method: "POST" })
+  .validator(z.object({ limit: z.number().optional() }))
+  .handler(async ({ data }): Promise<ActivityRow[]> =>
+    q<ActivityRow>("SELECT id,author,action,subject_type,subject_id,detail,created_at FROM activity ORDER BY id DESC LIMIT ?", [Math.min(data.limit ?? 100, 300)]));
+
+export type NotifRow = { id: number; kind: string; subject_type: string | null; subject_id: string | null; body: string; is_read: number; created_at: string };
+export const getNotifications = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<NotifRow[]> => {
+    const u = await userFromToken(data.token);
+    if (!u) return [];
+    return q<NotifRow>("SELECT id,kind,subject_type,subject_id,body,is_read,created_at FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 100", [u.id]);
+  });
+export const markNotifsRead = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false };
+    await q("UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0", [u.id]);
+    return { ok: true };
+  });
+
 // ——— PDF výstup: Výpis z LV / Evidenčný list (pracovný, TRI LIPY brand) ———
 type DocParcel = { register: string; parcel_no: string; area_m2: number; drp_text: string | null; placement: string | null };
 type DocBuilding = { descr: string; on_parcel: string | null };
