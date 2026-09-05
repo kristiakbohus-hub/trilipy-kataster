@@ -83,7 +83,7 @@ function RoleSwitcher() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
 
   return (
     <div className="min-h-dvh bg-cream text-fg">
@@ -113,6 +113,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#9a7b3e" }} />
                 ready · 99%
               </span>
+              {user ? <span className="hidden text-xs text-fg sm:inline" title={user.email}>{user.name ?? user.email} <span className="text-muted">· {user.role}</span></span> : null}
               <RoleSwitcher />
               <button
                 onClick={signOut}

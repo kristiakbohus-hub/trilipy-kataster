@@ -489,6 +489,58 @@ export const login = createServerFn({ method: "POST" })
     return { ok: data.passphrase.trim().toLowerCase() === DEMO_PASSPHRASE };
   });
 
+// ——— Reálne účty (email+heslo), PBKDF2 (Web Crypto), session tokeny ———
+function hexOf(buf: ArrayBuffer | Uint8Array): string {
+  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+function randHex(n: number): string { return hexOf(crypto.getRandomValues(new Uint8Array(n))); }
+async function pbkdf2(password: string, saltHex: string): Promise<string> {
+  const salt = Uint8Array.from(saltHex.match(/../g)!.map((h) => parseInt(h, 16)));
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" }, key, 256);
+  return hexOf(bits);
+}
+const SESSION_MS = 30 * 24 * 3600 * 1000;
+export type AuthUser = { id: string; email: string; name: string | null; role: Role };
+async function userFromToken(token: string): Promise<AuthUser | null> {
+  if (!token) return null;
+  const s = (await q<{ user_id: string; expires_at: number }>("SELECT user_id, expires_at FROM sessions WHERE token = ?", [token]))[0];
+  if (!s || (s.expires_at ?? 0) < Date.now()) return null;
+  const u = (await q<{ id: string; email: string; name: string | null; role: string }>("SELECT id, email, name, role FROM users WHERE id = ?", [s.user_id]))[0];
+  return u ? { id: u.id, email: u.email, name: u.name, role: u.role as Role } : null;
+}
+export const registerUser = createServerFn({ method: "POST" })
+  .validator(z.object({ email: z.string().email(), password: z.string().min(6), name: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; token?: string; user?: AuthUser; message?: string }> => {
+    const email = data.email.trim().toLowerCase();
+    if ((await q<{ id: string }>("SELECT id FROM users WHERE email = ?", [email])).length) return { ok: false, message: "Účet s týmto emailom už existuje." };
+    const salt = randHex(16); const hash = await pbkdf2(data.password, salt); const id = crypto.randomUUID();
+    const n = (await q<{ n: number }>("SELECT COUNT(*) n FROM users", []))[0]?.n ?? 0;
+    const role: Role = n === 0 ? "admin" : "analytik";   // prvý účet = admin
+    await q("INSERT INTO users (id,email,name,pass_hash,salt,role) VALUES (?,?,?,?,?,?)", [id, email, data.name?.trim() || null, hash, salt, role]);
+    const token = randHex(24); const now = Date.now();
+    await q("INSERT INTO sessions (token,user_id,created_at,expires_at) VALUES (?,?,?,?)", [token, id, now, now + SESSION_MS]);
+    await q("INSERT INTO activity (user_id,author,action,detail) VALUES (?,?,?,?)", [id, data.name?.trim() || email, "auth.register", `Nový účet ${email} (${role})`]);
+    return { ok: true, token, user: { id, email, name: data.name?.trim() || null, role } };
+  });
+export const loginUser = createServerFn({ method: "POST" })
+  .validator(z.object({ email: z.string().email(), password: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; token?: string; user?: AuthUser; message?: string }> => {
+    const email = data.email.trim().toLowerCase();
+    const u = (await q<{ id: string; email: string; name: string | null; pass_hash: string; salt: string; role: string }>("SELECT id,email,name,pass_hash,salt,role FROM users WHERE email = ?", [email]))[0];
+    if (!u || (await pbkdf2(data.password, u.salt)) !== u.pass_hash) return { ok: false, message: "Nesprávny email alebo heslo." };
+    const token = randHex(24); const now = Date.now();
+    await q("INSERT INTO sessions (token,user_id,created_at,expires_at) VALUES (?,?,?,?)", [token, u.id, now, now + SESSION_MS]);
+    return { ok: true, token, user: { id: u.id, email: u.email, name: u.name, role: u.role as Role } };
+  });
+export const getMe = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<AuthUser | null> => userFromToken(data.token));
+export const logoutUser = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => { await q("DELETE FROM sessions WHERE token = ?", [data.token]); return { ok: true }; });
+
 // ——— PDF výstup: Výpis z LV / Evidenčný list (pracovný, TRI LIPY brand) ———
 type DocParcel = { register: string; parcel_no: string; area_m2: number; drp_text: string | null; placement: string | null };
 type DocBuilding = { descr: string; on_parcel: string | null };

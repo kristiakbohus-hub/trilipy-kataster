@@ -187,17 +187,19 @@ function Splash() {
 }
 
 function LoginScreen() {
-  const { signIn } = useAuth();
+  const { signIn, register } = useAuth();
+  const [mode, setMode] = useState<"login" | "register">("login");
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [pass, setPass] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
-    setBusy(true);
-    setErr(null);
-    const ok = await signIn(pass);
-    if (!ok) setErr("Nesprávna prístupová fráza.");
+    setBusy(true); setErr(null);
+    const r = mode === "login" ? await signIn(email, pass) : await register(email, pass, name);
+    if (!r.ok) setErr(r.message ?? (mode === "login" ? "Prihlásenie zlyhalo." : "Registrácia zlyhala."));
     setBusy(false);
   }
 
@@ -208,28 +210,25 @@ function LoginScreen() {
           <img src="/tl-logo.png" alt="TRI LIPY" className="h-24 w-auto" />
           <div className="mt-3 text-[10px] uppercase tracking-[0.3em] text-muted">Kataster Core</div>
         </div>
-        <h1 className="font-display text-base font-semibold uppercase tracking-[0.15em] text-fg">Prihlásenie</h1>
+        <h1 className="font-display text-base font-semibold uppercase tracking-[0.15em] text-fg">{mode === "login" ? "Prihlásenie" : "Registrácia"}</h1>
         <p className="mt-1 text-sm text-muted">Interný pracovný nástroj — prístup nie je anonymný.</p>
-        <input
-          type="password"
-          value={pass}
-          onChange={(e) => setPass(e.target.value)}
-          placeholder="Prístupová fráza"
-          autoFocus
-          className="mt-4 w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-fg outline-none focus:border-brand"
-        />
-        <button
-          type="submit"
-          disabled={busy}
-          className="mt-3 w-full rounded-md bg-ink px-4 py-2 text-sm font-medium text-cream disabled:opacity-60"
-        >
-          {busy ? "Prihlasujem…" : "Prihlásiť sa"}
+        {mode === "register" ? (
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Meno a priezvisko" autoFocus
+            className="mt-4 w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-fg outline-none focus:border-brand" />
+        ) : null}
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" autoFocus={mode === "login"} autoComplete="email"
+          className="mt-3 w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-fg outline-none focus:border-brand" />
+        <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder={mode === "register" ? "Heslo (min. 6 znakov)" : "Heslo"} autoComplete={mode === "login" ? "current-password" : "new-password"}
+          className="mt-3 w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-fg outline-none focus:border-brand" />
+        <button type="submit" disabled={busy}
+          className="mt-3 w-full rounded-md bg-ink px-4 py-2 text-sm font-medium text-cream disabled:opacity-60">
+          {busy ? "Moment…" : mode === "login" ? "Prihlásiť sa" : "Vytvoriť účet"}
         </button>
         {err ? <div className="mt-2 text-xs" style={{ color: "#9c4a40" }}>{err}</div> : null}
-        <div className="mt-4 rounded-md border border-line bg-surface-2/50 p-2.5 text-[11px] leading-relaxed text-muted">
-          <span className="font-medium text-fg">Demo prístup:</span> fráza <code className="rounded bg-surface-2 px-1">trilipy</code>. Ide o
-          demo credential — <span style={{ color: "#9a7b3e" }}>blocked_for_handoff</span>, pred odovzdaním rotovať.
-        </div>
+        <button type="button" onClick={() => { setMode(mode === "login" ? "register" : "login"); setErr(null); }}
+          className="mt-4 text-xs text-muted underline hover:text-fg">
+          {mode === "login" ? "Nemáš účet? Zaregistruj sa" : "Už máš účet? Prihlás sa"}
+        </button>
       </form>
     </div>
   );
