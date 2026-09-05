@@ -15,6 +15,8 @@ import { Route as SystemRouteImport } from './routes/system'
 import { Route as PrilezitostiRouteImport } from './routes/prilezitosti'
 import { Route as PrieskumRouteImport } from './routes/prieskum'
 import { Route as DealRadarRouteImport } from './routes/deal-radar'
+import { Route as AktivitaRouteImport } from './routes/aktivita'
+import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
 import { Route as ReportyRouteImport } from './routes/reporty'
 import { Route as ImportRouteImport } from './routes/import'
@@ -64,6 +66,16 @@ const PrieskumRoute = PrieskumRouteImport.update({
 const DealRadarRoute = DealRadarRouteImport.update({
   id: '/deal-radar',
   path: '/deal-radar',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AktivitaRoute = AktivitaRouteImport.update({
+  id: '/aktivita',
+  path: '/aktivita',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WatchlistRoute = WatchlistRouteImport.update({
+  id: '/watchlist',
+  path: '/watchlist',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TrhovaHistoriaRoute = TrhovaHistoriaRouteImport.update({
@@ -180,6 +192,8 @@ export interface FileRoutesByFullPath {
   '/prilezitosti': typeof PrilezitostiRoute
   '/prieskum': typeof PrieskumRoute
   '/deal-radar': typeof DealRadarRoute
+  '/aktivita': typeof AktivitaRoute
+  '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
@@ -208,6 +222,8 @@ export interface FileRoutesByTo {
   '/prilezitosti': typeof PrilezitostiRoute
   '/prieskum': typeof PrieskumRoute
   '/deal-radar': typeof DealRadarRoute
+  '/aktivita': typeof AktivitaRoute
+  '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
@@ -237,6 +253,8 @@ export interface FileRoutesById {
   '/prilezitosti': typeof PrilezitostiRoute
   '/prieskum': typeof PrieskumRoute
   '/deal-radar': typeof DealRadarRoute
+  '/aktivita': typeof AktivitaRoute
+  '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
@@ -267,6 +285,8 @@ export interface FileRouteTypes {
     | '/prilezitosti'
     | '/prieskum'
     | '/deal-radar'
+    | '/aktivita'
+    | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
@@ -295,6 +315,8 @@ export interface FileRouteTypes {
     | '/prilezitosti'
     | '/prieskum'
     | '/deal-radar'
+    | '/aktivita'
+    | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
@@ -323,6 +345,8 @@ export interface FileRouteTypes {
     | '/prilezitosti'
     | '/prieskum'
     | '/deal-radar'
+    | '/aktivita'
+    | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
@@ -349,6 +373,8 @@ export interface RootRouteChildren {
   PrilezitostiRoute: typeof PrilezitostiRoute
   PrieskumRoute: typeof PrieskumRoute
   DealRadarRoute: typeof DealRadarRoute
+  AktivitaRoute: typeof AktivitaRoute
+  WatchlistRoute: typeof WatchlistRoute
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
   PravnyReferentRoute: typeof PravnyReferentRoute
   CenyRoute: typeof CenyRoute
@@ -414,6 +440,20 @@ declare module '@tanstack/react-router' {
       path: '/deal-radar'
       fullPath: '/deal-radar'
       preLoaderRoute: typeof DealRadarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/aktivita': {
+      id: '/aktivita'
+      path: '/aktivita'
+      fullPath: '/aktivita'
+      preLoaderRoute: typeof AktivitaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/watchlist': {
+      id: '/watchlist'
+      path: '/watchlist'
+      fullPath: '/watchlist'
+      preLoaderRoute: typeof WatchlistRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/trhova-historia': {
@@ -565,6 +605,8 @@ const rootRouteChildren: RootRouteChildren = {
   PrilezitostiRoute: PrilezitostiRoute,
   PrieskumRoute: PrieskumRoute,
   DealRadarRoute: DealRadarRoute,
+  AktivitaRoute: AktivitaRoute,
+  WatchlistRoute: WatchlistRoute,
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,
   PravnyReferentRoute: PravnyReferentRoute,
   CenyRoute: CenyRoute,

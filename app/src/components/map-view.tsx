@@ -9,6 +9,7 @@ import { marketValueEur } from "../lib/domain";
 import { DEV_DEFAULTS, REGULATIV, type ZoneLike } from "../lib/development";
 import { AccessibilityPanel } from "./accessibility-panel";
 import { Icon } from "./kit";
+import { CommentsPanel, WatchButton } from "./collab";
 import { LegalRef } from "./legal-ref";
 import { DevelopmentPanel } from "./development-panel";
 
@@ -2307,6 +2308,17 @@ export function MapView({
               className="mt-3 flex items-center justify-center gap-1 rounded-md border border-ink bg-ink px-3 py-2 text-sm font-medium text-cream hover:opacity-90">
               📄 PDF dossier parcely →
             </Link>
+          ) : null}
+
+          {/* Kolaborácia — sledovanie + tímové komentáre k parcele */}
+          {identified.parcel_no && datasetId ? (
+            <div className="mt-3 rounded-md border border-line bg-surface/50 p-2.5">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <span className="text-[11px] uppercase tracking-wide text-muted">Tím — parcela {identified.parcel_no}</span>
+                <WatchButton subjectType="parcel" subjectId={`${datasetId}:${identified.parcel_no}`} label={`Parcela ${identified.parcel_no}${datasetName ? " · " + datasetName : ""}`} />
+              </div>
+              <CommentsPanel subjectType="parcel" subjectId={`${datasetId}:${identified.parcel_no}`} />
+            </div>
           ) : null}
 
           {/* Rozbaliteľné celé LV — majetková podstata (C+E), stavby, vlastníci, hodnota */}

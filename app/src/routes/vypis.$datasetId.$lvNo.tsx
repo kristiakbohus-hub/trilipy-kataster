@@ -4,6 +4,7 @@ import { getLvVypis, lookupRpo, lookupRpvs } from "../lib/api/kataster.functions
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 import type { Role } from "../lib/domain";
+import { CommentsPanel, WatchButton } from "../components/collab";
 import { LegalRef } from "../components/legal-ref";
 
 type Content = Awaited<ReturnType<typeof getLvVypis>>;
@@ -206,6 +207,15 @@ function VypisPage() {
               PDF (tlač)
             </button>
           </div>
+        </div>
+
+        {/* Kolaborácia — sledovanie + tímové komentáre k tomuto LV */}
+        <div className="rounded-lg border border-line bg-surface/60 p-3">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <span className="text-[11px] uppercase tracking-wide text-muted">Tím — LV {lvNo}{c.dataset?.ku_name ? ` · ${c.dataset.ku_name}` : ""}</span>
+            <WatchButton subjectType="lv" subjectId={`${datasetId}:${lvNo}`} label={`LV ${lvNo}${c.dataset?.ku_name ? " · " + c.dataset.ku_name : ""}`} />
+          </div>
+          <CommentsPanel subjectType="lv" subjectId={`${datasetId}:${lvNo}`} />
         </div>
 
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface/60 p-2.5">

@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { Icon } from "./kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
+import { NotifBell } from "./collab";
 import { ROLES, type AppPath, type Role } from "../lib/domain";
 
 const NAV: { to: AppPath; label: string; icon: string }[] = [
@@ -14,6 +15,8 @@ const NAV: { to: AppPath; label: string; icon: string }[] = [
   { to: "/zoning", label: "Územný plán & prístup", icon: "zone" },
   { to: "/prilezitosti", label: "Príležitosti", icon: "target" },
   { to: "/deal-radar", label: "Deal radar", icon: "target" },
+  { to: "/watchlist", label: "Watchlist", icon: "target" },
+  { to: "/aktivita", label: "Denník aktivity", icon: "report" },
   { to: "/prieskum", label: "NL prieskum", icon: "target" },
   { to: "/deals", label: "Deal pipeline", icon: "folder" },
   { to: "/cases", label: "Cases", icon: "folder" },
@@ -114,6 +117,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 ready · 99%
               </span>
               {user ? <span className="hidden text-xs text-fg sm:inline" title={user.email}>{user.name ?? user.email} <span className="text-muted">· {user.role}</span></span> : null}
+              <NotifBell />
               <RoleSwitcher />
               <button
                 onClick={signOut}

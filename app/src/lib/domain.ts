@@ -16,6 +16,8 @@ export type AppPath =
   | "/prieskum"
   | "/trhova-historia"
   | "/deal-radar"
+  | "/watchlist"
+  | "/aktivita"
   | "/deals"
   | "/pravny-referent"
   | "/ceny"
