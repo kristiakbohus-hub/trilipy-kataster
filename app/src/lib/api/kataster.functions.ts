@@ -712,6 +712,77 @@ export const markNotifsRead = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ——— Uložené NL hľadania + alerty (Fáza 3b) ———
+export type SavedSearchRow = { id: number; name: string; query: string; sort: string | null; alert: number; channels: string; last_run: string | null; created_at: string };
+export const saveSearch = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), name: z.string().min(1).max(120), query: z.string().min(1).max(500), sort: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; id?: number; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    const r = await q<{ id: number }>("INSERT INTO saved_search (user_id,name,query,sort) VALUES (?,?,?,?) RETURNING id", [u.id, data.name.trim(), data.query.trim(), data.sort ?? null]);
+    await q("INSERT INTO activity (user_id,author,action,detail) VALUES (?,?,?,?)", [u.id, u.name ?? u.email, "search.save", data.name.trim()]);
+    return { ok: true, id: r[0]?.id };
+  });
+export const listSavedSearches = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<SavedSearchRow[]> => {
+    const u = await userFromToken(data.token);
+    if (!u) return [];
+    return q<SavedSearchRow>("SELECT id,name,query,sort,alert,channels,last_run,created_at FROM saved_search WHERE user_id=? ORDER BY id DESC LIMIT 100", [u.id]);
+  });
+export const deleteSavedSearch = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number() }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false };
+    await q("DELETE FROM saved_search WHERE id=? AND user_id=?", [data.id, u.id]);
+    await q("DELETE FROM alert_seen WHERE saved_id=?", [data.id]);
+    return { ok: true };
+  });
+export const setSavedAlert = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number(), alert: z.boolean(), channels: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false };
+    await q("UPDATE saved_search SET alert=?, channels=COALESCE(?,channels) WHERE id=? AND user_id=?", [data.alert ? 1 : 0, data.channels ?? null, data.id, u.id]);
+    return { ok: true };
+  });
+async function sendTelegramAlert(text: string): Promise<void> {
+  const e = bindings() as ReturnType<typeof bindings> & { TG_BOT_TOKEN?: string; TG_CHAT_ID?: string };
+  if (!e.TG_BOT_TOKEN || !e.TG_CHAT_ID) return; // Telegram funguje až po nastavení CF secrets TG_BOT_TOKEN/TG_CHAT_ID
+  await fetch(`https://api.telegram.org/bot${e.TG_BOT_TOKEN}/sendMessage`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: e.TG_CHAT_ID, text: text.slice(0, 3900), disable_web_page_preview: true }),
+  }).catch(() => {});
+}
+// On-demand kontrola alertov prihláseného usera: re-runuje uložené dopyty, porovná s alert_seen,
+// nové LV → in-app notifikácia (+ Telegram ak je CF secret). Prvý beh = baseline (bez notifikácie).
+export const runMyAlerts = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), role: roleSchema }))
+  .handler(async ({ data }): Promise<{ ok: boolean; checked: number; newTotal: number; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false, checked: 0, newTotal: 0, message: "Neprihlásený." };
+    const rows = await q<SavedSearchRow>("SELECT id,name,query,sort,alert,channels,last_run,created_at FROM saved_search WHERE user_id=? AND alert=1", [u.id]);
+    let newTotal = 0;
+    for (const sv of rows) {
+      let res: Awaited<ReturnType<typeof nlQuery>> | null = null;
+      try { res = await nlQuery({ data: { query: sv.query, role: data.role, sort: ((sv.sort as "score" | "area" | "owners") || "score") } }); } catch { continue; }
+      const hits = res?.lv.results ?? [];
+      const seen = new Set((await q<{ gid: string }>("SELECT gid FROM alert_seen WHERE saved_id=?", [sv.id])).map((r) => r.gid));
+      const firstRun = seen.size === 0;
+      const fresh = hits.filter((h) => !seen.has(`${h.dataset_id}:${h.lv_no}`));
+      for (const h of fresh) await q("INSERT OR IGNORE INTO alert_seen (saved_id,gid) VALUES (?,?)", [sv.id, `${h.dataset_id}:${h.lv_no}`]);
+      await q("UPDATE saved_search SET last_run=datetime('now') WHERE id=?", [sv.id]);
+      if (firstRun || !fresh.length) continue;
+      newTotal += fresh.length;
+      const body = `🔔 „${sv.name}": ${fresh.length} nových LV — ` + fresh.slice(0, 8).map((h) => `${h.ku_name ?? ""} LV${h.lv_no}`).join(", ") + (fresh.length > 8 ? ` +${fresh.length - 8}` : "");
+      const chans = sv.channels.split(",").map((c) => c.trim());
+      if (chans.includes("inapp")) await q("INSERT INTO notifications (user_id,kind,subject_type,subject_id,body) VALUES (?,?,?,?,?)", [u.id, "alert", "search", String(sv.id), body]);
+      if (chans.includes("telegram")) await sendTelegramAlert(body);
+    }
+    return { ok: true, checked: rows.length, newTotal };
+  });
+
 // ——— PDF výstup: Výpis z LV / Evidenčný list (pracovný, TRI LIPY brand) ———
 type DocParcel = { register: string; parcel_no: string; area_m2: number; drp_text: string | null; placement: string | null };
 type DocBuilding = { descr: string; on_parcel: string | null };

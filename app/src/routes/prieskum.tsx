@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { nlQuery } from "../lib/api/kataster.functions";
+import { useCallback, useEffect, useState } from "react";
+import { nlQuery, saveSearch, listSavedSearches, deleteSavedSearch, setSavedAlert, runMyAlerts, type SavedSearchRow } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
+import type { Role } from "../lib/domain";
 
 export const Route = createFileRoute("/prieskum")({
   head: () => ({ meta: [{ title: "NL prieskum — TRI LIPY KATASTER CORE" }] }),
@@ -90,6 +92,8 @@ function PrieskumPage() {
         </div>
       </Card>
 
+      <SavedSearches currentQuery={q} sort={sort} role={role} onRun={(query, srt) => { setQ(query); setSort(srt); void run(query, srt); }} />
+
       {empty ? (
         <Card className="p-4"><div className="py-6 text-center text-sm text-muted">Žiadne výsledky. Skús iné kľúčové slová, meno vlastníka (s veľkým písmenom) alebo trhový dopyt.</div></Card>
       ) : null}
@@ -175,5 +179,61 @@ function PrieskumPage() {
         </Card>
       ) : null}
     </div>
+  );
+}
+
+function SavedSearches({ currentQuery, sort, role, onRun }: { currentQuery: string; sort: "score" | "area" | "owners"; role: Role; onRun: (query: string, sort: "score" | "area" | "owners") => void }) {
+  const { token } = useAuth();
+  const [list, setList] = useState<SavedSearchRow[]>([]);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const refresh = useCallback(() => { if (token) listSavedSearches({ data: { token } }).then(setList).catch(() => {}); }, [token]);
+  useEffect(() => { refresh(); }, [refresh]);
+  if (!token) return null;
+
+  async function save() {
+    if (!currentQuery.trim()) { setMsg("Najprv napíš dopyt."); return; }
+    const name = window.prompt("Názov uloženého hľadania:", currentQuery.slice(0, 60));
+    if (!name) return;
+    const r = await saveSearch({ data: { token: token!, name, query: currentQuery, sort } });
+    setMsg(r.ok ? "Uložené." : (r.message ?? "Zlyhalo.")); refresh();
+  }
+  async function toggle(s: SavedSearchRow) { await setSavedAlert({ data: { token: token!, id: s.id, alert: !s.alert } }); refresh(); }
+  async function chan(s: SavedSearchRow, telegram: boolean) { await setSavedAlert({ data: { token: token!, id: s.id, alert: !!s.alert, channels: telegram ? "inapp,telegram" : "inapp" } }); refresh(); }
+  async function del(id: number) { await deleteSavedSearch({ data: { token: token!, id } }); refresh(); }
+  async function check() { setBusy(true); try { const r = await runMyAlerts({ data: { token: token!, role } }); setMsg(r.ok ? `Skontrolované: ${r.checked} alertov · ${r.newTotal} nových zhôd.` : (r.message ?? "Zlyhalo.")); refresh(); } finally { setBusy(false); } }
+
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SectionHeader title={`Moje uložené hľadania (${list.length})`} hint="alerty in-app + Telegram" />
+        <div className="flex gap-2">
+          <button onClick={() => void save()} disabled={!currentQuery.trim()} className="rounded-md border border-line px-2.5 py-1 text-xs text-fg hover:border-ink disabled:opacity-50">＋ Uložiť toto hľadanie</button>
+          {list.some((s) => s.alert) ? <button onClick={() => void check()} disabled={busy} className="rounded-md bg-ink px-2.5 py-1 text-xs text-cream disabled:opacity-50">{busy ? "…" : "Skontrolovať alerty"}</button> : null}
+        </div>
+      </div>
+      {msg ? <div className="mt-1 text-[11px] text-muted">{msg}</div> : null}
+      {list.length ? (
+        <div className="mt-2 divide-y divide-line">
+          {list.map((s) => (
+            <div key={s.id} className="flex items-center gap-2 py-1.5 text-sm">
+              <button onClick={() => onRun(s.query, ((s.sort as "score" | "area" | "owners") || "score"))} className="min-w-0 flex-1 text-left">
+                <div className="truncate font-medium text-fg">{s.name}</div>
+                <div className="truncate text-[11px] text-muted">{s.query}{s.last_run ? ` · kontrola ${s.last_run.slice(0, 16)}` : ""}</div>
+              </button>
+              <label className="flex shrink-0 items-center gap-1 text-[11px] text-muted" title="Sledovať zmeny (alert)">
+                <input type="checkbox" checked={!!s.alert} onChange={() => void toggle(s)} className="accent-brand" /> alert
+              </label>
+              {s.alert ? (
+                <label className="flex shrink-0 items-center gap-1 text-[11px] text-muted" title="Aj cez Telegram (vyžaduje CF secret TG_BOT_TOKEN/TG_CHAT_ID)">
+                  <input type="checkbox" checked={s.channels.includes("telegram")} onChange={(e) => void chan(s, e.target.checked)} className="accent-brand" /> TG
+                </label>
+              ) : null}
+              <button onClick={() => void del(s.id)} className="shrink-0 text-[11px] text-muted hover:text-fg" title="Zmazať">✕</button>
+            </div>
+          ))}
+        </div>
+      ) : <div className="mt-2 text-[12px] text-muted">Zatiaľ žiadne uložené hľadania. Napíš dopyt a klikni „Uložiť toto hľadanie".</div>}
+    </Card>
   );
 }
