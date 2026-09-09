@@ -33,6 +33,7 @@ import { Route as DatasetyIndexRouteImport } from './routes/datasety.index'
 import { Route as DatasetyIdRouteImport } from './routes/datasety.$id'
 import { Route as UpInfoIdRouteImport } from './routes/upinfo.$id'
 import { Route as OgcRouteImport } from './routes/ogc'
+import { Route as MapproxyRouteImport } from './routes/mapproxy'
 import { Route as VlastniciRouteImport } from './routes/vlastnici'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as PravnyReferentRouteImport } from './routes/pravny-referent'
@@ -158,6 +159,11 @@ const OgcRoute = OgcRouteImport.update({
   path: '/ogc',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MapproxyRoute = MapproxyRouteImport.update({
+  id: '/mapproxy',
+  path: '/mapproxy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlastniciRoute = VlastniciRouteImport.update({
   id: '/vlastnici',
   path: '/vlastnici',
@@ -200,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/system': typeof SystemRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
+  '/mapproxy': typeof MapproxyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -230,6 +237,7 @@ export interface FileRoutesByTo {
   '/system': typeof SystemRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
+  '/mapproxy': typeof MapproxyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -261,6 +269,7 @@ export interface FileRoutesById {
   '/system': typeof SystemRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
+  '/mapproxy': typeof MapproxyRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -293,6 +302,7 @@ export interface FileRouteTypes {
     | '/system'
     | '/robots.txt'
     | '/ogc'
+    | '/mapproxy'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -323,6 +333,7 @@ export interface FileRouteTypes {
     | '/system'
     | '/robots.txt'
     | '/ogc'
+    | '/mapproxy'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -353,6 +364,7 @@ export interface FileRouteTypes {
     | '/system'
     | '/robots.txt'
     | '/ogc'
+    | '/mapproxy'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/upinfo/$id'
@@ -382,6 +394,7 @@ export interface RootRouteChildren {
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   OgcRoute: typeof OgcRoute
+  MapproxyRoute: typeof MapproxyRoute
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
   ReportDatasetIdParcelNoRoute: typeof ReportDatasetIdParcelNoRoute
@@ -412,6 +425,13 @@ declare module '@tanstack/react-router' {
       path: '/ogc'
       fullPath: '/ogc'
       preLoaderRoute: typeof OgcRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mapproxy': {
+      id: '/mapproxy'
+      path: '/mapproxy'
+      fullPath: '/mapproxy'
+      preLoaderRoute: typeof MapproxyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/system': {
@@ -614,6 +634,7 @@ const rootRouteChildren: RootRouteChildren = {
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   OgcRoute: OgcRoute,
+  MapproxyRoute: MapproxyRoute,
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,
   ReportDatasetIdParcelNoRoute: ReportDatasetIdParcelNoRoute,
