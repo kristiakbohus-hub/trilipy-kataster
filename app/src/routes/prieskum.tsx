@@ -47,6 +47,35 @@ function PrieskumPage() {
 
   const empty = res && res.lv.count === 0 && res.owners.count === 0 && res.market.count === 0;
 
+  function exportShortlist() {
+    if (!res) return;
+    const he = (v: string | number) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const brand = `<div style="border-bottom:2px solid #1E3A2F;padding-bottom:8px;margin-bottom:14px"><div style="font-size:20px;font-weight:bold;letter-spacing:3px;color:#1E3A2F">TRI LIPY</div><div style="font-size:9px;color:#5C8A6B;letter-spacing:2px">DEAL-SOURCING SHORTLIST</div></div>`;
+    let body = brand + `<p style="color:#555;font-family:Georgia,serif">Dopyt: <b>${he(q)}</b> · ${new Date().toLocaleDateString("sk-SK")}</p>`;
+    const T = (h: string[]) => `<tr>${h.map((x) => `<th>${x}</th>`).join("")}</tr>`;
+    if (res.lv.results.length) {
+      body += `<h3 style="font-family:Georgia,serif">Listy vlastníctva — príležitosti (${res.lv.count})</h3>`;
+      body += `<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["Skóre", "k.ú.", "LV", "Spoluvl.", "Výmera", "Signály"]);
+      body += res.lv.results.map((r) => `<tr><td>${r.score}</td><td>${he(r.ku_name ?? "")}</td><td>${r.lv_no}</td><td>${r.co_owners}</td><td>${r.total_area.toLocaleString("sk-SK")} m²</td><td>${he(r.reasons.join(", "))}</td></tr>`).join("");
+      body += `</table>`;
+      if (res.lv.note) body += `<p style="font-size:10px;color:#888">${he(res.lv.note)}</p>`;
+    }
+    if (res.owners.results.length) {
+      body += `<h3 style="font-family:Georgia,serif">Vlastníci (${res.owners.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["Meno", "Typ", "Výskyt"]);
+      body += res.owners.results.map((g) => `<tr><td>${he(g.name)}${g.ico ? ` (IČO ${he(g.ico)})` : ""}</td><td>${g.is_company ? "firma" : "osoba"}</td><td>${g.lvCount} LV v ${g.kuCount} k.ú.</td></tr>`).join("");
+      body += `</table>`;
+    }
+    if (res.market.results.length) {
+      body += `<h3 style="font-family:Georgia,serif">Trhové inzeráty (${res.market.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["Titul", "Typ", "Lokalita", "Cena", "€/m²"]);
+      body += res.market.results.map((m) => `<tr><td>${he(m.title ?? "")}</td><td>${he(m.ptype ?? "")}</td><td>${he(m.obec ?? m.okres ?? "")}</td><td>${eur(m.price_eur)}</td><td>${ppm(m.ppm2)}</td></tr>`).join("");
+      body += `</table>`;
+    }
+    body += `<p style="font-size:10px;color:#888;margin-top:14px;border-top:1px solid #ccc;padding-top:6px">Interný pracovný podklad TRI LIPY KATASTER CORE · skóre = orientačný indikátor príležitosti, nie právny záver.</p>`;
+    const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#333}</style></head><body>${body}</body></html>`;
+    const blob = new Blob(["﻿" + html], { type: "application/msword;charset=utf-8" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `shortlist_${Date.now()}.doc`; a.click(); URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
       <div>
@@ -96,6 +125,12 @@ function PrieskumPage() {
 
       {empty ? (
         <Card className="p-4"><div className="py-6 text-center text-sm text-muted">Žiadne výsledky. Skús iné kľúčové slová, meno vlastníka (s veľkým písmenom) alebo trhový dopyt.</div></Card>
+      ) : null}
+
+      {res && !empty ? (
+        <div className="flex justify-end">
+          <button onClick={exportShortlist} className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-fg hover:border-ink" title="Branded prehľad nájdených LV / vlastníkov / inzerátov (.doc) na tlač / poradu">⬇ Export shortlist (.doc)</button>
+        </div>
       ) : null}
 
       {/* ——— LV signály ——— */}
