@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { getLvVypis, lookupRpo, lookupRpvs } from "../lib/api/kataster.functions";
+import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getParcelLimits, getUpRegulativ, getParcelAccessibility } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 import type { Role } from "../lib/domain";
 import { CommentsPanel, WatchButton } from "../components/collab";
 import { LegalRef } from "../components/legal-ref";
+import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEFAULTS, type Regulativ, type DevCalc } from "../lib/development";
 
 type Content = Awaited<ReturnType<typeof getLvVypis>>;
 type DocType = "vypis" | "el";
@@ -310,6 +311,7 @@ function VypisPage() {
                 <div className="mt-1 text-[11px] text-muted">Skóre = vážený indikátor príležitosti (spoluvlastníci, SPF/štát, dedičské, stavebný potenciál, absentéri, čistý titul). Pracovný nástroj, nie právny záver.</div>
               </Section>
             ) : null}
+            <LvIntelSection datasetId={datasetId} lvNo={lvNo} />
             {parts.A ? (
               <Section title="Časť A — Majetková podstata">
                 {/* Parcely registra „C" — katastrálna mapa */}
@@ -556,6 +558,142 @@ function OwnersSection({ c, role, label }: { c: Content; role: string; label: st
         </div>
       )}
     </div>
+  );
+}
+
+function accItem(label: string, hit: { drive_min: number; dist: number } | null | undefined) {
+  if (!hit) return <span>{label}: —</span>;
+  return <span>{label}: <b className="text-fg">{hit.drive_min} min</b></span>;
+}
+
+const CONF_LABEL: Record<string, string> = { "vysoká": "vysoká istota", "stredná": "stredná istota", "nízka": "nízka istota", "—": "bez dát" };
+
+// Analytická nadstavba LV — AVM hodnota + limity + ÚP/zastavateľnosť (GDV) + dostupnosť.
+// Reuse živých server fns (getLvIntel/getParcelLimits/getUpRegulativ/getParcelAccessibility) + development.ts.
+function LvIntelSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }) {
+  const [intel, setIntel] = useState<Awaited<ReturnType<typeof getLvIntel>> | null>(null);
+  const [limits, setLimits] = useState<Awaited<ReturnType<typeof getParcelLimits>> | null>(null);
+  const [reg, setReg] = useState<Awaited<ReturnType<typeof getUpRegulativ>>>([]);
+  const [acc, setAcc] = useState<Awaited<ReturnType<typeof getParcelAccessibility>> | null>(null);
+  const [accBusy, setAccBusy] = useState(false);
+  const [err, setErr] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setIntel(null); setLimits(null); setReg([]); setAcc(null); setErr(false);
+    getLvIntel({ data: { datasetId, lvNo } })
+      .then((r) => {
+        if (!alive) return;
+        setIntel(r);
+        if (r.repr) getParcelLimits({ data: { lat: r.repr.lat, lng: r.repr.lng } }).then((l) => { if (alive) setLimits(l); }).catch(() => {});
+        getUpRegulativ({ data: { datasetId } }).then((u) => { if (alive) setReg(u); }).catch(() => {});
+      })
+      .catch(() => { if (alive) setErr(true); });
+    return () => { alive = false; };
+  }, [datasetId, lvNo]);
+
+  if (err) return null;
+  if (!intel) return (
+    <Section title="Analytická nadstavba (interné)">
+      <div className="px-1 py-2 text-sm text-muted">Počítam odhad hodnoty, limity a zastavateľnosť…</div>
+    </Section>
+  );
+
+  const a = intel.avm;
+  const repr = intel.repr;
+  let dev: DevCalc | null = null; let regUsed: Regulativ | null = null; let regSource = "";
+  if (repr) {
+    const def = reg.find((r) => r.zone_code === "*" && r.ipp != null) ?? reg.find((r) => r.ipp != null);
+    if (def) { regUsed = regulativFromZone({ code: def.zone_code, name: def.funkcia, ipp: def.ipp, izp: def.izp, kz: def.kz }); regSource = "ÚP regulatív obce"; }
+    else { regUsed = regulativByCode(proxyZone(repr.use_type, null)) ?? null; regSource = "proxy z druhu pozemku"; }
+    if (regUsed && repr.area_m2 > 0) dev = developmentCalc(repr.area_m2, regUsed, DEV_DEFAULTS);
+  }
+  const hits = limits?.items.filter((i) => i.hit) ?? [];
+  const limitsLoaded = limits != null;
+
+  async function loadAcc() {
+    if (!repr) return;
+    setAccBusy(true);
+    try { setAcc(await getParcelAccessibility({ data: { lat: repr.lat, lng: repr.lng } })); }
+    finally { setAccBusy(false); }
+  }
+
+  return (
+    <Section title="Analytická nadstavba — orientačné (interné, nie znalecký ani úradný výstup)">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-lg border border-line bg-surface/50 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted">Odhad trhovej hodnoty LV (AVM)</div>
+          {a.total_estimate_eur != null ? (
+            <>
+              <div className="mt-1 text-2xl font-bold tabular-nums text-fg">~ {eur(a.total_estimate_eur)} €</div>
+              <div className="text-[12px] text-muted">rozpätie {eur(a.total_low_eur ?? 0)}–{eur(a.total_high_eur ?? 0)} € · {CONF_LABEL[String(a.confidence)] ?? String(a.confidence)}</div>
+              <div className="mt-1 text-[11px] text-muted">{a.valued}/{a.total_parcels} parciel ocenených{a.capped ? " (strop 25)" : ""}{a.ppm2_repr != null ? ` · repr. ${a.ppm2_repr} €/m² (${a.klass_repr})` : ""}</div>
+              {a.factors.length ? <div className="mt-1 text-[11px] text-muted">{a.factors.join(" · ")}</div> : null}
+            </>
+          ) : (
+            <div className="mt-1 text-sm text-muted">Bez dostatočných trhových porovnaní pre odhad.</div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-line bg-surface/50 p-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted">Limity využitia{repr ? ` (parcela ${repr.parcel_no})` : ""}</div>
+          {!limitsLoaded ? (
+            <div className="mt-1 text-sm text-muted">{repr ? "Zisťujem limity…" : "Bez geometrie parcely."}</div>
+          ) : hits.length ? (
+            <ul className="mt-1 space-y-0.5 text-[13px] text-fg">
+              {hits.map((h, i) => <li key={i}>⚠ {h.label}{h.count ? ` (${h.count})` : ""} <span className="text-[10px] text-muted">· do {h.buffer} m</span></li>)}
+            </ul>
+          ) : (
+            <div className="mt-1 text-sm text-fg">✓ Žiadne evidované limity (zosuvy/záplavy/les/pásma) v okolí.</div>
+          )}
+          {limitsLoaded ? <div className="mt-1 text-[10px] text-muted">Zdroje: ŠGÚDŠ, NLC, SVP. Orientačné, over v konaní.</div> : null}
+        </div>
+
+        <div className="rounded-lg border border-line bg-surface/50 p-3 sm:col-span-2">
+          <div className="text-[11px] uppercase tracking-wide text-muted">Územný plán & zastavateľnosť{repr ? ` (parcela ${repr.parcel_no})` : ""}</div>
+          {regUsed ? (
+            <>
+              <div className="mt-1 text-[13px] text-fg">{regUsed.name} <span className="text-muted">· {regUsed.kategoria} · {regSource}</span></div>
+              <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-muted">
+                <span>IZP {regUsed.izp}</span><span>IPP {regUsed.ipp}</span><span>KZ {regUsed.kz}</span>
+              </div>
+              {dev && dev.buildable ? (
+                <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[12px]">
+                  <span className="text-muted">Zastavateľná: <b className="text-fg">{m2(dev.izpArea)}</b></span>
+                  <span className="text-muted">HPP: <b className="text-fg">{m2(dev.hpp)}</b></span>
+                  <span className="text-muted">~ bytov: <b className="text-fg">{dev.byty}</b></span>
+                  <span className="text-muted">GDV: <b className="text-fg">{eur(dev.ekonomika.gdv)} €</b></span>
+                  <span className="text-muted">náklady: <b className="text-fg">{eur(dev.ekonomika.naklady)} €</b></span>
+                  <span className="text-muted">marža: <b className="text-fg">{dev.ekonomika.marzaPct} %</b></span>
+                </div>
+              ) : (
+                <div className="mt-1 text-[12px] text-muted">Podľa proxy/ÚP nezastavateľné alebo bez rozvojového potenciálu.</div>
+              )}
+              <div className="mt-1 text-[10px] text-muted">Orientačné (predaj {DEV_DEFAULTS.predajEurM2} €/m² ČPP, náklady {DEV_DEFAULTS.nakladyEurM2Hpp} €/m² HPP). Presné regulatívy dopĺňa analytik z ÚP.</div>
+            </>
+          ) : (
+            <div className="mt-1 text-sm text-muted">Bez regulatívu pre reprezentatívnu parcelu.</div>
+          )}
+        </div>
+
+        <div className="rounded-lg border border-line bg-surface/50 p-3 sm:col-span-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[11px] uppercase tracking-wide text-muted">Dostupnosť (dojazd autom)</div>
+            {!acc ? <button onClick={loadAcc} disabled={accBusy || !repr} className="rounded-md border border-line px-2 py-0.5 text-xs text-fg hover:border-ink disabled:opacity-50">{accBusy ? "…" : "Načítať"}</button> : null}
+          </div>
+          {acc ? (
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-[12px] text-muted">
+              {accItem("obchod", acc.amenities?.obchod)}
+              {accItem("škola", acc.amenities?.skola)}
+              {accItem("lekár", acc.amenities?.lekar)}
+              {accItem("diaľnica", acc.infra?.dialnica)}
+              {accItem("vlak", acc.transport?.vlak)}
+              {accItem("autobus", acc.transport?.autobus)}
+            </div>
+          ) : <div className="mt-1 text-[12px] text-muted">Najbližší obchod, škola, diaľnica, vlak — cez OSM (na požiadanie).</div>}
+        </div>
+      </div>
+    </Section>
   );
 }
 

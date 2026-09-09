@@ -2069,6 +2069,67 @@ export const getParcelByNo = createServerFn({ method: "POST" })
     return r[0] ?? null;
   });
 
+// Druh pozemku z textu (use_type) → kód druhu + kód umiestnenia (pre computeAvm). Orientačné.
+function inferDruhCodes(use: string | null | undefined): { druhCode: number | null; umCode: number | null } {
+  const u = (use ?? "").toLowerCase();
+  if (/zastav|nádvor|nadvor/.test(u)) return { druhCode: 9, umCode: 1 };
+  if (/lesn|les\b/.test(u)) return { druhCode: 7, umCode: null };
+  if (/vodn|vodná/.test(u)) return { druhCode: 8, umCode: null };
+  if (/záhrad|zahrad/.test(u)) return { druhCode: 4, umCode: null };
+  if (/ovoc/.test(u)) return { druhCode: 5, umCode: null };
+  if (/vinic/.test(u)) return { druhCode: 3, umCode: null };
+  if (/chmeľ|chmel/.test(u)) return { druhCode: 2, umCode: null };
+  if (/orná|orna/.test(u)) return { druhCode: 1, umCode: null };
+  if (/trávny|travny|ttp|trvalý trávn|trvaly travn/.test(u)) return { druhCode: 6, umCode: null };
+  if (/ostatná|ostatna/.test(u)) return { druhCode: 10, umCode: null };
+  return { druhCode: null, umCode: null };
+}
+
+// Analytická nadstavba LV — agreguje AVM naprieč C-KN parcelami LV (súčet odhadov) + reprezentatívna
+// parcela (najväčšia s centroidom) pre limity/ÚP/dostupnosť (tie doťahuje UI klientsky, ako /report).
+export type LvIntel = {
+  okres: string | null;
+  repr: { parcel_no: string; lat: number; lng: number; area_m2: number; use_type: string | null } | null;
+  avm: {
+    total_estimate_eur: number | null; total_low_eur: number | null; total_high_eur: number | null;
+    valued: number; total_parcels: number; capped: boolean;
+    ppm2_repr: number | null; klass_repr: string; confidence: AvmResult["confidence"] | "—"; factors: string[];
+  };
+};
+export const getLvIntel = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number() }))
+  .handler(async ({ data }): Promise<LvIntel> => {
+    const ds = (await q<{ region: string | null; ku_name: string | null }>("SELECT region, ku_name FROM datasets WHERE id=?", [data.datasetId]))[0] ?? null;
+    const okres = okresFromRegion(ds?.region ?? null);
+    const obec = ds?.ku_name ? ds.ku_name.replace(/^k\.ú\.\s*/i, "").trim() : null;
+    const parcels = await q<{ parcel_no: string; area_m2: number | null; use_type: string | null; bpej_skupina: number | null; settled: number | null; lat: number | null; lng: number | null }>(
+      "SELECT parcel_no, area_m2, use_type, bpej_skupina, settled, centroid_lat AS lat, centroid_lng AS lng FROM parcels WHERE dataset_id=? AND lv_no=? AND (kn_type IS NULL OR kn_type NOT LIKE 'E%') ORDER BY area_m2 DESC",
+      [data.datasetId, data.lvNo]);
+    const withGeo = parcels.filter((p) => p.lat != null && p.lng != null && (p.area_m2 ?? 0) > 0);
+    const CAP = 25; // strop pre počet computeAvm volaní (D1/CPU budget)
+    let tot = 0, lo = 0, hi = 0, valued = 0;
+    let repr: LvIntel["repr"] = null; let reprAvm: AvmResult | null = null;
+    for (const p of withGeo.slice(0, CAP)) {
+      const { druhCode, umCode } = inferDruhCodes(p.use_type);
+      let a: AvmResult;
+      try { a = await computeAvm(p.lat as number, p.lng as number, p.area_m2, druhCode, umCode, p.bpej_skupina, p.settled, okres, obec); }
+      catch { continue; }
+      if (a.estimate_eur != null) { tot += a.estimate_eur; lo += a.low_eur ?? a.estimate_eur; hi += a.high_eur ?? a.estimate_eur; valued++; }
+      if (!repr) { repr = { parcel_no: p.parcel_no, lat: p.lat as number, lng: p.lng as number, area_m2: p.area_m2 ?? 0, use_type: p.use_type }; reprAvm = a; }
+    }
+    return {
+      okres, repr,
+      avm: {
+        total_estimate_eur: valued ? Math.round(tot) : null,
+        total_low_eur: valued ? Math.round(lo) : null,
+        total_high_eur: valued ? Math.round(hi) : null,
+        valued, total_parcels: parcels.length, capped: withGeo.length > CAP,
+        ppm2_repr: reprAvm?.ppm2 ?? null, klass_repr: reprAvm?.klass ?? "—",
+        confidence: reprAvm?.confidence ?? "—", factors: reprAvm?.factors ?? [],
+      },
+    };
+  });
+
 export const getDealRadar = createServerFn({ method: "POST" })
   .validator(z.object({ okres: z.string().optional(), minScore: z.number().optional(), limit: z.number().optional() }))
   .handler(async ({ data }): Promise<{ lv: RadarLv[]; market: MarketOpp[] }> => {
