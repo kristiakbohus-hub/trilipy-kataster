@@ -244,6 +244,50 @@ function VypisPage() {
     download("﻿" + html, "application/msword;charset=utf-8", `${isEl ? "evidencny_list" : "vypis_lv"}_${lvNo}.doc`);
   }
 
+  // Oslovovacie listy vlastníkom (.doc) — 1 list pre každého súkromného spoluvlastníka + súhrn (branded).
+  // NEODOSIELA — len vygeneruje dokument; odoslanie robí používateľ. Owner-sensitive (len full).
+  async function exportOutreach() {
+    if (c.access !== "full") return;
+    const st = await getLvSettlement({ data: { datasetId, lvNo, role } }).catch(() => null);
+    const avm = st?.avm_eur ?? null;
+    const settlement = (st?.issues.length ?? 0) > 0;
+    const ku = d?.ku_name ?? "";
+    const brand = `<div style="border-bottom:2px solid #1E3A2F;padding-bottom:8px;margin-bottom:14px"><div style="font-size:20px;font-weight:bold;letter-spacing:3px;color:#1E3A2F">TRI LIPY</div><div style="font-size:9px;color:#5C8A6B;letter-spacing:2px">PRACOVNÝ PODKLAD — NÁVRH LISTU</div></div>`;
+    const priv = c.owners.filter((o) => !o.is_company);
+    if (!priv.length) { window.alert("Na tomto LV nie sú súkromní (fyzickí) spoluvlastníci pre oslovenie."); return; }
+    const offerFor = (o: Content["owners"][number]): number | null => {
+      const f = shareFrac(o.share); if (avm == null || f == null) return null;
+      return Math.round(avm * f * (f < 0.05 ? 0.7 : 1));
+    };
+    const letters = priv.map((o) => {
+      const f = shareFrac(o.share);
+      const shM2 = f != null ? `${Math.round(c.totalAreaC * f)} m²` : "—";
+      const offer = offerFor(o);
+      const parcelaTxt = `nehnuteľností evidovaných na liste vlastníctva č. ${lvNo} v katastrálnom území ${he(ku)} (Váš spoluvlastnícky podiel ${he(o.share ?? "—")}${f != null ? `, čo zodpovedá približne ${shM2}` : ""})`;
+      const bodyTxt = settlement
+        ? `obraciam sa na Vás vo veci ${parcelaTxt}. Nehnuteľnosť je v podielovom/nevysporiadanom spoluvlastníctve. Ponúkam odkúpenie Vášho podielu za férovú cenu vychádzajúcu z trhových údajov v lokalite${offer != null ? ` (orientačne ${eur(offer)} € za Váš podiel)` : ""}. Vysporiadanie a náklady na prevod zabezpečím a hradím ja. Rešpektujem predkupné právo spoluvlastníkov.`
+        : `obraciam sa na Vás s konkrétnou ponukou na odkúpenie ${parcelaTxt}.${offer != null ? ` Ponúkam ${eur(offer)} € za Váš podiel; cena vychádza z aktuálnych trhových údajov v lokalite.` : ""} Náklady na prevod a poplatky hradím ja. V prípade záujmu ma prosím kontaktujte.`;
+      return `<div style="page-break-after:always;font-family:Georgia,serif;font-size:13px;line-height:1.5;max-width:640px">${brand}`
+        + `<div style="margin-bottom:18px"><b>${he(ownerLabel(o))}</b><br>${he(ownerAddr(o))}</div>`
+        + `<div style="margin-bottom:12px">Vážený vlastník, vážená vlastníčka,</div>`
+        + `<div style="margin-bottom:12px">${he(bodyTxt)}</div>`
+        + `<div style="margin-bottom:2px">S úctou,</div><div style="color:#555">[meno odosielateľa]<br>[telefón / e-mail]<br>[dátum]</div>`
+        + `<div style="margin-top:22px;font-size:9px;color:#888;border-top:1px solid #ccc;padding-top:6px">Spracúvanie osobných údajov: účel — ponuka na odkúpenie / vysporiadanie nehnuteľnosti (oprávnený záujem prevádzkovateľa). Máte právo namietať a žiadať výmaz na kontakte [e-mail]. Údaje pochádzajú z verejného katastra nehnuteľností.</div></div>`;
+    }).join("");
+    const totalOffer = priv.reduce((a, o) => a + (offerFor(o) ?? 0), 0);
+    const summary = `<div style="font-family:Georgia,serif;font-size:12px;max-width:680px">${brand}`
+      + `<h2 style="text-transform:uppercase">Súhrn oslovenia — LV č. ${lvNo}, k.ú. ${he(ku)}</h2>`
+      + `<p style="color:#555">Súkromných spoluvlastníkov na oslovenie: <b>${priv.length}</b>. ${settlement ? "Typ: vysporiadanie podielov." : "Typ: priama ponuka na odkup."} Orientačná hodnota LV (AVM): ${avm != null ? `<b>${eur(avm)} €</b>` : "—"}. Súčet ponúk súkromných podielov: <b>${eur(totalOffer)} €</b>.</p>`
+      + `<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px"><tr><th>Vlastník</th><th>Podiel</th><th>Ponuka</th></tr>`
+      + priv.map((o) => { const of = offerFor(o); return `<tr><td>${he(ownerLabel(o))}</td><td>${he(o.share ?? "—")}</td><td>${of != null ? eur(of) + " €" : "—"}</td></tr>`; }).join("")
+      + `</table>`
+      + `<p style="font-size:10px;color:#888;margin-top:10px">Interný pracovný podklad. Ponuky sú orientačné (AVM × podiel; malé podiely so zľavou). NEODOSIELA sa automaticky — doplň kontakt a odošli manuálne. Rešpektuj predkupné právo spoluvlastníkov (§ 140 OZ).</p>`
+      + (c.owners.some((o) => o.is_company) ? `<p style="font-size:10px;color:#888">Pozn.: firemní/štátni spoluvlastníci (napr. SPF) nie sú v listoch — vyžadujú osobitný proces (SPF/RPVS).</p>` : "")
+      + `<div style="page-break-after:always"></div></div>`;
+    const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body>${summary}${letters}</body></html>`;
+    download("﻿" + html, "application/msword;charset=utf-8", `listy_vlastnikom_LV${lvNo}.doc`);
+  }
+
   return (
     <div className="mx-auto max-w-[820px]">
       {/* Ovládanie (netlačí sa) */}
@@ -254,6 +298,10 @@ function VypisPage() {
             <button onClick={exportDoc} className="rounded-md border border-line px-2.5 py-2 text-sm font-medium text-fg hover:border-ink">Word</button>
             <button onClick={exportXls} className="rounded-md border border-line px-2.5 py-2 text-sm font-medium text-fg hover:border-ink">Excel</button>
             <button onClick={exportCsv} className="rounded-md border border-line px-2.5 py-2 text-sm font-medium text-fg hover:border-ink">CSV</button>
+            {!isEl && c.access === "full" && c.owners.some((o) => !o.is_company) ? (
+              <button onClick={() => void exportOutreach()} title="Vygenerovať oslovovacie listy súkromným spoluvlastníkom (.doc) — neodosiela sa"
+                className="rounded-md border border-line px-2.5 py-2 text-sm font-medium text-fg hover:border-ink">Listy vlastníkom</button>
+            ) : null}
             <button
               onClick={() => { if (typeof window !== "undefined") window.print(); }}
               className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-cream"
