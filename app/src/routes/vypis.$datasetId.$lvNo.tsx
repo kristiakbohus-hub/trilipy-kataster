@@ -134,8 +134,60 @@ function VypisPage() {
     download("﻿" + html, "application/vnd.ms-excel;charset=utf-8", `${isEl ? "evidencny_list" : "vypis_lv"}_${lvNo}.xls`);
   }
 
+  // Analytická + vysporiadacia nadstavba do Word exportu (fetch na požiadanie, rovnaká logika ako sekcie na obrazovke).
+  async function analyticsDocHtml(): Promise<string> {
+    try {
+      const intel = await getLvIntel({ data: { datasetId, lvNo } });
+      let html = `<h3 style="font-family:Georgia,serif">Analytická nadstavba (orientačné, interné — nie znalecký ani úradný výstup)</h3>`;
+      const a = intel.avm;
+      if (a.total_estimate_eur != null) {
+        html += `<p style="font-size:12px">Odhad trhovej hodnoty LV (AVM): <b>~ ${eur(a.total_estimate_eur)} €</b> (rozpätie ${eur(a.total_low_eur ?? 0)}–${eur(a.total_high_eur ?? 0)} €, istota ${he(String(a.confidence))}, ${a.valued}/${a.total_parcels} parciel ocenených).${a.factors.length ? " " + he(a.factors.join("; ")) : ""}</p>`;
+      }
+      const repr = intel.repr;
+      if (repr) {
+        const [lim, reg] = await Promise.all([
+          getParcelLimits({ data: { lat: repr.lat, lng: repr.lng } }).catch(() => null),
+          getUpRegulativ({ data: { datasetId } }).catch(() => [] as Awaited<ReturnType<typeof getUpRegulativ>>),
+        ]);
+        const hits = lim?.items.filter((i) => i.hit) ?? [];
+        html += `<p style="font-size:12px">Limity využitia (parcela ${he(repr.parcel_no)}): ${hits.length ? he(hits.map((h) => `${h.label}${h.count ? ` (${h.count})` : ""}`).join(", ")) : "žiadne evidované (zosuvy/záplavy/les/pásma)"}.</p>`;
+        const def = reg.find((r) => r.zone_code === "*" && r.ipp != null) ?? reg.find((r) => r.ipp != null);
+        const regUsed = def ? regulativFromZone({ code: def.zone_code, name: def.funkcia, ipp: def.ipp, izp: def.izp, kz: def.kz }) : (regulativByCode(proxyZone(repr.use_type, null)) ?? null);
+        if (regUsed && repr.area_m2 > 0) {
+          const low = regUsed.ipp <= 0.7 || /bývanie|rodinn|ibv/i.test(`${regUsed.kategoria} ${regUsed.name}`);
+          const opts = low ? { m2PerByt: 110, nakladyEurM2Hpp: 1500, predajEurM2: 1900 } : DEV_DEFAULTS;
+          const dev = developmentCalc(repr.area_m2, regUsed, opts);
+          html += `<p style="font-size:12px">Územný plán &amp; zastavateľnosť: <b>${he(regUsed.name)}</b> (IZP ${regUsed.izp}, IPP ${regUsed.ipp}, KZ ${regUsed.kz}).`;
+          if (dev.buildable) html += ` Zastavateľná ${m2(dev.izpArea)}, HPP ${m2(dev.hpp)}, ~ ${low ? Math.max(1, Math.round(dev.izpArea / 120)) + " RD jednotiek" : dev.byty + " bytov"}, GDV ${eur(dev.ekonomika.gdv)} €, náklady ${eur(dev.ekonomika.naklady)} €, marža ${dev.ekonomika.marzaPct} %.`;
+          html += `</p>`;
+        }
+      }
+      const st = await getLvSettlement({ data: { datasetId, lvNo, role } }).catch(() => null);
+      if (st && (st.issues.length || (st.access === "full" && st.owners.length))) {
+        html += `<h3 style="font-family:Georgia,serif">Vysporiadanie &amp; odkup podielov (orientačné)</h3>`;
+        html += `<p style="font-size:12px">Náročnosť vysporiadania: <b>${he(DIFF_LABEL[st.difficulty])}</b> · potenciál ${st.potential_score}/100.</p>`;
+        if (st.issues.length) {
+          html += `<ul style="font-size:12px">` + st.issues.map((it) => {
+            const g = st.guides[it.type];
+            let li = `<li><b>${he(g?.nazov ?? it.type)}</b> — ${he(it.note)}`;
+            if (g) li += `<br><i>§ ${he(g.zakony.join("; "))}</i><br>Postup: ${he(g.postup.join(" "))}<br>⚠ ${he(g.upozornenie)}`;
+            return li + `</li>`;
+          }).join("") + `</ul>`;
+        }
+        if (st.access === "full" && st.owners.length) {
+          html += `<p style="font-size:12px">Odkup podielov (AVM hodnota LV ${st.avm_eur != null ? `~ ${eur(st.avm_eur)} €` : "—"}): 50 % ${st.scenarios.majority != null ? eur(st.scenarios.majority) + " €" : "—"}, 2/3 ${st.scenarios.qualified != null ? eur(st.scenarios.qualified) + " €" : "—"}, 100 % súkromné ${st.scenarios.full != null ? eur(st.scenarios.full) + " €" : "—"}; súkromný podiel ${(st.private_share * 100).toFixed(2)} %${st.spf_share > 0 ? `, SPF/štát ${(st.spf_share * 100).toFixed(2)} % (zvlášť)` : ""}.</p>`;
+          html += `<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px"><tr><th>Vlastník</th><th>Podiel</th><th>Odhad odkupu</th></tr>`;
+          html += st.owners.map((o) => `<tr><td>${he(o.name)}${o.is_state ? " (SPF/štát)" : o.is_company ? " (firma)" : ""}</td><td>${he(o.share_str ?? "—")}</td><td>${o.is_state ? "— (cez SPF)" : o.est_eur != null ? eur(o.est_eur) + " €" : "—"}</td></tr>`).join("");
+          html += `</table>`;
+        }
+        html += `<p style="font-size:10px;color:#666">${he(st.disclaimer)}</p>`;
+      }
+      return html;
+    } catch { return ""; }
+  }
+
   // Word (HTML .doc, dep-free — Word ho otvorí, štruktúra oficiálneho dokumentu v TRI LIPY bránde)
-  function exportDoc() {
+  async function exportDoc() {
     const { parcelsA, buildings } = docModel();
     const row = (cells: string[], tag = "td") => `<tr>${cells.map((x) => `<${tag}>${x}</${tag}>`).join("")}</tr>`;
     let body = `<div style="border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:12px"><div style="font-size:20px;font-weight:bold;letter-spacing:3px">TRI LIPY</div><div style="font-size:9px;color:#777;letter-spacing:2px">KATASTER CORE · PRACOVNÝ ${isEl ? "EVIDENČNÝ LIST" : "VÝPIS"}</div></div>`;
@@ -186,6 +238,7 @@ function VypisPage() {
     } else {
       body += `<p style="font-size:12px;color:#666">${c.count} vlastník(ov) — mená a podiely rola nevidí (prístup: ${he(c.access)}).</p>`;
     }
+    if (!isEl) body += await analyticsDocHtml();
     body += `<p style="font-size:10px;color:#888;margin-top:16px;border-top:1px solid #ccc;padding-top:6px">Vygenerované systémom TRI LIPY KATASTER CORE · interný pracovný výstup · Tento dokument neslúži na právne úkony.</p>`;
     const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#333}</style></head><body>${body}</body></html>`;
     download("﻿" + html, "application/msword;charset=utf-8", `${isEl ? "evidencny_list" : "vypis_lv"}_${lvNo}.doc`);
