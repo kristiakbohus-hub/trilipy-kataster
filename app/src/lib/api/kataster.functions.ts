@@ -291,8 +291,14 @@ export const nlQuery = createServerFn({ method: "POST" })
     const wantCompany = /\bfirm|firemn|s\.?r\.?o|a\.?s\.?|právnick|pravnick|spolo[cč]n|družstv|druzstv/.test(s);
     const wantForeign = /zahrani[cč]|cudzin/.test(s);
     const wantEkn = /\be-?kn\b|\bekn\b|roep|pozemkovokniž|pozemkovoknizn/.test(s);
+    // Externé post-filtre (ArcGIS/Overpass; capnuté rozpočtom subrequestov CF Workera):
+    const wantNoLandslide = /bez\s*zosuv|mimo\s*zosuv/.test(s);
+    const wantNoFlood = /mimo\s*z[aá]plav|bez\s*z[aá]plav|nezáplav|nezaplav/.test(s);
+    const accMin = s.match(/do\s*(\d+)\s*min/);
+    const wantAccess = /dojazd|dostupn[oý]|pri\s*dia[lľ]nic|k\s*dia[lľ]nic|bl[ií]zko|pri\s*obchod/.test(s) || !!accMin;
+    const wantSiete = /\bsiet|pr[ií]pojk|in[žz]iniersk|napojen|elektrin|\bplyn\b/.test(s);
     // LV sekcia sa naplní ak dopyt mieri na signály alebo na post-filter atribúty (inak by "Novák"/"byt" vrátili celú DB)
-    const lvRelevant = cond.length > 0 || wantCompany || wantForeign || wantEkn;
+    const lvRelevant = cond.length > 0 || wantCompany || wantForeign || wantEkn || wantNoLandslide || wantNoFlood || wantAccess || wantSiete;
     const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
     const rows = lvRelevant ? await q<NlHit>(
       `SELECT sig.dataset_id, d.ku_name, sig.lv_no, sig.co_owners, sig.has_spf, sig.dedic, sig.buildable,
@@ -338,6 +344,46 @@ export const nlQuery = createServerFn({ method: "POST" })
       scoredF = top.filter((r) => needs.every((set) => set.has(`${r.dataset_id}:${r.lv_no}`)));
     }
 
+    // Externý post-filter (limity/dostupnosť/siete) — capnuté rozpočtom subrequestov (CF free = 50/request).
+    let lvNote: string | undefined;
+    if ((wantNoLandslide || wantNoFlood || wantAccess || wantSiete) && scoredF.length) {
+      const perCand = ((wantNoLandslide || wantNoFlood) ? 7 : 0) + ((wantAccess || wantSiete) ? 3 : 0);
+      const cap = Math.max(3, Math.min(scoredF.length, Math.floor(42 / Math.max(perCand, 1))));
+      const cand = scoredF.slice(0, cap);
+      const byDs2 = new Map<string, number[]>();
+      for (const r of cand) { const a = byDs2.get(r.dataset_id) ?? []; a.push(r.lv_no); byDs2.set(r.dataset_id, a); }
+      const cxy = new Map<string, { lat: number; lng: number }>();
+      for (const [ds, lvs] of byDs2) {
+        const ph = lvs.map(() => "?").join(",");
+        const rows = await q<{ lv_no: number; lat: number | null; lng: number | null }>(
+          `SELECT lv_no, centroid_lat AS lat, centroid_lng AS lng FROM parcels WHERE dataset_id=? AND lv_no IN (${ph}) AND centroid_lat IS NOT NULL ORDER BY area_m2 DESC`, [ds, ...lvs]);
+        for (const r of rows) { const k = `${ds}:${r.lv_no}`; if (!cxy.has(k) && r.lat != null && r.lng != null) cxy.set(k, { lat: r.lat, lng: r.lng }); }
+      }
+      const maxDrive = accMin ? Number(accMin[1]) : 15;
+      const keep: typeof cand = [];
+      for (const r of cand) {
+        const c = cxy.get(`${r.dataset_id}:${r.lv_no}`);
+        if (!c) continue; // bez geometrie sa nedá externe overiť
+        let ok = true;
+        if (wantNoLandslide || wantNoFlood) {
+          const lim = await limitsCore(c.lat, c.lng).catch(() => null);
+          const hit = (k: string) => !!lim?.items.some((i) => i.key === k && i.hit);
+          if (wantNoLandslide && hit("zosuvy")) ok = false;
+          if (ok && wantNoFlood && hit("zaplava")) ok = false;
+        }
+        if (ok && (wantAccess || wantSiete)) {
+          const acc = await accessibilityCore(c.lat, c.lng).catch(() => null);
+          const obchod = acc?.amenities?.obchod?.drive_min ?? 999;
+          const dial = acc?.infra?.dialnica?.drive_min ?? 999;
+          if (wantAccess && Math.min(obchod, dial) > maxDrive) ok = false;
+          if (ok && wantSiete && Math.min(obchod, acc?.amenities?.skola?.drive_min ?? 999) > 15) ok = false; // siete = proxy: blízkosť zástavby
+        }
+        if (ok) keep.push(r);
+      }
+      scoredF = keep;
+      lvNote = `Externé overenie (limity/dostupnosť) aplikované na top ${cap} kandidátov — rozpočet subrequestov CF.`;
+    }
+
     // ——— 2) Vlastníci (rolovo gatované, naprieč k.ú.) ———
     let owners: { access: ReturnType<typeof ownerAccess>; count: number; results: OwnerGroup[] } = { access: ownerAccess(role), count: 0, results: [] };
     if (ownerIntent) {
@@ -379,7 +425,7 @@ export const nlQuery = createServerFn({ method: "POST" })
     }
 
     return {
-      lv: { count: scoredF.length, results: scoredF.slice(0, 80) },
+      lv: { count: scoredF.length, results: scoredF.slice(0, 80), note: lvNote },
       owners,
       market,
     };
@@ -2331,14 +2377,12 @@ function haversine(la1: number, lo1: number, la2: number, lo2: number): number {
   return Math.round(2 * R * Math.asin(Math.sqrt(a)));
 }
 
-export const getParcelAccessibility = createServerFn({ method: "POST" })
-  .validator(z.object({ lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
-  .handler(async ({ data }): Promise<Accessibility> => {
-    const key = `osm:${data.lat.toFixed(4)}:${data.lng.toFixed(4)}`;
-    const cached = await regCacheRead(key, !!data.refresh, 30 * 24 * 3600);
+async function accessibilityCore(plat: number, plng: number, refresh?: boolean): Promise<Accessibility> {
+    const key = `osm:${plat.toFixed(4)}:${plng.toFixed(4)}`;
+    const cached = await regCacheRead(key, !!refresh, 30 * 24 * 3600);
     if (cached) return { ...(cached.payload as Accessibility), cached: true, ageDays: cached.ageDays };
     // jeden Overpass dopyt so všetkými kategóriami (around na centroid)
-    const clauses = OSM_CATS.flatMap((c) => c.filters.map((f) => `${f}(around:${c.radius},${data.lat},${data.lng});`)).join("");
+    const clauses = OSM_CATS.flatMap((c) => c.filters.map((f) => `${f}(around:${c.radius},${plat},${plng});`)).join("");
     const query = `[out:json][timeout:25];(${clauses});out center tags 400;`;
     const empty: Accessibility = { transport: {}, amenities: {}, infra: {} };
     // viac Overpass zrkadiel (fallback) — pre spoľahlivé pokrytie celého SR
@@ -2381,14 +2425,17 @@ export const getParcelAccessibility = createServerFn({ method: "POST" })
       let best: PoiHit | null = null;
       for (const p of pois) {
         if (!matches(p.tags, cat.filters)) continue;
-        const d = haversine(data.lat, data.lng, p.lat, p.lng);
+        const d = haversine(plat, plng, p.lat, p.lng);
         if (!best || d < best.dist) best = { name: (asVal(p.tags.name) ?? null), dist: d, drive_min: Math.max(1, Math.round((d / 1000 / 45) * 60)) };
       }
       out[cat.group][cat.key] = best;
     }
     await regCacheWrite(key, "osm", out);
     return out;
-  });
+}
+export const getParcelAccessibility = createServerFn({ method: "POST" })
+  .validator(z.object({ lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<Accessibility> => accessibilityCore(data.lat, data.lng, data.refresh));
 
 // ——— Limity výstavby (úradné registre) — ArcGIS query s metrickým bufferom v ťažisku parcely ———
 // Presné „do X m od prvku" (returnCountOnly). Zdroje overené dostupné; ostatné pribudnú (graceful „nedostupné").
@@ -2401,32 +2448,35 @@ const LIMIT_SOURCES: { category: string; key: string; label: string; url: string
   { category: "Geohazardy", key: "banske",  label: "Staré banské dielo",                url: "https://ags.geology.sk/arcgis/rest/services/Geofond/sbd_vect/MapServer",     layer: 0, buffer: 50, attr: "ŠGÚDŠ" },
   { category: "Les a pôda", key: "les",     label: "Les / ochranné pásmo (50 m)",       url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/JPRL/MapServer",          layer: 0, buffer: 50, attr: "NLC" },
   { category: "Vodné toky", key: "tok",     label: "Vodný tok / ochranné pásmo (15 m)", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/TokySR/MapServer",         layer: 0, buffer: 15, attr: "NLC" },
+  { category: "Záplavy",    key: "zaplava", label: "Záplavové riziko (APSFR)",          url: "https://mpt.svp.sk/server/rest/services/inspire/AreaofPotentialSignificantFloodRisk_Polygon_SK40000/MapServer", layer: 0, buffer: 10, attr: "SVP" },
 ];
+// Core (volateľný aj z nlQuery post-filtra) — getParcelLimits je tenký wrapper.
+async function limitsCore(lat: number, lng: number, refresh?: boolean): Promise<LimitsResult> {
+  const key = `limits:${lat.toFixed(4)}:${lng.toFixed(4)}`;
+  const cached = await regCacheRead(key, !!refresh, 30 * 24 * 3600);
+  if (cached) return { ...(cached.payload as LimitsResult), cached: true, ageDays: cached.ageDays };
+  const one = async (s: (typeof LIMIT_SOURCES)[number]): Promise<LimitHit> => {
+    const base: LimitHit = { category: s.category, key: s.key, label: s.label, hit: false, count: 0, buffer: s.buffer, attribution: s.attr, error: false };
+    const u = `${s.url}/${s.layer}/query?geometry=${lng},${lat}&geometryType=esriGeometryPoint&inSR=4326&distance=${s.buffer}&units=esriSRUnit_Meter&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json`;
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 12000);
+    try {
+      const res = await fetch(u, { headers: { "user-agent": "tri-lipy/1.0 (kataster)" }, signal: ctrl.signal });
+      if (!res.ok) return { ...base, error: true };
+      const j = asObj(JSON.parse(await res.text())) ?? {};
+      const cnt = typeof j.count === "number" ? j.count : 0;
+      return { ...base, hit: cnt > 0, count: cnt };
+    } catch { return { ...base, error: true }; }
+    finally { clearTimeout(to); }
+  };
+  const items = await Promise.all(LIMIT_SOURCES.map(one));
+  const out: LimitsResult = { items };
+  if (items.some((i) => !i.error)) await regCacheWrite(key, "limits", out); // necachuj samé chyby
+  return out;
+}
 export const getParcelLimits = createServerFn({ method: "POST" })
   .validator(z.object({ lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
-  .handler(async ({ data }): Promise<LimitsResult> => {
-    const key = `limits:${data.lat.toFixed(4)}:${data.lng.toFixed(4)}`;
-    const cached = await regCacheRead(key, !!data.refresh, 30 * 24 * 3600);
-    if (cached) return { ...(cached.payload as LimitsResult), cached: true, ageDays: cached.ageDays };
-    const one = async (s: (typeof LIMIT_SOURCES)[number]): Promise<LimitHit> => {
-      const base: LimitHit = { category: s.category, key: s.key, label: s.label, hit: false, count: 0, buffer: s.buffer, attribution: s.attr, error: false };
-      const u = `${s.url}/${s.layer}/query?geometry=${data.lng},${data.lat}&geometryType=esriGeometryPoint&inSR=4326&distance=${s.buffer}&units=esriSRUnit_Meter&spatialRel=esriSpatialRelIntersects&returnCountOnly=true&f=json`;
-      const ctrl = new AbortController();
-      const to = setTimeout(() => ctrl.abort(), 12000);
-      try {
-        const res = await fetch(u, { headers: { "user-agent": "tri-lipy/1.0 (kataster)" }, signal: ctrl.signal });
-        if (!res.ok) return { ...base, error: true };
-        const j = asObj(JSON.parse(await res.text())) ?? {};
-        const cnt = typeof j.count === "number" ? j.count : 0;
-        return { ...base, hit: cnt > 0, count: cnt };
-      } catch { return { ...base, error: true }; }
-      finally { clearTimeout(to); }
-    };
-    const items = await Promise.all(LIMIT_SOURCES.map(one));
-    const out: LimitsResult = { items };
-    if (items.some((i) => !i.error)) await regCacheWrite(key, "limits", out); // necachuj samé chyby
-    return out;
-  });
+  .handler(async ({ data }): Promise<LimitsResult> => limitsCore(data.lat, data.lng, data.refresh));
 
 // ——— Živý ESKN identify: klik na ĽUBOVOĽNÚ parcelu v SR → atribúty z národného ÚGKK ESKN (ArcGIS) ———
 // Proxy cez worker (bez CORS), fail-soft, cache 7 dní. Nezávislé od našich importovaných k.ú.

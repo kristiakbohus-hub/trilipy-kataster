@@ -19,6 +19,8 @@ const EXAMPLES = [
   "s ťarchami SPF",
   "E-KN nevysporiadané",
   "zahraniční vlastníci dedičské",
+  "stavebné bez zosuvu",
+  "dedičské do 10 min k diaľnici",
   "Novák",
   "pozemok Čadca do 30000",
   "byt Žilina predaj",
@@ -96,6 +98,7 @@ function PrieskumPage() {
       {res && res.lv.count > 0 ? (
         <Card className="p-4">
           <SectionHeader title={`Listy vlastníctva — signály (${res.lv.count})`} hint={res.lv.count > 80 ? "top 80 podľa zoradenia" : undefined} />
+          {res.lv.note ? <div className="mt-1 rounded-md border border-line bg-surface-2/40 px-2.5 py-1 text-[11px] text-muted">{res.lv.note}</div> : null}
           <div className="mt-2 divide-y divide-line">
             {res.lv.results.map((r) => (
               <div key={`${r.dataset_id}-${r.lv_no}`} className="flex items-center gap-3 py-2">
