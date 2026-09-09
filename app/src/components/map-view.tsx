@@ -145,6 +145,7 @@ const LIMIT_LAYERS: LimitLayer[] = [
   { id: "banske", name: "Staré banské diela", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/sbd_vect/MapServer", layers: "0,1,2", attribution: "ŠGÚDŠ" },
   { id: "loziska", name: "Ložiská / chránené ložiskové územia", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/pu_vect/MapServer", layers: "0,1,2", attribution: "ŠGÚDŠ" },
   { id: "les", name: "Lesné pozemky (JPRL)", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/JPRL/MapServer", layers: "0", attribution: "NLC" },
+  { id: "lestypy", name: "Lesné typy (NLC)", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/LesneTypy/MapServer", layers: "0", attribution: "NLC" },
   { id: "toky", name: "Vodné toky", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/TokySR/MapServer", layers: "0", attribution: "NLC" },
 ];
 function arcgisExport(l: LimitLayer, X: number, Y: number, res: number, w: number, h: number, dpi?: number): string {
