@@ -15,6 +15,10 @@ const EXAMPLES = [
   "absentér nevysporiadané 5 spoluvlastníkov",
   "SPF štát stavebný potenciál",
   "dedičské bez tiarch nad 5000",
+  "firmy dedičské",
+  "s ťarchami SPF",
+  "E-KN nevysporiadané",
+  "zahraniční vlastníci dedičské",
   "Novák",
   "pozemok Čadca do 30000",
   "byt Žilina predaj",
@@ -45,7 +49,8 @@ function PrieskumPage() {
         <h1 className="text-xl font-semibold tracking-tight text-fg">NL prieskum katastra</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted">
           Jeden písateľný dopyt <b>naprieč všetkými dátami</b> — signály LV (nevysporiadané, SPF, dedičské,
-          stavebný potenciál, spoluvlastníci, výmera), <b>vlastníci</b> naprieč k.ú. aj <b>trhové inzeráty</b>.
+          stavebný potenciál, spoluvlastníci, výmera, <b>ťarchy</b>), post-filtre <b>firemní / zahraniční vlastníci</b> a <b>E-KN/ROEP</b>,
+          <b>vlastníci</b> naprieč k.ú. aj <b>trhové inzeráty</b>.
           Systém sám rozpozná zámer: kľúčové slová → LV skóre; meno s veľkým písmenom / IČO → vlastník;
           „predaj / byt / pozemok / do 30000" → trh. Skóre je pracovný indikátor príležitosti, nie právny záver.
         </p>

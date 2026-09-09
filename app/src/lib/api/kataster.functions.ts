@@ -286,8 +286,13 @@ export const nlQuery = createServerFn({ method: "POST" })
     if (/bez.?[tť]arch|čist/.test(s)) cond.push("sig.clean_title = 1");
     const mco = s.match(/(\d+)\s*(spoluvlast|podiel|vlastník)/); if (mco) { cond.push("sig.co_owners >= ?"); args.push(Number(mco[1])); }
     const ma = s.match(/nad\s*(\d{3,})/); if (ma) { cond.push("sig.total_area >= ?"); args.push(Number(ma[1])); }
-    // LV sekcia sa naplní len ak dopyt naozaj mieri na signály (inak by "Novák"/"byt" vrátili celú DB)
-    const lvRelevant = cond.length > 0;
+    if (/s\s*[tť]arch|zálož|exek|bremen|nečist|necist/.test(s)) cond.push("sig.clean_title = 0");
+    // Post-filter intenty (aplikujú sa LACNO na top-N kandidátov cez indexované lookupy — NIE sken celej tabuľky):
+    const wantCompany = /\bfirm|firemn|s\.?r\.?o|a\.?s\.?|právnick|pravnick|spolo[cč]n|družstv|druzstv/.test(s);
+    const wantForeign = /zahrani[cč]|cudzin/.test(s);
+    const wantEkn = /\be-?kn\b|\bekn\b|roep|pozemkovokniž|pozemkovoknizn/.test(s);
+    // LV sekcia sa naplní ak dopyt mieri na signály alebo na post-filter atribúty (inak by "Novák"/"byt" vrátili celú DB)
+    const lvRelevant = cond.length > 0 || wantCompany || wantForeign || wantEkn;
     const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
     const rows = lvRelevant ? await q<NlHit>(
       `SELECT sig.dataset_id, d.ku_name, sig.lv_no, sig.co_owners, sig.has_spf, sig.dedic, sig.buildable,
@@ -310,6 +315,28 @@ export const nlQuery = createServerFn({ method: "POST" })
     });
     const sort = data.sort ?? "score";
     scored.sort((a, b) => sort === "area" ? b.total_area - a.total_area : sort === "owners" ? b.co_owners - a.co_owners : b.score - a.score);
+
+    // Post-filter na top-N kandidátov (D1-safe: indexované lookupy per dataset, žiadny sken celej tabuľky).
+    let scoredF = scored;
+    if ((wantCompany || wantForeign || wantEkn) && scored.length) {
+      const top = scored.slice(0, 120);
+      const byDs = new Map<string, number[]>();
+      for (const r of top) { const a = byDs.get(r.dataset_id) ?? []; a.push(r.lv_no); byDs.set(r.dataset_id, a); }
+      const keyset = async (build: (ph: string) => string): Promise<Set<string>> => {
+        const set = new Set<string>();
+        for (const [ds, lvs] of byDs) {
+          const ph = lvs.map(() => "?").join(",");
+          const rows = await q<{ lv_no: number }>(build(ph), [ds, ...lvs]);
+          for (const r of rows) set.add(`${ds}:${r.lv_no}`);
+        }
+        return set;
+      };
+      const needs: Set<string>[] = [];
+      if (wantCompany) needs.push(await keyset((ph) => `SELECT DISTINCT lv_no FROM lv_owners WHERE dataset_id=? AND is_company=1 AND lv_no IN (${ph})`));
+      if (wantForeign) needs.push(await keyset((ph) => `SELECT DISTINCT lv_no FROM lv_owners WHERE dataset_id=? AND is_company=0 AND addr_psc IS NULL AND addr_obec IS NOT NULL AND lv_no IN (${ph})`));
+      if (wantEkn) needs.push(await keyset((ph) => `SELECT DISTINCT lv_no FROM parcels WHERE dataset_id=? AND (kn_type LIKE 'E%' OR ekn_ref IS NOT NULL) AND lv_no IN (${ph})`));
+      scoredF = top.filter((r) => needs.every((set) => set.has(`${r.dataset_id}:${r.lv_no}`)));
+    }
 
     // ——— 2) Vlastníci (rolovo gatované, naprieč k.ú.) ———
     let owners: { access: ReturnType<typeof ownerAccess>; count: number; results: OwnerGroup[] } = { access: ownerAccess(role), count: 0, results: [] };
@@ -352,7 +379,7 @@ export const nlQuery = createServerFn({ method: "POST" })
     }
 
     return {
-      lv: { count: scored.length, results: scored.slice(0, 80) },
+      lv: { count: scoredF.length, results: scoredF.slice(0, 80) },
       owners,
       market,
     };
