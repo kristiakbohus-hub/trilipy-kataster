@@ -120,6 +120,9 @@ const CURATED_WMS: WmsDef[] = [
   { id: "ortofoto", name: "ZBGIS ortofoto", url: "https://zbgisws.skgeodesy.sk/zbgis_ortofoto_wms/service.svc/get", layers: "1", format: "image/jpeg", attribution: "© ÚGKK SR / GKÚ — ZBGIS ortofoto (CC BY 4.0)", reliable: true },
   { id: "zbgis", name: "ZBGIS základná mapa", url: "https://zbgisws.skgeodesy.sk/zbgis_wms_featureinfo/service.svc/get", layers: "0", format: "image/png", attribution: "© ÚGKK SR — ZBGIS" },
   { id: "dmr", name: "ZBGIS DMR (výškopis / terén)", url: "https://zbgisws.skgeodesy.sk/zbgis_dmr_wms/service.svc/get", layers: "0", format: "image/png", attribution: "© ÚGKK SR / GKÚ — DMR 5.0", reliable: true },
+  // Celosvetové podklady (EOX) — fungujú aj mimo SR; EPSG:3857. POZOR licencia s2cloudless = CC BY-NC-SA (nekomerčné).
+  { id: "s2", name: "Sentinel-2 satelit (EOX, svet)", url: "https://tiles.maps.eox.at/wms", layers: "s2cloudless_3857", format: "image/jpeg", attribution: "Sentinel-2 cloudless © EOX IT Services / ESA (CC BY-NC-SA 4.0)", reliable: true },
+  { id: "terrain", name: "Terén (EOX Terrain Light, svet)", url: "https://tiles.maps.eox.at/wms", layers: "terrain-light_3857", format: "image/jpeg", attribution: "EOX Terrain Light © EOX / Natural Earth / SRTM (CC BY-SA)", reliable: true },
   // ESKN kataster je per-k.ú. (podľa kraja) — pripája sa cez wms_sources pri importe, nie globálne.
 ];
 
@@ -140,6 +143,7 @@ const LIMIT_LAYERS: LimitLayer[] = [
   { id: "zosuvy", name: "Zosuvy / svahové deformácie", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/zosuvy_vect/MapServer", layers: "2,3,4", attribution: "ŠGÚDŠ" },
   { id: "env", name: "Env. záťaže / skládky", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/skladky_vect/MapServer", layers: "0,1", attribution: "ŠGÚDŠ" },
   { id: "banske", name: "Staré banské diela", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/sbd_vect/MapServer", layers: "0,1,2", attribution: "ŠGÚDŠ" },
+  { id: "loziska", name: "Ložiská / chránené ložiskové územia", url: "https://ags.geology.sk/arcgis/rest/services/Geofond/pu_vect/MapServer", layers: "0,1,2", attribution: "ŠGÚDŠ" },
   { id: "les", name: "Lesné pozemky (JPRL)", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/JPRL/MapServer", layers: "0", attribution: "NLC" },
   { id: "toky", name: "Vodné toky", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/TokySR/MapServer", layers: "0", attribution: "NLC" },
 ];
@@ -1663,7 +1667,7 @@ export function MapView({
       {/* Nástroje + Layer Catalog (vľavo hore) */}
       {/* Podkladové mapy — ZBGIS-style prepínač (vpravo dole) */}
       <div className="absolute bottom-3 right-3 z-20 flex gap-1 rounded-lg border border-line bg-surface/95 p-1 text-[11px] shadow backdrop-blur">
-        {([["ortofoto", "Ortofoto"], ["zbgis", "ZBGIS"], ["dmr", "DMR"], ["none", "Bez"]] as const).map(([id, lbl]) => (
+        {([["ortofoto", "Ortofoto"], ["s2", "Satelit"], ["zbgis", "ZBGIS"], ["dmr", "DMR"], ["terrain", "Terén"], ["none", "Bez"]] as const).map(([id, lbl]) => (
           <button key={id} onClick={() => setBaseMap(id)}
             className={"rounded px-2 py-1 " + (baseMap === id ? "bg-ink font-medium text-cream" : "text-muted hover:text-fg")}>
             {lbl}
