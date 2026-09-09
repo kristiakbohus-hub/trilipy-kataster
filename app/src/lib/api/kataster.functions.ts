@@ -2096,37 +2096,136 @@ export type LvIntel = {
     ppm2_repr: number | null; klass_repr: string; confidence: AvmResult["confidence"] | "—"; factors: string[];
   };
 };
+// Zdieľaný agregátor AVM pre LV — súčet odhadov naprieč C-KN parcelami + reprezentatívna parcela.
+async function lvAvmAggregate(datasetId: string, lvNo: number): Promise<{
+  okres: string | null; total: number | null; low: number | null; high: number | null;
+  valued: number; total_parcels: number; capped: boolean; repr: LvIntel["repr"]; reprAvm: AvmResult | null;
+}> {
+  const ds = (await q<{ region: string | null; ku_name: string | null }>("SELECT region, ku_name FROM datasets WHERE id=?", [datasetId]))[0] ?? null;
+  const okres = okresFromRegion(ds?.region ?? null);
+  const obec = ds?.ku_name ? ds.ku_name.replace(/^k\.ú\.\s*/i, "").trim() : null;
+  const parcels = await q<{ parcel_no: string; area_m2: number | null; use_type: string | null; bpej_skupina: number | null; settled: number | null; lat: number | null; lng: number | null }>(
+    "SELECT parcel_no, area_m2, use_type, bpej_skupina, settled, centroid_lat AS lat, centroid_lng AS lng FROM parcels WHERE dataset_id=? AND lv_no=? AND (kn_type IS NULL OR kn_type NOT LIKE 'E%') ORDER BY area_m2 DESC",
+    [datasetId, lvNo]);
+  const withGeo = parcels.filter((p) => p.lat != null && p.lng != null && (p.area_m2 ?? 0) > 0);
+  const CAP = 25; // strop pre počet computeAvm volaní (D1/CPU budget)
+  let tot = 0, lo = 0, hi = 0, valued = 0;
+  let repr: LvIntel["repr"] = null; let reprAvm: AvmResult | null = null;
+  for (const p of withGeo.slice(0, CAP)) {
+    const { druhCode, umCode } = inferDruhCodes(p.use_type);
+    let a: AvmResult;
+    try { a = await computeAvm(p.lat as number, p.lng as number, p.area_m2, druhCode, umCode, p.bpej_skupina, p.settled, okres, obec); }
+    catch { continue; }
+    if (a.estimate_eur != null) { tot += a.estimate_eur; lo += a.low_eur ?? a.estimate_eur; hi += a.high_eur ?? a.estimate_eur; valued++; }
+    if (!repr) { repr = { parcel_no: p.parcel_no, lat: p.lat as number, lng: p.lng as number, area_m2: p.area_m2 ?? 0, use_type: p.use_type }; reprAvm = a; }
+  }
+  return { okres, total: valued ? Math.round(tot) : null, low: valued ? Math.round(lo) : null, high: valued ? Math.round(hi) : null, valued, total_parcels: parcels.length, capped: withGeo.length > CAP, repr, reprAvm };
+}
+
 export const getLvIntel = createServerFn({ method: "POST" })
   .validator(z.object({ datasetId: z.string(), lvNo: z.number() }))
   .handler(async ({ data }): Promise<LvIntel> => {
-    const ds = (await q<{ region: string | null; ku_name: string | null }>("SELECT region, ku_name FROM datasets WHERE id=?", [data.datasetId]))[0] ?? null;
-    const okres = okresFromRegion(ds?.region ?? null);
-    const obec = ds?.ku_name ? ds.ku_name.replace(/^k\.ú\.\s*/i, "").trim() : null;
-    const parcels = await q<{ parcel_no: string; area_m2: number | null; use_type: string | null; bpej_skupina: number | null; settled: number | null; lat: number | null; lng: number | null }>(
-      "SELECT parcel_no, area_m2, use_type, bpej_skupina, settled, centroid_lat AS lat, centroid_lng AS lng FROM parcels WHERE dataset_id=? AND lv_no=? AND (kn_type IS NULL OR kn_type NOT LIKE 'E%') ORDER BY area_m2 DESC",
-      [data.datasetId, data.lvNo]);
-    const withGeo = parcels.filter((p) => p.lat != null && p.lng != null && (p.area_m2 ?? 0) > 0);
-    const CAP = 25; // strop pre počet computeAvm volaní (D1/CPU budget)
-    let tot = 0, lo = 0, hi = 0, valued = 0;
-    let repr: LvIntel["repr"] = null; let reprAvm: AvmResult | null = null;
-    for (const p of withGeo.slice(0, CAP)) {
-      const { druhCode, umCode } = inferDruhCodes(p.use_type);
-      let a: AvmResult;
-      try { a = await computeAvm(p.lat as number, p.lng as number, p.area_m2, druhCode, umCode, p.bpej_skupina, p.settled, okres, obec); }
-      catch { continue; }
-      if (a.estimate_eur != null) { tot += a.estimate_eur; lo += a.low_eur ?? a.estimate_eur; hi += a.high_eur ?? a.estimate_eur; valued++; }
-      if (!repr) { repr = { parcel_no: p.parcel_no, lat: p.lat as number, lng: p.lng as number, area_m2: p.area_m2 ?? 0, use_type: p.use_type }; reprAvm = a; }
+    const g = await lvAvmAggregate(data.datasetId, data.lvNo);
+    return {
+      okres: g.okres, repr: g.repr,
+      avm: {
+        total_estimate_eur: g.total, total_low_eur: g.low, total_high_eur: g.high,
+        valued: g.valued, total_parcels: g.total_parcels, capped: g.capped,
+        ppm2_repr: g.reprAvm?.ppm2 ?? null, klass_repr: g.reprAvm?.klass ?? "—",
+        confidence: g.reprAvm?.confidence ?? "—", factors: g.reprAvm?.factors ?? [],
+      },
+    };
+  });
+
+// ——— Vysporiadanie & odkup podielov (Fáza 1b) — kurátorovaný § postup zo znalostnej bázy. ORIENTAČNÉ. ———
+type LegalGuide = { nazov: string; zakony: string[]; postup: string[]; upozornenie: string };
+const LEGAL_GUIDE: Record<string, LegalGuide> = {
+  roep: { nazov: "Nesúlad C-KN / E-KN (obnova evidencie)", zakony: ["zákon č. 180/1995 Z.z. (ROEP)", "katastrálny zákon č. 162/1995 Z.z.", "vyhláška č. 461/2009 Z.z."],
+    postup: ["Zistiť stav: parcela v registri E-KN (pôvodná evidencia), geometricky nezosúladená s C-KN.", "Objednať geometrický plán u autorizovaného geodeta — identifikácia E parciel na C-KN.", "Ak prebieha ROEP v k.ú.: uplatniť vlastníctvo v konaní (§ 8 zák. 180/1995).", "Zápis do katastra: návrh na zápis s geometrickým plánom a listinami.", "Pri duplicite vlastníctva riešiť určenie vlastníka (dohoda alebo súd)."],
+    upozornenie: "E-KN parcely nemajú vždy zákres v C-KN; presná poloha až geometrickým plánom." },
+  dedic: { nazov: "Nedokončené / dodatočné dedičské konanie", zakony: ["Občiansky zákonník § 460 a nasl. (dedenie)", "CMP č. 161/2015 Z.z. § 211 (dodatočné konanie)"],
+    postup: ["Overiť, či bol majetok prejednaný v pôvodnom dedičskom konaní (LV vs osvedčenie o dedičstve).", "Ak sa objavil neprejednaný majetok: podnet na dodatočné dedičské konanie (§ 211 CMP).", "Notár (súdny komisár) zistí okruh dedičov (aj ďalšie generácie).", "Dedičia sa dohodnú / súd rozhodne → osvedčenie o dedičstve.", "Zápis nových vlastníkov do katastra (záznam)."],
+    upozornenie: "Pri mŕtvych dedičoch sa okruh rozvetvuje. Owner intel pomáha identifikovať dedičov." },
+  podiel: { nazov: "Zrušenie a vyporiadanie podielového spoluvlastníctva", zakony: ["Občiansky zákonník § 139–142", "§ 140 (predkupné právo spoluvlastníkov)", "§ 141 (dohoda)", "§ 142 (súdne vyporiadanie)"],
+    postup: ["Zmapovať spoluvlastníkov a ich podiely (časť B).", "Ponuka odkúpenia — REŠPEKTOVAŤ predkupné právo (§ 140): najprv ostatným spoluvlastníkom.", "Dohoda o zrušení a vyporiadaní (§ 141) — písomná, so všetkými; vklad do katastra.", "Ak dohoda nie je možná: návrh na súd (§ 142).", "Reálne rozdelenie len ak je pozemok deliteľný (geometrický plán)."],
+    upozornenie: "Porušenie predkupného práva (§ 140) → relatívna neplatnosť prevodu." },
+  absent: { nazov: "Neznámi / absentní vlastníci", zakony: ["zákon č. 180/1995 Z.z. § 16 (SPF spravuje pozemky neznámych)", "CMP (opatrovník neznámemu vlastníkovi)"],
+    postup: ["Overiť, či je vlastník naozaj neznámy, alebo len má neaktuálnu adresu.", "Pozemky neznámych spravuje SPF (§ 16) — možný nájom/odkup cez SPF.", "Pri známom vlastníkovi s neznámym pobytom: verejná vyhláška / opatrovník súdom.", "Kúpna cena pri neznámom vlastníkovi → notárska úschova.", "Owner intel (RPO/OR/RPVS) + terénne overenie."],
+    upozornenie: "Absentér z adresy je len signál — over skutočné bydlisko." },
+  spf: { nazov: "Podiel SPF / štátu", zakony: ["zákon č. 180/1995 Z.z.", "zákon č. 504/2003 Z.z. (nájom poľnohosp. pozemkov)"],
+    postup: ["Identifikovať podiel SPF/štátu na LV.", "Žiadosť na SPF o nájom alebo odkup podielu.", "SPF posudzuje podľa zákonných podmienok.", "Nájomná / kúpna zmluva + vklad do katastra."],
+    upozornenie: "Prevody SPF podliehajú zákonným obmedzeniam; nie každý podiel je voľne predajný." },
+  tarcha: { nazov: "Ťarchy / nečistý právny stav", zakony: ["katastrálny zákon č. 162/1995 Z.z.", "Občiansky zákonník (záložné § 151a+, vecné bremená § 151n+)"],
+    postup: ["Zistiť druh ťarchy (časť C): záložné právo, vecné bremeno, predkupné, exekúcia, nájom.", "Záložné právo: súhlas/kvitancia veriteľa → výmaz.", "Vecné bremeno: dohoda o zrušení / zánik podľa obsahu.", "Exekúcia: riešiť s exekútorom.", "Po vyriešení: návrh na výmaz z katastra."],
+    upozornenie: "Bez výmazu ťarchy je prevod rizikový; niektoré vecné bremená prechádzajú na nadobúdateľa." },
+};
+function shareToFrac(share: string | null | undefined): number | null {
+  if (!share) return null;
+  const m = String(share).match(/(\d+)\s*\/\s*(\d+)/);
+  if (m) { const b = Number(m[2]); return b ? Number(m[1]) / b : null; }
+  const n = Number(String(share).replace(",", "."));
+  return Number.isFinite(n) && n <= 1.0001 ? n : null;
+}
+const STATE_OWNER_RE = /pozemkov\w*\s*fond|\bSPF\b|slovensk[áa]\s+republika|štátny\s+podnik|lesy\s+(sr|slovensk)/i;
+
+export type LvSettlement = {
+  access: "full" | "summary" | "denied";
+  avm_eur: number | null;
+  issues: Array<{ type: string; severity: "low" | "med" | "high"; note: string; legal_refs: string[] }>;
+  difficulty: "low" | "med" | "high"; potential_score: number; steps: string[];
+  guides: Record<string, LegalGuide>;
+  owners: Array<{ name: string; share_str: string | null; frac: number | null; is_state: boolean; is_company: boolean; est_eur: number | null; small: boolean }>;
+  private_share: number; private_total: number; spf_share: number;
+  scenarios: { majority: number | null; qualified: number | null; full: number | null };
+  disclaimer: string;
+};
+export const getLvSettlement = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema }))
+  .handler(async ({ data }): Promise<LvSettlement> => {
+    const access = ownerAccess(data.role as Role);
+    const disclaimer = "Orientačné, nie právna rada — over s notárom/advokátom. § kurátorované zo znalostnej bázy.";
+    const s = (await q<{ co_owners: number; has_spf: number; dedic: number; clean_title: number; absenter_ratio: number }>(
+      "SELECT co_owners, has_spf, dedic, clean_title, absenter_ratio FROM lv_signals WHERE dataset_id=? AND lv_no=? LIMIT 1",
+      [data.datasetId, data.lvNo]))[0] ?? { co_owners: 0, has_spf: 0, dedic: 0, clean_title: 1, absenter_ratio: 0 };
+    const ekn = (await q<{ n: number }>("SELECT COUNT(*) n FROM parcels WHERE dataset_id=? AND lv_no=? AND (kn_type LIKE 'E%' OR ekn_ref IS NOT NULL)", [data.datasetId, data.lvNo]))[0]?.n ?? 0;
+    const issues: LvSettlement["issues"] = [];
+    const add = (type: string, sev: "low" | "med" | "high", note: string) => issues.push({ type, severity: sev, note, legal_refs: LEGAL_GUIDE[type]?.zakony ?? [] });
+    if (ekn > 0) add("roep", "med", `Parcely registra E na LV (${ekn}) — nesúlad C-KN/E-KN, možná obnova evidencie.`);
+    if (s.dedic) add("dedic", "high", "Nedokončené dedičské pomery — (dodatočné) dedičské konanie.");
+    if ((s.co_owners ?? 0) >= 5) add("podiel", "high", `Podielové spoluvlastníctvo (${s.co_owners} vlastníkov) — fragmentácia.`);
+    if ((s.absenter_ratio ?? 0) >= 0.3) add("absent", "med", `Absentní/neznámi vlastníci (~${Math.round((s.absenter_ratio ?? 0) * (s.co_owners || 1))}).`);
+    if (s.has_spf) add("spf", "low", "Podiel SPF/štátu — odkup/nájom cez SPF.");
+    if (s.clean_title === 0) add("tarcha", "med", "Ťarchy / nečistý právny stav — výmaz pred prevodom.");
+    const hiN = issues.filter((i) => i.severity === "high").length;
+    const difficulty: LvSettlement["difficulty"] = hiN >= 2 ? "high" : (hiN === 1 || issues.length >= 3) ? "med" : "low";
+    const potential_score = Math.round(100 * (0.35 * Math.min((s.co_owners ?? 0) / 20, 1) + 0.25 * (s.dedic ?? 0) + 0.20 * (s.absenter_ratio ?? 0) + 0.10 * (s.has_spf ?? 0) + 0.10 * (ekn > 0 ? 1 : 0)));
+    const steps: string[] = [];
+    const guides: Record<string, LegalGuide> = {};
+    for (const it of issues) { const g = LEGAL_GUIDE[it.type]; if (g) { guides[it.type] = g; if (g.postup[1] ?? g.postup[0]) steps.push(`${g.nazov}: ${g.postup[1] ?? g.postup[0]}`); } }
+
+    let owners: LvSettlement["owners"] = []; let privShare = 0, privTotal = 0, spfShare = 0;
+    let scenarios = { majority: null as number | null, qualified: null as number | null, full: null as number | null };
+    let avm_eur: number | null = null;
+    if (access === "full") {
+      avm_eur = (await lvAvmAggregate(data.datasetId, data.lvNo)).total;
+      const rows = await q<{ name: string; share: string | null; is_company: number; ico: string | null }>(
+        "SELECT name, share, is_company, ico FROM lv_owners WHERE dataset_id=? AND lv_no=? ORDER BY is_company DESC, name", [data.datasetId, data.lvNo]);
+      const SMALL = 0.05, DISCOUNT = 0.70;
+      owners = rows.map((o) => {
+        const frac = shareToFrac(o.share);
+        const state = STATE_OWNER_RE.test(o.name || "");
+        let est: number | null = null;
+        if (avm_eur != null && frac != null) { est = avm_eur * frac; if (frac < SMALL) est *= DISCOUNT; est = Math.round(est); }
+        if (frac != null) { if (state) spfShare += frac; else { privShare += frac; if (est) privTotal += est; } }
+        return { name: o.name, share_str: o.share, frac, is_state: state, is_company: !!o.is_company, est_eur: est, small: frac != null && frac > 0 && frac < SMALL };
+      });
+      const scen = (tgt: number) => avm_eur != null ? Math.round(avm_eur * Math.min(tgt, privShare)) : null;
+      scenarios = { majority: scen(0.5), qualified: scen(0.667), full: scen(1.0) };
     }
     return {
-      okres, repr,
-      avm: {
-        total_estimate_eur: valued ? Math.round(tot) : null,
-        total_low_eur: valued ? Math.round(lo) : null,
-        total_high_eur: valued ? Math.round(hi) : null,
-        valued, total_parcels: parcels.length, capped: withGeo.length > CAP,
-        ppm2_repr: reprAvm?.ppm2 ?? null, klass_repr: reprAvm?.klass ?? "—",
-        confidence: reprAvm?.confidence ?? "—", factors: reprAvm?.factors ?? [],
-      },
+      access, avm_eur, issues, difficulty, potential_score, steps, guides,
+      owners, private_share: Math.round(privShare * 1000) / 1000, private_total: Math.round(privTotal), spf_share: Math.round(spfShare * 1000) / 1000,
+      scenarios, disclaimer,
     };
   });
 

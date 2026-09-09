@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getParcelLimits, getUpRegulativ, getParcelAccessibility } from "../lib/api/kataster.functions";
+import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 import type { Role } from "../lib/domain";
@@ -312,6 +312,7 @@ function VypisPage() {
               </Section>
             ) : null}
             <LvIntelSection datasetId={datasetId} lvNo={lvNo} />
+            <LvSettlementSection datasetId={datasetId} lvNo={lvNo} role={role} />
             {parts.A ? (
               <Section title="Časť A — Majetková podstata">
                 {/* Parcely registra „C" — katastrálna mapa */}
@@ -602,11 +603,17 @@ function LvIntelSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }
   const a = intel.avm;
   const repr = intel.repr;
   let dev: DevCalc | null = null; let regUsed: Regulativ | null = null; let regSource = "";
+  let lowDensity = false; let devOpts = DEV_DEFAULTS;
   if (repr) {
     const def = reg.find((r) => r.zone_code === "*" && r.ipp != null) ?? reg.find((r) => r.ipp != null);
     if (def) { regUsed = regulativFromZone({ code: def.zone_code, name: def.funkcia, ipp: def.ipp, izp: def.izp, kz: def.kz }); regSource = "ÚP regulatív obce"; }
     else { regUsed = regulativByCode(proxyZone(repr.use_type, null)) ?? null; regSource = "proxy z druhu pozemku"; }
-    if (regUsed && repr.area_m2 > 0) dev = developmentCalc(repr.area_m2, regUsed, DEV_DEFAULTS);
+    if (regUsed && repr.area_m2 > 0) {
+      // IBV / rodinné domy (nízka hustota) majú iné predpoklady než bytovky (náklady/predaj/jednotky)
+      lowDensity = regUsed.ipp <= 0.7 || /bývanie|rodinn|ibv/i.test(`${regUsed.kategoria} ${regUsed.name}`);
+      devOpts = lowDensity ? { m2PerByt: 110, nakladyEurM2Hpp: 1500, predajEurM2: 1900 } : DEV_DEFAULTS;
+      dev = developmentCalc(repr.area_m2, regUsed, devOpts);
+    }
   }
   const hits = limits?.items.filter((i) => i.hit) ?? [];
   const limitsLoaded = limits != null;
@@ -661,7 +668,7 @@ function LvIntelSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }
                 <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[12px]">
                   <span className="text-muted">Zastavateľná: <b className="text-fg">{m2(dev.izpArea)}</b></span>
                   <span className="text-muted">HPP: <b className="text-fg">{m2(dev.hpp)}</b></span>
-                  <span className="text-muted">~ bytov: <b className="text-fg">{dev.byty}</b></span>
+                  <span className="text-muted">{lowDensity ? "~ RD jednotiek" : "~ bytov"}: <b className="text-fg">{lowDensity ? Math.max(1, Math.round(dev.izpArea / 120)) : dev.byty}</b></span>
                   <span className="text-muted">GDV: <b className="text-fg">{eur(dev.ekonomika.gdv)} €</b></span>
                   <span className="text-muted">náklady: <b className="text-fg">{eur(dev.ekonomika.naklady)} €</b></span>
                   <span className="text-muted">marža: <b className="text-fg">{dev.ekonomika.marzaPct} %</b></span>
@@ -669,7 +676,7 @@ function LvIntelSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }
               ) : (
                 <div className="mt-1 text-[12px] text-muted">Podľa proxy/ÚP nezastavateľné alebo bez rozvojového potenciálu.</div>
               )}
-              <div className="mt-1 text-[10px] text-muted">Orientačné (predaj {DEV_DEFAULTS.predajEurM2} €/m² ČPP, náklady {DEV_DEFAULTS.nakladyEurM2Hpp} €/m² HPP). Presné regulatívy dopĺňa analytik z ÚP.</div>
+              <div className="mt-1 text-[10px] text-muted">Orientačné ({lowDensity ? "IBV/RD" : "bytový dom"} · predaj {devOpts.predajEurM2} €/m² ČPP, náklady {devOpts.nakladyEurM2Hpp} €/m² HPP). Presné regulatívy dopĺňa analytik z ÚP.</div>
             </>
           ) : (
             <div className="mt-1 text-sm text-muted">Bez regulatívu pre reprezentatívnu parcelu.</div>
@@ -693,6 +700,103 @@ function LvIntelSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }
           ) : <div className="mt-1 text-[12px] text-muted">Najbližší obchod, škola, diaľnica, vlak — cez OSM (na požiadanie).</div>}
         </div>
       </div>
+    </Section>
+  );
+}
+
+const SEV_STYLE: Record<string, { label: string; style: { borderColor: string; color: string; background: string } }> = {
+  high: { label: "vysoká", style: { borderColor: "#d1a1a1", color: "#9b2c2c", background: "#fbeaea" } },
+  med: { label: "stredná", style: { borderColor: "#d9c07a", color: "#8a6d1f", background: "#faf4e2" } },
+  low: { label: "nízka", style: { borderColor: "#cfc8bb", color: "#6b6b6b", background: "#f3efe6" } },
+};
+const DIFF_LABEL: Record<string, string> = { high: "vysoká náročnosť", med: "stredná náročnosť", low: "nízka náročnosť" };
+
+// Vysporiadanie & odkup podielov — klasifikácia issues + § postup (kurátorované) + kalkulačka odkupu (owner-sensitive).
+function LvSettlementSection({ datasetId, lvNo, role }: { datasetId: string; lvNo: number; role: Role }) {
+  const [d, setD] = useState<Awaited<ReturnType<typeof getLvSettlement>> | null>(null);
+  const [openType, setOpenType] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true; setD(null); setOpenType(null);
+    getLvSettlement({ data: { datasetId, lvNo, role } }).then((r) => { if (alive) setD(r); }).catch(() => {});
+    return () => { alive = false; };
+  }, [datasetId, lvNo, role]);
+  if (!d) return null;
+  const hasBuyout = d.access === "full" && d.owners.length > 0;
+  if (d.issues.length === 0 && !hasBuyout) return null;
+  const pct = (f: number | null) => (f == null ? "—" : (f * 100).toLocaleString("sk-SK", { maximumFractionDigits: 2 }) + " %");
+
+  return (
+    <Section title="Vysporiadanie & odkup podielov — orientačné (interné)">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+        <span className="text-muted">Náročnosť: <b className="text-fg">{DIFF_LABEL[d.difficulty]}</b></span>
+        <span className="text-muted">Potenciál: <b className="text-fg tabular-nums">{d.potential_score}</b>/100</span>
+      </div>
+
+      {d.issues.length ? (
+        <div className="mt-2 space-y-1.5">
+          {d.issues.map((it, i) => {
+            const g = d.guides[it.type];
+            return (
+              <div key={i} className="rounded-md border border-line bg-surface/40 p-2">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full border px-1.5 py-0.5 text-[10px]" style={SEV_STYLE[it.severity]?.style}>{SEV_STYLE[it.severity]?.label}</span>
+                  <span className="text-[13px] font-medium text-fg">{g?.nazov ?? it.type}</span>
+                  {g ? <button onClick={() => setOpenType(openType === it.type ? null : it.type)} className="ml-auto text-[11px] text-muted underline-offset-2 hover:text-fg hover:underline">{openType === it.type ? "skryť §" : "§ postup"}</button> : null}
+                </div>
+                <div className="mt-0.5 text-[12px] text-muted">{it.note}</div>
+                {openType === it.type && g ? (
+                  <div className="mt-1 rounded border border-line bg-paper p-2 text-[12px]">
+                    <div className="text-muted">{g.zakony.join(" · ")}</div>
+                    <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-fg">{g.postup.map((s, j) => <li key={j}>{s}</li>)}</ol>
+                    <div className="mt-1 text-[11px] text-muted">⚠ {g.upozornenie}</div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {d.steps.length ? (
+        <div className="mt-2 text-[12px]">
+          <div className="text-[11px] uppercase tracking-wide text-muted">Navrhované kroky</div>
+          <ol className="mt-0.5 list-decimal space-y-0.5 pl-4 text-fg">{d.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
+        </div>
+      ) : null}
+
+      {hasBuyout ? (
+        <div className="mt-3">
+          <div className="text-[11px] uppercase tracking-wide text-muted">Odkup podielov (AVM hodnota LV {d.avm_eur != null ? `~ ${eur(d.avm_eur)} €` : "—"})</div>
+          <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-[12px]">
+            <span className="text-muted">50 %: <b className="text-fg">{d.scenarios.majority != null ? eur(d.scenarios.majority) + " €" : "—"}</b></span>
+            <span className="text-muted">2/3: <b className="text-fg">{d.scenarios.qualified != null ? eur(d.scenarios.qualified) + " €" : "—"}</b></span>
+            <span className="text-muted">100 % súkromné: <b className="text-fg">{d.scenarios.full != null ? eur(d.scenarios.full) + " €" : "—"}</b></span>
+            <span className="text-muted">súkromný podiel: <b className="text-fg">{pct(d.private_share)}</b></span>
+            {d.spf_share > 0 ? <span className="text-muted">SPF/štát: <b className="text-fg">{pct(d.spf_share)}</b> (zvlášť)</span> : null}
+          </div>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
+                <th className="px-2 py-1 font-medium">Vlastník</th><th className="px-2 py-1 font-medium">Podiel</th><th className="px-2 py-1 font-medium">Odhad odkupu</th>
+              </tr></thead>
+              <tbody className="divide-y divide-line">
+                {d.owners.map((o, i) => (
+                  <tr key={i}>
+                    <td className="px-2 py-1 text-fg">{o.name}{o.is_state ? <span className="ml-1 text-[10px] text-muted">(SPF/štát)</span> : o.is_company ? <span className="ml-1 text-[10px] text-muted">(firma)</span> : null}</td>
+                    <td className="px-2 py-1 font-mono tabular-nums text-fg">{o.share_str ?? "—"}{o.small ? <span className="ml-1 text-[10px] text-muted">malý</span> : null}</td>
+                    <td className="px-2 py-1 tabular-nums text-fg">{o.is_state ? "— (cez SPF)" : o.est_eur != null ? eur(o.est_eur) + " €" : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-1 text-[10px] text-muted">Odhad = AVM hodnota LV × podiel. Malé podiely (&lt;5 %) so zľavou za fragmentáciu (×0,7). SPF/štát zvlášť (proces cez SPF). Rešpektuj predkupné právo (§ 140).</div>
+        </div>
+      ) : d.access !== "full" ? (
+        <div className="mt-2 rounded-md border border-line bg-surface-2/40 px-3 py-2 text-sm text-muted">Odkup podielov (mená + odhady) — rola <b className="text-fg">{role}</b> nemá plný prístup.</div>
+      ) : null}
+
+      <div className="mt-2 text-[10px] text-muted">{d.disclaimer}</div>
     </Section>
   );
 }
