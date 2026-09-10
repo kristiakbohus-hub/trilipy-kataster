@@ -19,7 +19,17 @@ jobs:
       - name: Install deps
         run: bun install
       - name: Build (SSR Worker + assets)
-        run: bun run build
+        run: |
+          set +e
+          bun run build > build.out 2>&1
+          code=$?
+          echo "----- build output -----"
+          cat build.out
+          if [ $code -ne 0 ]; then
+            msg=$(grep -E "error TS|error during build|Transform failed|Error:|\.tsx?[:(]" build.out | head -60 | sed ':a;N;$!ba;s/\r//g;s/\n/%0A/g')
+            echo "::error title=build-fail::$msg"
+            exit $code
+          fi
       - name: Apply D1 migrations (remote)
         run: bunx wrangler d1 migrations apply trilipy-kataster --remote --config wrangler.cf.jsonc
         env:
