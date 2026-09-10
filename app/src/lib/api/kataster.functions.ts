@@ -57,7 +57,8 @@ export const getOverview = createServerFn({ method: "GET" }).handler(async () =>
     ready: datasets.filter((d) => d.status === "ready").length,
     warnings: datasets.filter((d) => d.status === "ready_with_warnings").length,
     blocked: datasets.filter((d) => d.status === "blocked").length,
-    parcels: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM parcels"))[0]?.n ?? 0,
+    // Predpočítané (0062): namiesto COUNT(*) skenu ~180k parciel sčítame malé stĺpce z už načítaných datasetov.
+    parcels: datasets.reduce((a, d) => a + (d.n_parcels ?? 0), 0),
     opportunities: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM opportunities"))[0]?.n ?? 0,
     reports: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM reports"))[0]?.n ?? 0,
   };
@@ -97,9 +98,8 @@ export const getDataset = createServerFn({ method: "POST" })
     const lvCount =
       (await q<{ n: number }>("SELECT COUNT(*) AS n FROM lvs WHERE dataset_id = ?", [data.id]))[0]
         ?.n ?? 0;
-    const ownerCount =
-      (await q<{ n: number }>("SELECT COUNT(*) AS n FROM lv_owners WHERE dataset_id = ?", [data.id]))[0]
-        ?.n ?? 0;
+    // Predpočítané (0062): počet vlastníkov z datasetu namiesto COUNT(*) skenu nad lv_owners.
+    const ownerCount = dataset?.n_owners ?? 0;
     return { dataset, parcels, jobs, reports, opportunities, lvCount, ownerCount };
   });
 
@@ -1017,8 +1017,30 @@ export const importDataset = createServerFn({ method: "POST" })
         .bind(datasetId, Number(no), step, state, msg)
         .run();
     }
+    await refreshDatasetStatsCore(datasetId).catch(() => {});
     await logAudit("dataset.import.ui", role, `Nahraté k.ú. ${data.code} (${data.name}) — ${data.parcels.length} parciel z VGI; WMS: ${wms.name}.`, datasetId);
     return { ok: true, datasetId, count: data.parcels.length };
+  });
+
+// Predpočíta počty (n_parcels/n_owners/sum_area_m2) na datasete — voláme po importe, nie pri načítaní stránky.
+// Bez datasetId prepočíta všetky (ťažké — len ručne). S datasetId len jeden (lacné).
+async function refreshDatasetStatsCore(datasetId?: string): Promise<void> {
+  const where = datasetId ? " WHERE id = ?" : "";
+  const args = datasetId ? [datasetId] : [];
+  await q(
+    `UPDATE datasets SET
+       n_parcels = (SELECT COUNT(*) FROM parcels p WHERE p.dataset_id = datasets.id),
+       n_owners = (SELECT COUNT(*) FROM lv_owners o WHERE o.dataset_id = datasets.id),
+       sum_area_m2 = (SELECT COALESCE(SUM(area_m2),0) FROM parcels p WHERE p.dataset_id = datasets.id)${where}`,
+    args,
+  );
+}
+export const refreshDatasetStats = createServerFn({ method: "POST" })
+  .validator(z.object({ role: roleSchema, datasetId: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    if (!canRunPipeline(data.role as Role)) return { ok: false, message: "Rola nemá oprávnenie." };
+    try { await refreshDatasetStatsCore(data.datasetId); return { ok: true }; }
+    catch (e) { return { ok: false, message: String((e as Error)?.message ?? e) }; }
   });
 
 // ——— E-KN (register E / určený operát) — doplnenie z UO*.vgi k existujúcemu k.ú. ———
@@ -1058,11 +1080,14 @@ export const importEknParcels = createServerFn({ method: "POST" })
 export const getSystemStatus = createServerFn({ method: "GET" }).handler(async () => {
   const { DB, HF_ENV } = bindings();
   const dbOk = !!DB;
+  // Predpočítané (0062): parcely + vlastníci ako SUM z 15 malých riadkov datasets (nie COUNT(*) nad 952k).
+  const dstat = (await q<{ ds: number; p: number; o: number }>(
+    "SELECT COUNT(*) AS ds, COALESCE(SUM(n_parcels),0) AS p, COALESCE(SUM(n_owners),0) AS o FROM datasets").catch(() => []))[0];
   const counts = {
-    datasets: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM datasets"))[0]?.n ?? 0,
-    parcels: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM parcels"))[0]?.n ?? 0,
+    datasets: dstat?.ds ?? 0,
+    parcels: dstat?.p ?? 0,
     lvs: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM lvs"))[0]?.n ?? 0,
-    owners: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM lv_owners"))[0]?.n ?? 0,
+    owners: dstat?.o ?? 0,
     cases: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM cases"))[0]?.n ?? 0,
     reports: (await q<{ n: number }>("SELECT COUNT(*) AS n FROM reports"))[0]?.n ?? 0,
   };
@@ -1688,11 +1713,14 @@ export const getDashboard = createServerFn({ method: "POST" })
     const cached = await regCacheRead("dashboard:sr", !!data.refresh, 12 * 3600);
     if (cached) return { ...(cached.payload as Dashboard), cached: true, ageDays: cached.ageDays };
     const num = async (sql: string, args: unknown[] = []): Promise<number> => { try { return (await q<{ n: number }>(sql, args))[0]?.n ?? 0; } catch { return 0; } };
-    const datasets = await num("SELECT COUNT(*) n FROM datasets");
-    const parcels = await num("SELECT COUNT(*) n FROM parcels");
-    const owners = await num("SELECT COUNT(*) n FROM lv_owners");
+    // Predpočítané (0062): parcely/vlastníci/výmera ako SUM z malej datasets tabuľky — nie COUNT/SUM skeny nad 952k+ riadkami.
+    const dstat = (await q<{ ds: number; p: number; o: number; a: number }>(
+      "SELECT COUNT(*) AS ds, COALESCE(SUM(n_parcels),0) AS p, COALESCE(SUM(n_owners),0) AS o, COALESCE(SUM(sum_area_m2),0) AS a FROM datasets").catch(() => []))[0];
+    const datasets = dstat?.ds ?? 0;
+    const parcels = dstat?.p ?? 0;
+    const owners = dstat?.o ?? 0;
     const lvs = await num("SELECT COUNT(*) n FROM lv_signals");
-    const area = await num("SELECT COALESCE(SUM(area_m2),0) n FROM parcels");
+    const area = dstat?.a ?? 0;
     // Deal hot/top z predpočítaného signal_score (index 0051) — lacné.
     const hot = await num("SELECT COUNT(*) n FROM lv_signals WHERE signal_score >= 60");
     const open_deals = await num("SELECT COUNT(*) n FROM deals WHERE status NOT IN ('closed_won','closed_lost')");

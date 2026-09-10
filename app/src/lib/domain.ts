@@ -101,6 +101,10 @@ export interface Dataset {
   import_version: string;
   updated_at: string;
   note: string | null;
+  // Predpočítané počty (migrácia 0062) — čítajú sa namiesto COUNT(*) skenov nad 952k+ riadkami.
+  n_parcels?: number | null;
+  n_owners?: number | null;
+  sum_area_m2?: number | null;
 }
 
 export interface Parcel {
