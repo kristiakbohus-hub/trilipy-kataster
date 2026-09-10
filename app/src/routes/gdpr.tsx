@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { submitDataSubjectRequest, listDataSubjectRequests, applyErasure, getDataSubjectRecord, type DsrRow } from "../lib/api/kataster.functions";
+import { submitDataSubjectRequest, listDataSubjectRequests, applyErasure, getDataSubjectRecord, listAllowedSignups, addAllowedSignup, removeAllowedSignup, type DsrRow, type AllowedSignup } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
 import { useAuth } from "../lib/auth-context";
 
@@ -23,8 +23,15 @@ function GdprPage() {
   const [busy, setBusy] = useState(false);
   const [lookup, setLookup] = useState<Awaited<ReturnType<typeof getDataSubjectRecord>> | null>(null);
   const [lookupName, setLookupName] = useState("");
+  const [allow, setAllow] = useState<Awaited<ReturnType<typeof listAllowedSignups>> | null>(null);
+  const [newEmail, setNewEmail] = useState("");
+  const [newNote, setNewNote] = useState("");
 
-  const refresh = useCallback(() => { if (token) listDataSubjectRequests({ data: { token } }).then(setData).catch(() => {}); }, [token]);
+  const refresh = useCallback(() => {
+    if (!token) return;
+    listDataSubjectRequests({ data: { token } }).then(setData).catch(() => {});
+    listAllowedSignups({ data: { token } }).then(setAllow).catch(() => {});
+  }, [token]);
   useEffect(() => { refresh(); }, [refresh]);
 
   if (!token) return <div className="p-4 text-sm text-muted">Prihlás sa.</div>;
@@ -47,6 +54,16 @@ function GdprPage() {
     if (lookupName.trim().length < 2) return;
     const r = await getDataSubjectRecord({ data: { token: token!, name: lookupName.trim() } });
     setLookup(r);
+  }
+  async function addAllow() {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(newEmail.trim())) { setMsg("Zadaj platný email."); return; }
+    const r = await addAllowedSignup({ data: { token: token!, email: newEmail.trim(), note: newNote || undefined } });
+    setMsg(r.ok ? "Email pridaný — smie sa zaregistrovať." : (r.message ?? "Zlyhalo.")); setNewEmail(""); setNewNote(""); refresh();
+  }
+  async function delAllow(email: string) {
+    if (!window.confirm(`Odobrať ${email} z povolených registrácií? (existujúci účet tým nezmizne)`)) return;
+    const r = await removeAllowedSignup({ data: { token: token!, email } });
+    setMsg(r.ok ? "Email odobraný z prístupov." : (r.message ?? "Zlyhalo.")); refresh();
   }
 
   const isAdmin = data?.access === true;
@@ -125,6 +142,39 @@ function GdprPage() {
               {lookup.rows.length ? <div className="mt-1 max-h-48 overflow-auto rounded border border-line p-2 font-mono text-[11px] text-fg">{lookup.rows.map((r, i) => <div key={i}>{String(r.name)} · {String(r.dataset_id)} LV{String(r.lv_no)} · {[r.addr_obec, r.addr_cislo, r.addr_psc].filter(Boolean).join(", ")}</div>)}</div> : null}
             </div>
           ) : null}
+        </Card>
+      ) : null}
+
+      {isAdmin ? (
+        <Card className="p-4">
+          <SectionHeader title={`Prístup — povolené registrácie${allow ? ` (${allow.emails.length})` : ""}`} hint="registrácia je len na pozvanie" />
+          <p className="mt-1 text-[12px] text-muted">Zaregistrovať sa smú len tieto emaily. Prvý účet dostáva rolu admin — preto drž zoznam úzky.</p>
+          <div className="mt-2 flex flex-wrap items-end gap-2">
+            <label className="min-w-0 flex-1 text-sm text-muted">Email
+              <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="kolega@firma.sk" className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-2 text-sm text-fg" />
+            </label>
+            <label className="min-w-0 flex-1 text-sm text-muted">Poznámka (nepovinné)
+              <input value={newNote} onChange={(e) => setNewNote(e.target.value)} placeholder="napr. kolega – geodet" className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-2 text-sm text-fg" />
+            </label>
+            <button onClick={() => void addAllow()} className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-cream">Pridať</button>
+          </div>
+          {allow && allow.emails.length ? (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted"><th className="px-2 py-1">Email</th><th className="px-2 py-1">Poznámka</th><th className="px-2 py-1">Pridané</th><th className="px-2 py-1"></th></tr></thead>
+                <tbody className="divide-y divide-line">
+                  {allow.emails.map((a: AllowedSignup) => (
+                    <tr key={a.email}>
+                      <td className="px-2 py-1 text-fg">{a.email}</td>
+                      <td className="px-2 py-1 text-muted">{a.note ?? "—"}</td>
+                      <td className="px-2 py-1 text-[11px] text-muted">{a.created_at?.slice(0, 10) ?? ""}</td>
+                      <td className="px-2 py-1"><button onClick={() => void delAllow(a.email)} className="rounded-md border border-line px-2 py-0.5 text-xs text-fg hover:border-ink">Odobrať</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : <div className="mt-2 text-sm text-muted">Zoznam je prázdny — nikto sa nemôže zaregistrovať.</div>}
         </Card>
       ) : null}
     </div>

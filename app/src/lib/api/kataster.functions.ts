@@ -588,6 +588,12 @@ export const registerUser = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ ok: boolean; token?: string; user?: AuthUser; message?: string }> => {
     const email = data.email.trim().toLowerCase();
     if ((await q<{ id: string }>("SELECT id FROM users WHERE email = ?", [email])).length) return { ok: false, message: "Účet s týmto emailom už existuje." };
+    // Registrácia LEN na pozvanie — email musí byť na allowliste (signup_allowlist, migrácia 0063).
+    // Fail-open pred migráciou (tabuľka ešte neexistuje), aby sa nezamkla registrácia pred nasadením gate-u.
+    try {
+      const allowed = (await q<{ e: string }>("SELECT email AS e FROM signup_allowlist WHERE email = ? LIMIT 1", [email])).length > 0;
+      if (!allowed) return { ok: false, message: "Registrácia je len na pozvanie. Požiadaj admina, nech pridá tvoj email do prístupov." };
+    } catch { /* signup_allowlist ešte neexistuje (pred 0063) — dočasne povoľ */ }
     const salt = randHex(16); const hash = await pbkdf2(data.password, salt); const id = crypto.randomUUID();
     const n = (await q<{ n: number }>("SELECT COUNT(*) n FROM users", []))[0]?.n ?? 0;
     const role: Role = n === 0 ? "admin" : "analytik";   // prvý účet = admin
@@ -597,6 +603,38 @@ export const registerUser = createServerFn({ method: "POST" })
     await q("INSERT INTO activity (user_id,author,action,detail) VALUES (?,?,?,?)", [id, data.name?.trim() || email, "auth.register", `Nový účet ${email} (${role})`]);
     return { ok: true, token, user: { id, email, name: data.name?.trim() || null, role } };
   });
+
+// ——— Prístup: allowlist povolených registrácií (kto sa vôbec smie zaregistrovať) — admin ———
+export type AllowedSignup = { email: string; note: string | null; created_at: string | null };
+export const listAllowedSignups = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ access: boolean; emails: AllowedSignup[] }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { access: false, emails: [] };
+    const emails = await q<AllowedSignup>("SELECT email, note, created_at FROM signup_allowlist ORDER BY created_at DESC").catch(() => []);
+    return { access: true, emails };
+  });
+export const addAllowedSignup = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), email: z.string().email(), note: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže spravovať prístupy." };
+    try {
+      await q("INSERT OR IGNORE INTO signup_allowlist (email,note) VALUES (?,?)", [data.email.trim().toLowerCase(), data.note?.trim() || null]);
+      await logAudit("signup.allow.add", u.role, `Povolená registrácia: ${data.email.trim().toLowerCase()}`);
+      return { ok: true };
+    } catch (e) { return { ok: false, message: String((e as Error)?.message ?? e) }; }
+  });
+export const removeAllowedSignup = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), email: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže spravovať prístupy." };
+    await q("DELETE FROM signup_allowlist WHERE email = ?", [data.email.trim().toLowerCase()]);
+    await logAudit("signup.allow.remove", u.role, `Odobraná registrácia: ${data.email.trim().toLowerCase()}`);
+    return { ok: true };
+  });
+
 export const loginUser = createServerFn({ method: "POST" })
   .validator(z.object({ email: z.string().email(), password: z.string() }))
   .handler(async ({ data }): Promise<{ ok: boolean; token?: string; user?: AuthUser; message?: string }> => {
