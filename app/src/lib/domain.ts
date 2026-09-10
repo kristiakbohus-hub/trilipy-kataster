@@ -4,6 +4,7 @@
 // Registrované navigačné cesty (bez dynamických) — pre typovaný <Link to>.
 export type AppPath =
   | "/"
+  | "/prehlad"
   | "/mapa"
   | "/datasety"
   | "/browser"

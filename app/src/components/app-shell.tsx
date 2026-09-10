@@ -8,6 +8,7 @@ import { ROLES, type AppPath, type Role } from "../lib/domain";
 
 const NAV: { to: AppPath; label: string; icon: string }[] = [
   { to: "/", label: "Mission Control", icon: "mission" },
+  { to: "/prehlad", label: "Prehľad / Dashboard", icon: "report" },
   { to: "/mapa", label: "Mapa / GIS", icon: "map" },
   { to: "/datasety", label: "Datasety", icon: "database" },
   { to: "/browser", label: "Kataster Browser", icon: "table" },

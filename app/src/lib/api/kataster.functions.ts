@@ -1672,6 +1672,55 @@ export const addDealNote = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ——— Dashboard (KPI naprieč dátami) — D1-safe: signal_score index + cache 60 min (ťažké COUNT-y len raz/hodina). ———
+export type Dashboard = {
+  scope: string; cached?: boolean; ageDays?: number;
+  kataster: { datasets: number; parcels: number; owners: number; lvs: number; area_ha: number };
+  deal: { hot: number; open_deals: number; top: Array<{ dataset_id: string; ku_name: string | null; lv_no: number; score: number }> };
+  trh: { medians: { pozemok: number | null; byt: number | null; dom: number | null }; listings: number; opps: number };
+  up: { obce: number; docs: number; changes_7d: number; changes_30d: number };
+  alerts: Array<{ kind: string; body: string; created_at: string }>;
+};
+export const getDashboard = createServerFn({ method: "POST" })
+  .validator(z.object({ refresh: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<Dashboard> => {
+    const cached = await regCacheRead("dashboard:sr", !!data.refresh, 3600);
+    if (cached) return { ...(cached.payload as Dashboard), cached: true, ageDays: cached.ageDays };
+    const num = async (sql: string, args: unknown[] = []): Promise<number> => { try { return (await q<{ n: number }>(sql, args))[0]?.n ?? 0; } catch { return 0; } };
+    const datasets = await num("SELECT COUNT(*) n FROM datasets");
+    const parcels = await num("SELECT COUNT(*) n FROM parcels");
+    const owners = await num("SELECT COUNT(*) n FROM lv_owners");
+    const lvs = await num("SELECT COUNT(*) n FROM lv_signals");
+    const area = await num("SELECT COALESCE(SUM(area_m2),0) n FROM parcels");
+    // Deal hot/top z predpočítaného signal_score (index 0051) — lacné.
+    const hot = await num("SELECT COUNT(*) n FROM lv_signals WHERE signal_score >= 60");
+    const open_deals = await num("SELECT COUNT(*) n FROM deals WHERE status NOT IN ('closed_won','closed_lost')");
+    let top: Dashboard["deal"]["top"] = [];
+    try {
+      top = await q<{ dataset_id: string; ku_name: string | null; lv_no: number; score: number }>(
+        `SELECT s.dataset_id, d.ku_name, s.lv_no, ROUND(s.signal_score) AS score FROM lv_signals s JOIN datasets d ON d.id=s.dataset_id ORDER BY s.signal_score DESC LIMIT 5`);
+    } catch { /* noop */ }
+    const med = async (pt: string): Promise<number | null> => { try { return (await q<{ m: number }>("SELECT median_eur_m2 m FROM market_index WHERE ptype=? AND deal='predaj' AND obec IS NULL ORDER BY day DESC LIMIT 1", [pt]))[0]?.m ?? null; } catch { return null; } };
+    const listings = await num("SELECT COUNT(*) n FROM market_listings");
+    const opps = await num("SELECT COUNT(*) n FROM market_opportunities");
+    const up_obce = await num("SELECT COUNT(*) n FROM up_registry");
+    const up_docs = await num("SELECT COALESCE(SUM(docs),0) n FROM up_registry");
+    const ch7 = await num("SELECT COUNT(*) n FROM up_changes WHERE detected_at >= datetime('now','-7 days')");
+    const ch30 = await num("SELECT COUNT(*) n FROM up_changes WHERE detected_at >= datetime('now','-30 days')");
+    let alerts: Dashboard["alerts"] = [];
+    try { alerts = await q<{ kind: string; body: string; created_at: string }>("SELECT kind, body, created_at FROM notifications ORDER BY id DESC LIMIT 8"); } catch { /* noop */ }
+    const out: Dashboard = {
+      scope: "SR",
+      kataster: { datasets, parcels, owners, lvs, area_ha: Math.round(area / 10000) },
+      deal: { hot, open_deals, top },
+      trh: { medians: { pozemok: await med("pozemok"), byt: await med("byt"), dom: await med("dom") }, listings, opps },
+      up: { obce: up_obce, docs: up_docs, changes_7d: ch7, changes_30d: ch30 },
+      alerts,
+    };
+    try { await regCacheWrite("dashboard:sr", "dashboard", out); } catch { /* noop */ }
+    return out;
+  });
+
 // ——— Bod 4: záloha D1 (export-only, gated admin/manažér) ———
 export const exportBackup = createServerFn({ method: "POST" })
   .validator(z.object({ role: roleSchema }))
