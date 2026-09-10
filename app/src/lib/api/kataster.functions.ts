@@ -1777,10 +1777,10 @@ export const applyErasure = createServerFn({ method: "POST" })
   });
 export const getDataSubjectRecord = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string(), name: z.string().min(2) }))
-  .handler(async ({ data }): Promise<{ access: boolean; rows: Array<Record<string, unknown>>; suppressed: boolean }> => {
+  .handler(async ({ data }): Promise<{ access: boolean; rows: Array<Record<string, string | number | null>>; suppressed: boolean }> => {
     const u = await userFromToken(data.token);
     if (!u || u.role !== "admin") return { access: false, rows: [], suppressed: false };
-    const rows = await q<Record<string, unknown>>(
+    const rows = await q<Record<string, string | number | null>>(
       "SELECT dataset_id, lv_no, name, addr_obec, addr_cislo, addr_psc, is_company FROM lv_owners WHERE lower(name) LIKE ? LIMIT 200", [`%${data.name.trim().toLowerCase()}%`]);
     return { access: true, rows, suppressed: await isSuppressed(data.name) };
   });
