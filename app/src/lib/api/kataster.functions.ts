@@ -1684,7 +1684,8 @@ export type Dashboard = {
 export const getDashboard = createServerFn({ method: "POST" })
   .validator(z.object({ refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<Dashboard> => {
-    const cached = await regCacheRead("dashboard:sr", !!data.refresh, 3600);
+    // Cache 12 h — ťažké COUNT-y (parcely 132k, vlastníci 952k) sa rátajú max ~2×/deň (D1 free tier). „Obnoviť" vynúti prepočet.
+    const cached = await regCacheRead("dashboard:sr", !!data.refresh, 12 * 3600);
     if (cached) return { ...(cached.payload as Dashboard), cached: true, ageDays: cached.ageDays };
     const num = async (sql: string, args: unknown[] = []): Promise<number> => { try { return (await q<{ n: number }>(sql, args))[0]?.n ?? 0; } catch { return 0; } };
     const datasets = await num("SELECT COUNT(*) n FROM datasets");
