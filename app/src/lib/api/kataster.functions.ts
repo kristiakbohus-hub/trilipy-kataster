@@ -2719,6 +2719,18 @@ export type EsknParcel = {
 // ——— AVM (automatický odhad hodnoty) — comparables z trhu + úpravy podľa druhu/umiestnenia/BPEJ/veľkosti/vysporiadanosti ———
 // Orientačný model, NIE znalecký posudok. Sadzby sú laditeľné (kataster profík vie dodať reálne čísla).
 const AG_BASE_PPM2: Record<number, number> = { 1: 1.5, 2: 2.0, 3: 3.0, 4: 6.0, 5: 5.0, 6: 1.0, 7: 0.6, 8: 0.3, 10: 2.5 };
+// Regionálny faktor pre poľnohosp./lesnú pôdu — trhové ceny pôdy sa v SR líšia rádovo (úrodné nížiny × hory).
+// Orientačné podľa verejných štatistík cien poľnohosp. pôdy SR. Stavebné pozemky idú cez trhové comps → tam sa NEaplikuje.
+// Read-free statický číselník podľa okresu (nezaťažuje D1).
+const AG_FERTILE_OKRESY = new Set(["Dunajská Streda", "Komárno", "Nové Zámky", "Galanta", "Šaľa", "Trnava", "Nitra", "Hlohovec", "Senec", "Trebišov", "Michalovce", "Rimavská Sobota", "Levice"]);
+const AG_MOUNTAIN_OKRESY = new Set(["Čadca", "Kysucké Nové Mesto", "Námestovo", "Tvrdošín", "Dolný Kubín", "Ružomberok", "Liptovský Mikuláš", "Poprad", "Kežmarok", "Stará Ľubovňa", "Brezno", "Gelnica", "Sabinov", "Medzilaborce", "Snina", "Bytča"]);
+function agRegionFactor(okres: string | null): number {
+  const o = (okres ?? "").trim();
+  if (!o) return 1.0;
+  if (AG_FERTILE_OKRESY.has(o)) return 1.5;    // úrodné nížiny — pôda drahšia
+  if (AG_MOUNTAIN_OKRESY.has(o)) return 0.65;  // hornaté/menej úrodné okresy (Kysuce, Orava, Liptov, Spiš…)
+  return 1.0;
+}
 async function computeAvm(lat: number, lng: number, area: number | null, druhCode: number | null, umCode: number | null, bpejSkupina: number | null, settled: number | null, okres: string | null, obec: string | null): Promise<AvmResult> {
   const empty: AvmResult = { estimate_eur: null, low_eur: null, high_eur: null, ppm2: null, klass: "neznáme", comps: 0, confidence: "nízka", factors: [] };
   if (!area || area <= 0) return empty;
@@ -2756,6 +2768,8 @@ async function computeAvm(lat: number, lng: number, area: number | null, druhCod
     let f = base;
     factors.push(`poľnohosp. základ ${base} €/m²`);
     if (bpejSkupina != null) { const bf = Math.max(0.5, Math.min(1.4, 1.4 - (bpejSkupina - 1) * 0.1)); f = f * bf; factors.push(`BPEJ skupina ${bpejSkupina} ×${bf.toFixed(2)}`); }
+    const rf = agRegionFactor(okres);
+    if (rf !== 1.0) { f = f * rf; factors.push(`región ${okres} ×${rf}`); }
     ppm2 = f; low = f * 0.6; high = f * 1.4;
     klass = druhCode === 7 ? "lesný pozemok" : druhCode === 8 ? "vodná plocha" : "poľnohospodárska pôda";
   }
