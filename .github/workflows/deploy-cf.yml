@@ -38,7 +38,7 @@ jobs:
           echo "----- migration output -----"
           cat mig.out
           if [ $code -ne 0 ]; then
-            msg=$(grep -iE "error|fail|✘|SQLITE|no such|constraint|already exists|unauthor" mig.out | head -60 | sed ':a;N;$!ba;s/\r//g;s/\n/%0A/g')
+            msg=$(tail -40 mig.out | sed 's/\x1b\[[0-9;]*m//g;s/\r//g' | sed ':a;N;$!ba;s/\n/%0A/g')
             echo "::error title=migration-fail::$msg"
             exit $code
           fi
