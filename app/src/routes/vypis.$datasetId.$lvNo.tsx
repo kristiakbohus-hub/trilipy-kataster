@@ -253,8 +253,9 @@ function VypisPage() {
     const settlement = (st?.issues.length ?? 0) > 0;
     const ku = d?.ku_name ?? "";
     const brand = `<div style="border-bottom:2px solid #1E3A2F;padding-bottom:8px;margin-bottom:14px"><div style="font-size:20px;font-weight:bold;letter-spacing:3px;color:#1E3A2F">TRI LIPY</div><div style="font-size:9px;color:#5C8A6B;letter-spacing:2px">PRACOVNÝ PODKLAD — NÁVRH LISTU</div></div>`;
-    const priv = c.owners.filter((o) => !o.is_company);
-    if (!priv.length) { window.alert("Na tomto LV nie sú súkromní (fyzickí) spoluvlastníci pre oslovenie."); return; }
+    const suppressedNames = new Set((st?.owners ?? []).filter((o) => o.suppressed).map((o) => o.name));
+    const priv = c.owners.filter((o) => !o.is_company && !suppressedNames.has(o.name));
+    if (!priv.length) { window.alert(suppressedNames.size ? "Súkromní spoluvlastníci sú v GDPR suppression (neoslovovať) alebo tu nie sú." : "Na tomto LV nie sú súkromní (fyzickí) spoluvlastníci pre oslovenie."); return; }
     const offerFor = (o: Content["owners"][number]): number | null => {
       const f = shareFrac(o.share); if (avm == null || f == null) return null;
       return Math.round(avm * f * (f < 0.05 ? 0.7 : 1));

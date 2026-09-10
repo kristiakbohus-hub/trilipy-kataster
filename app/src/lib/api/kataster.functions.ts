@@ -1722,6 +1722,69 @@ export const getDashboard = createServerFn({ method: "POST" })
     return out;
   });
 
+// ——— GDPR: práva dotknutých osôb + suppression (koho nespracúvať/neoslovovať) ———
+function normName(s: string): string { return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]/g, ""); }
+// Plain helper (volateľný z iných server fns): je meno/LV/parcela v suppression?
+async function isSuppressed(name?: string | null, kuCode?: string | null, lvNo?: string | null, parcelNo?: string | null): Promise<boolean> {
+  try {
+    if (name) { if ((await q<{ n: number }>("SELECT COUNT(*) n FROM suppression WHERE kind='name' AND key=?", [normName(name)]))[0]?.n) return true; }
+    if (kuCode && lvNo) { if ((await q<{ n: number }>("SELECT COUNT(*) n FROM suppression WHERE kind='lv' AND key=?", [`${kuCode}:${lvNo}`]))[0]?.n) return true; }
+    if (kuCode && parcelNo) { if ((await q<{ n: number }>("SELECT COUNT(*) n FROM suppression WHERE kind='parcel' AND key=?", [`${kuCode}:${parcelNo}`]))[0]?.n) return true; }
+  } catch { /* tabuľka nemusí existovať pred migráciou */ }
+  return false;
+}
+// Množina normalizovaných mien v suppression (na hromadné označenie vlastníkov v LV).
+async function suppressedNameSet(): Promise<Set<string>> {
+  try { return new Set((await q<{ key: string }>("SELECT key FROM suppression WHERE kind='name'")).map((r) => r.key)); }
+  catch { return new Set(); }
+}
+export type DsrRow = { id: number; kind: string; subject_name: string; subject_ku: string | null; subject_lv: string | null; reason: string | null; status: string; created_at: string; resolved_at: string | null };
+export const submitDataSubjectRequest = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), kind: z.enum(["erasure", "objection", "access", "rectification"]), subjectName: z.string().min(2), subjectKu: z.string().optional(), subjectLv: z.string().optional(), reason: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; id?: number; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    const r = await q<{ id: number }>(
+      "INSERT INTO data_subject_requests (kind,subject_name,subject_ku,subject_lv,reason,status,by_user) VALUES (?,?,?,?,?,'new',?) RETURNING id",
+      [data.kind, data.subjectName.trim(), data.subjectKu ?? null, data.subjectLv ?? null, data.reason ?? null, u.id]);
+    if (data.kind === "objection" || data.kind === "erasure") {
+      await q("INSERT INTO suppression (kind,key,orig,reason) VALUES ('name',?,?,?)", [normName(data.subjectName), data.subjectName.trim(), data.kind]);
+    }
+    await logAudit("gdpr.request", u.role, `Žiadosť ${data.kind}: ${data.subjectName.trim()}`);
+    return { ok: true, id: r[0]?.id };
+  });
+export const listDataSubjectRequests = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ access: boolean; requests: DsrRow[]; suppressionCount: number }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { access: false, requests: [], suppressionCount: 0 };
+    const requests = await q<DsrRow>("SELECT id,kind,subject_name,subject_ku,subject_lv,reason,status,created_at,resolved_at FROM data_subject_requests ORDER BY id DESC LIMIT 200");
+    const suppressionCount = (await q<{ n: number }>("SELECT COUNT(*) n FROM suppression"))[0]?.n ?? 0;
+    return { access: true, requests, suppressionCount };
+  });
+export const applyErasure = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), requestId: z.number(), subjectName: z.string().min(2) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; removed?: number; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže vykonať výmaz." };
+    const like = `%${data.subjectName.trim().toLowerCase()}%`;
+    const n = (await q<{ n: number }>("SELECT COUNT(*) n FROM lv_owners WHERE lower(name) LIKE ?", [like]))[0]?.n ?? 0;
+    await q("DELETE FROM lv_owners WHERE lower(name) LIKE ?", [like]);
+    await q("INSERT INTO suppression (kind,key,orig,reason) VALUES ('name',?,?,'erasure')", [normName(data.subjectName), data.subjectName.trim()]);
+    await q("UPDATE data_subject_requests SET status='resolved', resolved_at=datetime('now') WHERE id=?", [data.requestId]);
+    await logAudit("gdpr.erasure", u.role, `Výmaz: ${data.subjectName.trim()} (${n} záznamov lv_owners)`);
+    return { ok: true, removed: n };
+  });
+export const getDataSubjectRecord = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), name: z.string().min(2) }))
+  .handler(async ({ data }): Promise<{ access: boolean; rows: Array<Record<string, unknown>>; suppressed: boolean }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { access: false, rows: [], suppressed: false };
+    const rows = await q<Record<string, unknown>>(
+      "SELECT dataset_id, lv_no, name, addr_obec, addr_cislo, addr_psc, is_company FROM lv_owners WHERE lower(name) LIKE ? LIMIT 200", [`%${data.name.trim().toLowerCase()}%`]);
+    return { access: true, rows, suppressed: await isSuppressed(data.name) };
+  });
+
 // ——— Bod 4: záloha D1 (export-only, gated admin/manažér) ———
 export const exportBackup = createServerFn({ method: "POST" })
   .validator(z.object({ role: roleSchema }))
@@ -2368,7 +2431,7 @@ export type LvSettlement = {
   issues: Array<{ type: string; severity: "low" | "med" | "high"; note: string; legal_refs: string[] }>;
   difficulty: "low" | "med" | "high"; potential_score: number; steps: string[];
   guides: Record<string, LegalGuide>;
-  owners: Array<{ name: string; share_str: string | null; frac: number | null; is_state: boolean; is_company: boolean; est_eur: number | null; small: boolean }>;
+  owners: Array<{ name: string; share_str: string | null; frac: number | null; is_state: boolean; is_company: boolean; est_eur: number | null; small: boolean; suppressed: boolean }>;
   private_share: number; private_total: number; spf_share: number;
   scenarios: { majority: number | null; qualified: number | null; full: number | null };
   disclaimer: string;
@@ -2405,13 +2468,14 @@ export const getLvSettlement = createServerFn({ method: "POST" })
       const rows = await q<{ name: string; share: string | null; is_company: number; ico: string | null }>(
         "SELECT name, share, is_company, ico FROM lv_owners WHERE dataset_id=? AND lv_no=? ORDER BY is_company DESC, name", [data.datasetId, data.lvNo]);
       const SMALL = 0.05, DISCOUNT = 0.70;
+      const supSet = await suppressedNameSet();
       owners = rows.map((o) => {
         const frac = shareToFrac(o.share);
         const state = STATE_OWNER_RE.test(o.name || "");
         let est: number | null = null;
         if (avm_eur != null && frac != null) { est = avm_eur * frac; if (frac < SMALL) est *= DISCOUNT; est = Math.round(est); }
         if (frac != null) { if (state) spfShare += frac; else { privShare += frac; if (est) privTotal += est; } }
-        return { name: o.name, share_str: o.share, frac, is_state: state, is_company: !!o.is_company, est_eur: est, small: frac != null && frac > 0 && frac < SMALL };
+        return { name: o.name, share_str: o.share, frac, is_state: state, is_company: !!o.is_company, est_eur: est, small: frac != null && frac > 0 && frac < SMALL, suppressed: supSet.has(normName(o.name)) };
       });
       const scen = (tgt: number) => avm_eur != null ? Math.round(avm_eur * Math.min(tgt, privShare)) : null;
       scenarios = { majority: scen(0.5), qualified: scen(0.667), full: scen(1.0) };

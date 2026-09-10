@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as RobotsDottxtRouteImport } from './routes/robots[.]txt'
 import { Route as SystemRouteImport } from './routes/system'
+import { Route as GdprRouteImport } from './routes/gdpr'
 import { Route as PrilezitostiRouteImport } from './routes/prilezitosti'
 import { Route as PrieskumRouteImport } from './routes/prieskum'
 import { Route as DealRadarRouteImport } from './routes/deal-radar'
@@ -53,6 +54,11 @@ const RobotsDottxtRoute = RobotsDottxtRouteImport.update({
 const SystemRoute = SystemRouteImport.update({
   id: '/system',
   path: '/system',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GdprRoute = GdprRouteImport.update({
+  id: '/gdpr',
+  path: '/gdpr',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrilezitostiRoute = PrilezitostiRouteImport.update({
@@ -211,6 +217,7 @@ export interface FileRoutesByFullPath {
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
   '/system': typeof SystemRoute
+  '/gdpr': typeof GdprRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
@@ -243,6 +250,7 @@ export interface FileRoutesByTo {
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
   '/system': typeof SystemRoute
+  '/gdpr': typeof GdprRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
@@ -276,6 +284,7 @@ export interface FileRoutesById {
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
   '/system': typeof SystemRoute
+  '/gdpr': typeof GdprRoute
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
@@ -310,6 +319,7 @@ export interface FileRouteTypes {
     | '/pravny-referent'
     | '/ceny'
     | '/system'
+    | '/gdpr'
     | '/robots.txt'
     | '/ogc'
     | '/mapproxy'
@@ -342,6 +352,7 @@ export interface FileRouteTypes {
     | '/pravny-referent'
     | '/ceny'
     | '/system'
+    | '/gdpr'
     | '/robots.txt'
     | '/ogc'
     | '/mapproxy'
@@ -374,6 +385,7 @@ export interface FileRouteTypes {
     | '/pravny-referent'
     | '/ceny'
     | '/system'
+    | '/gdpr'
     | '/robots.txt'
     | '/ogc'
     | '/mapproxy'
@@ -404,6 +416,7 @@ export interface RootRouteChildren {
   PravnyReferentRoute: typeof PravnyReferentRoute
   CenyRoute: typeof CenyRoute
   SystemRoute: typeof SystemRoute
+  GdprRoute: typeof GdprRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   OgcRoute: typeof OgcRoute
@@ -452,6 +465,13 @@ declare module '@tanstack/react-router' {
       path: '/system'
       fullPath: '/system'
       preLoaderRoute: typeof SystemRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/gdpr': {
+      id: '/gdpr'
+      path: '/gdpr'
+      fullPath: '/gdpr'
+      preLoaderRoute: typeof GdprRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/prilezitosti': {
@@ -652,6 +672,7 @@ const rootRouteChildren: RootRouteChildren = {
   PravnyReferentRoute: PravnyReferentRoute,
   CenyRoute: CenyRoute,
   SystemRoute: SystemRoute,
+  GdprRoute: GdprRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   OgcRoute: OgcRoute,
