@@ -2343,9 +2343,13 @@ export const getBuildingLand = createServerFn({ method: "POST" })
 // Medián počítaný cez window-funkcie; per-typ ppm2 clamp vylúči mis-parse (€/m² vs celková cena).
 export type MarketTreeRow = { grain: "kraj" | "okres" | "obec"; kraj: string; okres: string | null; obec: string | null; ptype: string; median_eur_m2: number; cnt: number };
 export const getMarketTree = createServerFn({ method: "POST" })
-  .validator(z.object({ deal: z.string().optional(), activeOnly: z.boolean().optional() }))
+  .validator(z.object({ deal: z.string().optional(), activeOnly: z.boolean().optional(), refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<MarketTreeRow[]> => {
     const deal = data.deal ?? "predaj";
+    // Cache 6 h — inak sken ~40k market_listings pri každom načítaní /ceny (D1 read-limit).
+    const cacheKey = `markettree:${deal}:${data.activeOnly !== false ? 1 : 0}`;
+    const treeCached = await regCacheRead(cacheKey, !!data.refresh, 6 * 3600);
+    if (treeCached) return treeCached.payload as MarketTreeRow[];
     const lastFull = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='last_full'"))[0]?.value;
     const activeClause = (data.activeOnly !== false && lastFull) ? "AND ml.last_seen >= ?" : "";
     const args: unknown[] = [deal];
@@ -2373,7 +2377,9 @@ export const getMarketTree = createServerFn({ method: "POST" })
       SELECT 'okres' AS grain, kraj, okres, NULL AS obec, ptype, ROUND(AVG(ppm2)) AS median_eur_m2, MAX(c) AS cnt FROM rk WHERE rn IN ((c+1)/2,(c+2)/2) GROUP BY kraj,okres,ptype
       UNION ALL
       SELECT 'kraj' AS grain, kraj, NULL AS okres, NULL AS obec, ptype, ROUND(AVG(ppm2)) AS median_eur_m2, MAX(c) AS cnt FROM rj WHERE rn IN ((c+1)/2,(c+2)/2) GROUP BY kraj,ptype`;
-    return await q<MarketTreeRow>(sql, args);
+    const treeRows = await q<MarketTreeRow>(sql, args);
+    await regCacheWrite(cacheKey, "markettree", treeRows);
+    return treeRows;
   });
 
 export const getMarketSeries = createServerFn({ method: "POST" })
