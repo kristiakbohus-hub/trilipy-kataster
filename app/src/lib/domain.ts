@@ -22,6 +22,7 @@ export type AppPath =
   | "/deals"
   | "/pravny-referent"
   | "/ceny"
+  | "/poklesy"
   | "/gdpr"
   | "/system";
 

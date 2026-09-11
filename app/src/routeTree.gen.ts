@@ -18,6 +18,7 @@ import { Route as PrieskumRouteImport } from './routes/prieskum'
 import { Route as DealRadarRouteImport } from './routes/deal-radar'
 import { Route as AktivitaRouteImport } from './routes/aktivita'
 import { Route as PrehladRouteImport } from './routes/prehlad'
+import { Route as PoklesyRouteImport } from './routes/poklesy'
 import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
 import { Route as ReportyRouteImport } from './routes/reporty'
@@ -84,6 +85,11 @@ const AktivitaRoute = AktivitaRouteImport.update({
 const PrehladRoute = PrehladRouteImport.update({
   id: '/prehlad',
   path: '/prehlad',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PoklesyRoute = PoklesyRouteImport.update({
+  id: '/poklesy',
+  path: '/poklesy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WatchlistRoute = WatchlistRouteImport.update({
@@ -212,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/deal-radar': typeof DealRadarRoute
   '/aktivita': typeof AktivitaRoute
   '/prehlad': typeof PrehladRoute
+  '/poklesy': typeof PoklesyRoute
   '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
@@ -245,6 +252,7 @@ export interface FileRoutesByTo {
   '/deal-radar': typeof DealRadarRoute
   '/aktivita': typeof AktivitaRoute
   '/prehlad': typeof PrehladRoute
+  '/poklesy': typeof PoklesyRoute
   '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
@@ -279,6 +287,7 @@ export interface FileRoutesById {
   '/deal-radar': typeof DealRadarRoute
   '/aktivita': typeof AktivitaRoute
   '/prehlad': typeof PrehladRoute
+  '/poklesy': typeof PoklesyRoute
   '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
@@ -314,6 +323,7 @@ export interface FileRouteTypes {
     | '/deal-radar'
     | '/aktivita'
     | '/prehlad'
+    | '/poklesy'
     | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
@@ -347,6 +357,7 @@ export interface FileRouteTypes {
     | '/deal-radar'
     | '/aktivita'
     | '/prehlad'
+    | '/poklesy'
     | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
@@ -380,6 +391,7 @@ export interface FileRouteTypes {
     | '/deal-radar'
     | '/aktivita'
     | '/prehlad'
+    | '/poklesy'
     | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
@@ -411,6 +423,7 @@ export interface RootRouteChildren {
   DealRadarRoute: typeof DealRadarRoute
   AktivitaRoute: typeof AktivitaRoute
   PrehladRoute: typeof PrehladRoute
+  PoklesyRoute: typeof PoklesyRoute
   WatchlistRoute: typeof WatchlistRoute
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
   PravnyReferentRoute: typeof PravnyReferentRoute
@@ -507,6 +520,13 @@ declare module '@tanstack/react-router' {
       path: '/prehlad'
       fullPath: '/prehlad'
       preLoaderRoute: typeof PrehladRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/poklesy': {
+      id: '/poklesy'
+      path: '/poklesy'
+      fullPath: '/poklesy'
+      preLoaderRoute: typeof PoklesyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/watchlist': {
@@ -667,6 +687,7 @@ const rootRouteChildren: RootRouteChildren = {
   DealRadarRoute: DealRadarRoute,
   AktivitaRoute: AktivitaRoute,
   PrehladRoute: PrehladRoute,
+  PoklesyRoute: PoklesyRoute,
   WatchlistRoute: WatchlistRoute,
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,
   PravnyReferentRoute: PravnyReferentRoute,

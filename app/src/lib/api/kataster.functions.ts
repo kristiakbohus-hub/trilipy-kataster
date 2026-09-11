@@ -2275,6 +2275,32 @@ export const getMarketStats = createServerFn({ method: "GET" }).handler(async ()
   return { meta: Object.fromEntries(meta.map((m) => [m.key, m.value])) as Record<string, string>, latest, overview };
 });
 
+// ——— Cenové poklesy (motivovaný predajca) — primárny deal signál, cache 6 h (D1-safe) ———
+export type PriceDrop = { ptype: string; first_price: number; price_eur: number; drop_pct: number; obec: string | null; okres: string | null; url: string | null; title: string | null; first_seen: string | null; last_seen: string | null };
+export const getPriceDrops = createServerFn({ method: "POST" })
+  .validator(z.object({ role: roleSchema, minDrop: z.number().optional(), refresh: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<{ drops: PriceDrop[]; cached?: boolean; ageDays?: number }> => {
+    const okresy = ["Čadca", "Kysucké Nové Mesto", "Žilina"];
+    const minDrop = Math.max(1, Math.min(90, data.minDrop ?? 8));
+    const key = `pricedrops:${minDrop}`;
+    const cached = await regCacheRead(key, !!data.refresh, 6 * 3600);
+    if (cached) return { drops: cached.payload as PriceDrop[], cached: true, ageDays: cached.ageDays };
+    const ph = okresy.map(() => "?").join(",");
+    let drops: PriceDrop[] = [];
+    try {
+      drops = await q<PriceDrop>(
+        `SELECT ptype, first_price, price_eur, ROUND((first_price-price_eur)*100.0/first_price,1) AS drop_pct,
+                obec, okres, url, title, first_seen, last_seen
+         FROM market_listings
+         WHERE okres IN (${ph}) AND (deal='predaj' OR deal IS NULL)
+           AND first_price IS NOT NULL AND price_eur IS NOT NULL AND first_price > price_eur AND first_price > 0
+           AND (first_price - price_eur) * 100.0 / first_price >= ?
+         ORDER BY drop_pct DESC LIMIT 200`, [...okresy, minDrop]);
+    } catch { drops = []; }
+    await regCacheWrite(key, "pricedrops", drops);
+    return { drops };
+  });
+
 // Rozdeľovník Kraj → Okres → Lokalita: medián €/m² na 3 úrovniach z market_listings.
 // Medián počítaný cez window-funkcie; per-typ ppm2 clamp vylúči mis-parse (€/m² vs celková cena).
 export type MarketTreeRow = { grain: "kraj" | "okres" | "obec"; kraj: string; okres: string | null; obec: string | null; ptype: string; median_eur_m2: number; cnt: number };
