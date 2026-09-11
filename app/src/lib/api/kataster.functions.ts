@@ -2301,6 +2301,44 @@ export const getPriceDrops = createServerFn({ method: "POST" })
     return { drops };
   });
 
+// ——— Stavebné pozemky (podľa názvu) — akvizičná inteligencia pre development; comps stavebné-vs-stavebné, cache 6 h ———
+export type BuildingDeal = { obec: string | null; okres: string | null; area_m2: number | null; price_eur: number | null; ppm2: number | null; below_pct: number | null; drop_pct: number | null; url: string | null; title: string | null };
+export const getBuildingLand = createServerFn({ method: "POST" })
+  .validator(z.object({ role: roleSchema, refresh: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<{ deals: BuildingDeal[]; medians: Record<string, number>; cached?: boolean; ageDays?: number }> => {
+    const key = "buildingland:v1";
+    const cached = await regCacheRead(key, !!data.refresh, 6 * 3600);
+    if (cached) { const p = cached.payload as { deals: BuildingDeal[]; medians: Record<string, number> }; return { ...p, cached: true, ageDays: cached.ageDays }; }
+    type Row = { obec: string | null; okres: string | null; area_m2: number | null; price_eur: number | null; ppm2: number | null; first_price: number | null; url: string | null; title: string | null };
+    let rows: Row[] = [];
+    try {
+      rows = await q<Row>(
+        `SELECT obec, okres, area_m2, price_eur, ppm2, first_price, url, title
+         FROM market_listings
+         WHERE okres IN ('Čadca','Kysucké Nové Mesto','Žilina') AND ptype='pozemok' AND (deal='predaj' OR deal IS NULL)
+           AND ppm2 IS NOT NULL AND ppm2 > 0 AND price_eur >= 2000
+           AND (lower(title) LIKE '%stavebn%' OR lower(title) LIKE '%ibv%' OR lower(title) LIKE '%na výstavbu%' OR lower(title) LIKE '%intravil%' OR lower(title) LIKE '%pre rd%')
+           AND lower(title) NOT LIKE '%les%' AND lower(title) NOT LIKE '%orn%pôd%' AND lower(title) NOT LIKE '%poľnohosp%'
+         LIMIT 500`);
+    } catch { rows = []; }
+    const band = (a: number | null) => (!a ? 0 : a < 1000 ? 0 : a < 3000 ? 1 : 2);
+    const buckets = new Map<string, number[]>();
+    for (const r of rows) { const k = `${r.okres}|${band(r.area_m2)}`; const arr = buckets.get(k) ?? []; arr.push(r.ppm2 as number); buckets.set(k, arr); }
+    const med = (arr: number[]) => { const s = [...arr].sort((a, b) => a - b); return s.length ? s[Math.floor(s.length / 2)] : null; };
+    const medByBucket = new Map<string, number>();
+    for (const [k, v] of buckets) { if (v.length >= 5) { const m = med(v); if (m) medByBucket.set(k, m); } }
+    const medians: Record<string, number> = {};
+    for (const ok of ["Čadca", "Kysucké Nové Mesto", "Žilina"]) { const all = rows.filter((r) => r.okres === ok).map((r) => r.ppm2 as number); const m = med(all); if (m) medians[ok] = Math.round(m); }
+    const deals: BuildingDeal[] = rows.map((r) => {
+      const m = medByBucket.get(`${r.okres}|${band(r.area_m2)}`) ?? (r.okres ? medians[r.okres] : null);
+      const below = m && r.ppm2 ? Math.round((m - (r.ppm2 as number)) / m * 100) : null;
+      const drop = r.first_price && r.price_eur && r.first_price > r.price_eur ? Math.round((r.first_price - r.price_eur) / r.first_price * 100) : null;
+      return { obec: r.obec, okres: r.okres, area_m2: r.area_m2, price_eur: r.price_eur, ppm2: r.ppm2, below_pct: below, drop_pct: drop, url: r.url, title: r.title };
+    }).sort((a, b) => (b.below_pct ?? -999) - (a.below_pct ?? -999)).slice(0, 120);
+    await regCacheWrite(key, "buildingland", { deals, medians });
+    return { deals, medians };
+  });
+
 // Rozdeľovník Kraj → Okres → Lokalita: medián €/m² na 3 úrovniach z market_listings.
 // Medián počítaný cez window-funkcie; per-typ ppm2 clamp vylúči mis-parse (€/m² vs celková cena).
 export type MarketTreeRow = { grain: "kraj" | "okres" | "obec"; kraj: string; okres: string | null; obec: string | null; ptype: string; median_eur_m2: number; cnt: number };
