@@ -37,6 +37,7 @@ import { Route as DatasetyIdRouteImport } from './routes/datasety.$id'
 import { Route as UpInfoIdRouteImport } from './routes/upinfo.$id'
 import { Route as OgcRouteImport } from './routes/ogc'
 import { Route as MapproxyRouteImport } from './routes/mapproxy'
+import { Route as ApiRunAlertsRouteImport } from './routes/api.run-alerts'
 import { Route as VlastniciRouteImport } from './routes/vlastnici'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as PravnyReferentRouteImport } from './routes/pravny-referent'
@@ -182,6 +183,11 @@ const MapproxyRoute = MapproxyRouteImport.update({
   path: '/mapproxy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRunAlertsRoute = ApiRunAlertsRouteImport.update({
+  id: '/api/run-alerts',
+  path: '/api/run-alerts',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlastniciRoute = VlastniciRouteImport.update({
   id: '/vlastnici',
   path: '/vlastnici',
@@ -228,6 +234,7 @@ export interface FileRoutesByFullPath {
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
+  '/api/run-alerts': typeof ApiRunAlertsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -262,6 +269,7 @@ export interface FileRoutesByTo {
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
+  '/api/run-alerts': typeof ApiRunAlertsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -297,6 +305,7 @@ export interface FileRoutesById {
   '/robots.txt': typeof RobotsDottxtRoute
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
+  '/api/run-alerts': typeof ApiRunAlertsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -333,6 +342,7 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/ogc'
     | '/mapproxy'
+    | '/api/run-alerts'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -367,6 +377,7 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/ogc'
     | '/mapproxy'
+    | '/api/run-alerts'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -401,6 +412,7 @@ export interface FileRouteTypes {
     | '/robots.txt'
     | '/ogc'
     | '/mapproxy'
+    | '/api/run-alerts'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/upinfo/$id'
@@ -434,6 +446,7 @@ export interface RootRouteChildren {
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   OgcRoute: typeof OgcRoute
   MapproxyRoute: typeof MapproxyRoute
+  ApiRunAlertsRoute: typeof ApiRunAlertsRoute
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
   ReportDatasetIdParcelNoRoute: typeof ReportDatasetIdParcelNoRoute
@@ -471,6 +484,13 @@ declare module '@tanstack/react-router' {
       path: '/mapproxy'
       fullPath: '/mapproxy'
       preLoaderRoute: typeof MapproxyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/run-alerts': {
+      id: '/api/run-alerts'
+      path: '/api/run-alerts'
+      fullPath: '/api/run-alerts'
+      preLoaderRoute: typeof ApiRunAlertsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/system': {
@@ -698,6 +718,7 @@ const rootRouteChildren: RootRouteChildren = {
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   OgcRoute: OgcRoute,
   MapproxyRoute: MapproxyRoute,
+  ApiRunAlertsRoute: ApiRunAlertsRoute,
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,
   ReportDatasetIdParcelNoRoute: ReportDatasetIdParcelNoRoute,

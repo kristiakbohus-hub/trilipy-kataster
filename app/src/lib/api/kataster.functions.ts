@@ -821,6 +821,52 @@ export const runMyAlerts = createServerFn({ method: "POST" })
     return { ok: true, checked: rows.length, newTotal };
   });
 
+// ——— Systémový alert-runner (Fáza 2) — volaný z /api/run-alerts (Mac launchd cron). ———
+// Prejde alerty VŠETKÝCH userov + ÚP zmeny. In-app notifikácie zapisuje do D1; texty vráti,
+// aby ich cron poslal do Telegramu (TG creds sú na Mac strane, netreba CF secret).
+async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; messages: string[] }> {
+  const messages: string[] = [];
+  let checked = 0, newTotal = 0;
+  // 1) Uložené hľadania všetkých userov (alert=1)
+  const searches = await q<SavedSearchRow & { user_id: string }>(
+    "SELECT id,user_id,name,query,sort,alert,channels,last_run,created_at FROM saved_search WHERE alert=1").catch(() => []);
+  for (const sv of searches) {
+    checked++;
+    const role = ((await q<{ role: string }>("SELECT role FROM users WHERE id=?", [sv.user_id]))[0]?.role ?? "analytik") as Role;
+    let res: Awaited<ReturnType<typeof nlQuery>> | null = null;
+    try { res = await nlQuery({ data: { query: sv.query, role, sort: ((sv.sort as "score" | "area" | "owners") || "score") } }); } catch { continue; }
+    const hits = res?.lv.results ?? [];
+    const seen = new Set((await q<{ gid: string }>("SELECT gid FROM alert_seen WHERE saved_id=?", [sv.id])).map((r) => r.gid));
+    const firstRun = seen.size === 0;
+    const fresh = hits.filter((h) => !seen.has(`${h.dataset_id}:${h.lv_no}`));
+    for (const h of fresh) await q("INSERT OR IGNORE INTO alert_seen (saved_id,gid) VALUES (?,?)", [sv.id, `${h.dataset_id}:${h.lv_no}`]);
+    await q("UPDATE saved_search SET last_run=datetime('now') WHERE id=?", [sv.id]);
+    if (firstRun || !fresh.length) continue;
+    newTotal += fresh.length;
+    const body = `🔔 „${sv.name}": ${fresh.length} nových LV — ` + fresh.slice(0, 8).map((h) => `${h.ku_name ?? ""} LV${h.lv_no}`).join(", ") + (fresh.length > 8 ? ` +${fresh.length - 8}` : "");
+    const chans = (sv.channels || "inapp").split(",").map((c) => c.trim());
+    if (chans.includes("inapp")) await q("INSERT INTO notifications (user_id,kind,subject_type,subject_id,body) VALUES (?,?,?,?,?)", [sv.user_id, "alert", "search", String(sv.id), body]);
+    if (chans.includes("telegram")) messages.push(body);
+  }
+  // 2) ÚP zmeny za posledné ~2 dni (cielené k.ú. — up_changes sa plní monitorom)
+  try {
+    const ch = await q<{ ku_code: string | null; change: string | null; title: string | null }>(
+      "SELECT ku_code, change, title FROM up_changes WHERE detected_at >= datetime('now','-2 days') ORDER BY id DESC LIMIT 20");
+    if (ch.length) messages.push(`🗺️ ÚP zmeny (${ch.length}): ` + ch.slice(0, 6).map((c) => `${c.ku_code ?? "?"} ${c.change ?? ""}`.trim()).join(" · "));
+  } catch { /* up_changes voliteľné */ }
+  return { checked, newTotal, messages };
+}
+
+// Volané z route /api/run-alerts — overí zdieľaný secret (D1 market_meta.alert_secret) a spustí runner.
+export const runAlertsCron = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; checked?: number; newTotal?: number; messages?: string[]; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const r = await runAllAlertsCore();
+    return { ok: true, ...r };
+  });
+
 // ——— PDF výstup: Výpis z LV / Evidenčný list (pracovný, TRI LIPY brand) ———
 type DocParcel = { register: string; parcel_no: string; area_m2: number; drp_text: string | null; placement: string | null };
 type DocBuilding = { descr: string; on_parcel: string | null };
