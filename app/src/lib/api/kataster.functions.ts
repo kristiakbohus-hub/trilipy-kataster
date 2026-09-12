@@ -854,19 +854,9 @@ async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; 
       "SELECT ku_code, change, title FROM up_changes WHERE detected_at >= datetime('now','-2 days') ORDER BY id DESC LIMIT 20");
     if (ch.length) messages.push(`🗺️ ÚP zmeny (${ch.length}): ` + ch.slice(0, 6).map((c) => `${c.ku_code ?? "?"} ${c.change ?? ""}`.trim()).join(" · "));
   } catch { /* up_changes voliteľné */ }
-  // 3) Dôležité zmeny v katastri (change_log, importance=high, ešte nealertované) → in-app adminom + Telegram
-  try {
-    const chg = await q<{ id: number; dataset_id: string | null; lv_no: number | null; entity: string; new_value: string | null; old_value: string | null }>(
-      "SELECT id,dataset_id,lv_no,entity,new_value,old_value FROM change_log WHERE importance='high' AND alerted=0 ORDER BY id DESC LIMIT 30");
-    if (chg.length) {
-      messages.push(`⚠️ Dôležité zmeny v katastri (${chg.length}): ` + chg.slice(0, 6).map((c) => `LV${c.lv_no ?? "?"} ${c.entity}`).join(" · "));
-      const admins = await q<{ id: string }>("SELECT id FROM users WHERE role='admin'").catch(() => []);
-      for (const c of chg) {
-        for (const a of admins) await q("INSERT INTO notifications (user_id,kind,subject_type,subject_id,body) VALUES (?,?,?,?,?)", [a.id, "change", "lv", `${c.dataset_id}:${c.lv_no}`, `⚠️ Zmena LV${c.lv_no}: ${c.entity} — ${(c.new_value ?? c.old_value ?? "").slice(0, 80)}`]);
-        await q("UPDATE change_log SET alerted=1 WHERE id=?", [c.id]);
-      }
-    }
-  } catch { /* change_log pred 0065 */ }
+  // Pozn.: zmeny v katastri (change_log) sa zámerne NEposielajú do Telegramu — zobrazujú sa len
+  // v sekcii „História zmien" na výpise LV (rozhodnutie 2026-09-12). Alerty tu ostávajú len pre
+  // uložené hľadania (saved_search) a ÚP zmeny.
   return { checked, newTotal, messages };
 }
 
