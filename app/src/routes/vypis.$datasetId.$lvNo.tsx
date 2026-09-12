@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility } from "../lib/api/kataster.functions";
+import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility, getChanges } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 import type { Role } from "../lib/domain";
@@ -415,6 +415,7 @@ function VypisPage() {
             ) : null}
             <LvIntelSection datasetId={datasetId} lvNo={lvNo} />
             <LvSettlementSection datasetId={datasetId} lvNo={lvNo} role={role} />
+            <LvHistorySection datasetId={datasetId} lvNo={lvNo} />
             {parts.A ? (
               <Section title="Časť A — Majetková podstata">
                 {/* Parcely registra „C" — katastrálna mapa */}
@@ -899,6 +900,60 @@ function LvSettlementSection({ datasetId, lvNo, role }: { datasetId: string; lvN
       ) : null}
 
       <div className="mt-2 text-[10px] text-muted">{d.disclaimer}</div>
+    </Section>
+  );
+}
+
+const CHANGE_LABEL: Record<string, string> = {
+  owner_added: "Pribudol vlastník", owner_removed: "Ubudol vlastník", owner_changed: "Zmena vlastníka",
+  share_changed: "Zmena podielu", tarcha_added: "Pribudla ťarcha", tarcha_removed: "Zanikla ťarcha",
+  title_changed: "Zmena titulu", parcel_added: "Pribudla parcela", parcel_removed: "Ubudla parcela",
+  area_changed: "Zmena výmery", lv_added: "Nový LV", lv_removed: "Zrušený LV", drp_changed: "Zmena druhu pozemku",
+};
+const IMP_STYLE: Record<string, { label: string; style: { borderColor: string; color: string; background: string } }> = {
+  high: { label: "dôležitá", style: { borderColor: "#d1a1a1", color: "#9b2c2c", background: "#fbeaea" } },
+  normal: { label: "bežná", style: { borderColor: "#cfc8bb", color: "#6b6b6b", background: "#f3efe6" } },
+  low: { label: "drobná", style: { borderColor: "#cfc8bb", color: "#8a8a8a", background: "#f6f3ec" } },
+};
+const ENTITY_LABEL: Record<string, string> = { owner: "Vlastník", share: "Podiel", tarcha: "Ťarcha", title: "Titul", parcel: "Parcela", lv: "LV", assets: "Majetok" };
+
+// História zmien v katastri (change_log) — detekcia starý↔nový stav pri importoch. Fail-soft pred 0065.
+function LvHistorySection({ datasetId, lvNo }: { datasetId: string; lvNo: number }) {
+  const [rows, setRows] = useState<Awaited<ReturnType<typeof getChanges>> | null>(null);
+  useEffect(() => {
+    let alive = true; setRows(null);
+    getChanges({ data: { datasetId, lvNo } }).then((r) => { if (alive) setRows(r); }).catch(() => { if (alive) setRows([]); });
+    return () => { alive = false; };
+  }, [datasetId, lvNo]);
+  if (!rows || rows.length === 0) return null; // kým nie sú zaznamenané zmeny, sekcia sa nezobrazuje
+  const fmtDate = (s: string) => { const t = s.slice(0, 10); return t || s; };
+  return (
+    <Section title="História zmien v katastri — interné (detekcia medzi importmi)">
+      <div className="space-y-1.5">
+        {rows.map((r) => {
+          const imp = IMP_STYLE[r.importance] ?? IMP_STYLE.normal;
+          const label = CHANGE_LABEL[r.change_type] ?? r.change_type;
+          const hasVal = r.old_value != null || r.new_value != null;
+          return (
+            <div key={r.id} className="rounded-md border border-line bg-surface/40 p-2">
+              <div className="flex items-center gap-2">
+                <span className="rounded-full border px-1.5 py-0.5 text-[10px]" style={imp.style}>{imp.label}</span>
+                <span className="text-[13px] font-medium text-fg">{label}</span>
+                <span className="text-[11px] text-muted">{ENTITY_LABEL[r.entity] ?? r.entity}{r.field ? ` · ${r.field}` : ""}{r.parcel_no ? ` · parcela ${r.parcel_no}` : ""}</span>
+                <span className="ml-auto text-[11px] tabular-nums text-muted">{fmtDate(r.detected_at)}</span>
+              </div>
+              {hasVal ? (
+                <div className="mt-0.5 text-[12px] text-muted">
+                  {r.old_value != null ? <span className="line-through">{r.old_value}</span> : null}
+                  {r.old_value != null && r.new_value != null ? <span className="mx-1">→</span> : null}
+                  {r.new_value != null ? <b className="text-fg">{r.new_value}</b> : null}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-2 text-[10px] text-muted">Zmeny sa zaznamenávajú pri kanonickom importe (starý ↔ nový stav LV/parciel/vlastníkov/ťarch/titulov). Dôležité zmeny idú aj do alertov (in-app + Telegram). Pracovný nástroj, nie úradný záznam.</div>
     </Section>
   );
 }

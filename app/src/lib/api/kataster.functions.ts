@@ -854,6 +854,19 @@ async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; 
       "SELECT ku_code, change, title FROM up_changes WHERE detected_at >= datetime('now','-2 days') ORDER BY id DESC LIMIT 20");
     if (ch.length) messages.push(`🗺️ ÚP zmeny (${ch.length}): ` + ch.slice(0, 6).map((c) => `${c.ku_code ?? "?"} ${c.change ?? ""}`.trim()).join(" · "));
   } catch { /* up_changes voliteľné */ }
+  // 3) Dôležité zmeny v katastri (change_log, importance=high, ešte nealertované) → in-app adminom + Telegram
+  try {
+    const chg = await q<{ id: number; dataset_id: string | null; lv_no: number | null; entity: string; new_value: string | null; old_value: string | null }>(
+      "SELECT id,dataset_id,lv_no,entity,new_value,old_value FROM change_log WHERE importance='high' AND alerted=0 ORDER BY id DESC LIMIT 30");
+    if (chg.length) {
+      messages.push(`⚠️ Dôležité zmeny v katastri (${chg.length}): ` + chg.slice(0, 6).map((c) => `LV${c.lv_no ?? "?"} ${c.entity}`).join(" · "));
+      const admins = await q<{ id: string }>("SELECT id FROM users WHERE role='admin'").catch(() => []);
+      for (const c of chg) {
+        for (const a of admins) await q("INSERT INTO notifications (user_id,kind,subject_type,subject_id,body) VALUES (?,?,?,?,?)", [a.id, "change", "lv", `${c.dataset_id}:${c.lv_no}`, `⚠️ Zmena LV${c.lv_no}: ${c.entity} — ${(c.new_value ?? c.old_value ?? "").slice(0, 80)}`]);
+        await q("UPDATE change_log SET alerted=1 WHERE id=?", [c.id]);
+      }
+    }
+  } catch { /* change_log pred 0065 */ }
   return { checked, newTotal, messages };
 }
 
@@ -865,6 +878,31 @@ export const runAlertsCron = createServerFn({ method: "POST" })
     if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
     const r = await runAllAlertsCore();
     return { ok: true, ...r };
+  });
+
+// ——— Fáza 3: História zmien v katastri (change_log) ———
+export type ChangeRow = { id: number; dataset_id: string | null; lv_no: number | null; parcel_no: string | null; entity: string; field: string | null; old_value: string | null; new_value: string | null; change_type: string; importance: string; detected_at: string };
+// História zmien pre LV alebo parcelu (číta sa na výpise/detaile). Fail-soft pred 0065.
+export const getChanges = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number().optional(), parcelNo: z.string().optional(), limit: z.number().optional() }))
+  .handler(async ({ data }): Promise<ChangeRow[]> => {
+    const cond = ["dataset_id = ?"]; const args: unknown[] = [data.datasetId];
+    if (data.lvNo != null) { cond.push("lv_no = ?"); args.push(data.lvNo); }
+    if (data.parcelNo) { cond.push("parcel_no = ?"); args.push(data.parcelNo); }
+    return q<ChangeRow>(`SELECT id,dataset_id,lv_no,parcel_no,entity,field,old_value,new_value,change_type,importance,detected_at FROM change_log WHERE ${cond.join(" AND ")} ORDER BY id DESC LIMIT ?`, [...args, data.limit ?? 50]).catch(() => []);
+  });
+// Bulk ingest zmien z canonical diff enginu (Mac) — secret-gated (rovnaký alert_secret z D1).
+export const ingestChanges = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), runId: z.string().optional(), changes: z.array(z.object({ datasetId: z.string().optional(), lvNo: z.number().optional(), parcelNo: z.string().optional(), entity: z.string(), field: z.string().optional(), oldValue: z.string().optional(), newValue: z.string().optional(), changeType: z.string(), importance: z.string().optional() })).max(1000) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const stmt = DB.prepare("INSERT INTO change_log (dataset_id,lv_no,parcel_no,entity,field,old_value,new_value,change_type,importance,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.changes.map((c) => stmt.bind(c.datasetId ?? null, c.lvNo ?? null, c.parcelNo ?? null, c.entity, c.field ?? null, c.oldValue ?? null, c.newValue ?? null, c.changeType, c.importance ?? "normal", data.runId ?? null));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.changes.length };
   });
 
 // ——— PDF výstup: Výpis z LV / Evidenčný list (pracovný, TRI LIPY brand) ———

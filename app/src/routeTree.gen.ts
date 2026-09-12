@@ -38,6 +38,7 @@ import { Route as UpInfoIdRouteImport } from './routes/upinfo.$id'
 import { Route as OgcRouteImport } from './routes/ogc'
 import { Route as MapproxyRouteImport } from './routes/mapproxy'
 import { Route as ApiRunAlertsRouteImport } from './routes/api.run-alerts'
+import { Route as ApiIngestChangesRouteImport } from './routes/api.ingest-changes'
 import { Route as VlastniciRouteImport } from './routes/vlastnici'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as PravnyReferentRouteImport } from './routes/pravny-referent'
@@ -188,6 +189,11 @@ const ApiRunAlertsRoute = ApiRunAlertsRouteImport.update({
   path: '/api/run-alerts',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestChangesRoute = ApiIngestChangesRouteImport.update({
+  id: '/api/ingest-changes',
+  path: '/api/ingest-changes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlastniciRoute = VlastniciRouteImport.update({
   id: '/vlastnici',
   path: '/vlastnici',
@@ -235,6 +241,7 @@ export interface FileRoutesByFullPath {
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
+  '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -270,6 +277,7 @@ export interface FileRoutesByTo {
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
+  '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -306,6 +314,7 @@ export interface FileRoutesById {
   '/ogc': typeof OgcRoute
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
+  '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -343,6 +352,7 @@ export interface FileRouteTypes {
     | '/ogc'
     | '/mapproxy'
     | '/api/run-alerts'
+    | '/api/ingest-changes'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -378,6 +388,7 @@ export interface FileRouteTypes {
     | '/ogc'
     | '/mapproxy'
     | '/api/run-alerts'
+    | '/api/ingest-changes'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -413,6 +424,7 @@ export interface FileRouteTypes {
     | '/ogc'
     | '/mapproxy'
     | '/api/run-alerts'
+    | '/api/ingest-changes'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/upinfo/$id'
@@ -447,6 +459,7 @@ export interface RootRouteChildren {
   OgcRoute: typeof OgcRoute
   MapproxyRoute: typeof MapproxyRoute
   ApiRunAlertsRoute: typeof ApiRunAlertsRoute
+  ApiIngestChangesRoute: typeof ApiIngestChangesRoute
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
   ReportDatasetIdParcelNoRoute: typeof ReportDatasetIdParcelNoRoute
@@ -484,6 +497,13 @@ declare module '@tanstack/react-router' {
       path: '/mapproxy'
       fullPath: '/mapproxy'
       preLoaderRoute: typeof MapproxyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-changes': {
+      id: '/api/ingest-changes'
+      path: '/api/ingest-changes'
+      fullPath: '/api/ingest-changes'
+      preLoaderRoute: typeof ApiIngestChangesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/run-alerts': {
@@ -719,6 +739,7 @@ const rootRouteChildren: RootRouteChildren = {
   OgcRoute: OgcRoute,
   MapproxyRoute: MapproxyRoute,
   ApiRunAlertsRoute: ApiRunAlertsRoute,
+  ApiIngestChangesRoute: ApiIngestChangesRoute,
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,
   ReportDatasetIdParcelNoRoute: ReportDatasetIdParcelNoRoute,
