@@ -1263,6 +1263,7 @@ export const listCases = createServerFn({ method: "GET" }).handler(async () => {
   );
 });
 
+export type CaseLink = { id: number; case_id: number; link_type: string; dataset_id: string | null; ref: string; label: string | null; created_at: string };
 export const getCase = createServerFn({ method: "POST" })
   .validator(z.object({ id: z.number() }))
   .handler(async ({ data }) => {
@@ -1271,7 +1272,34 @@ export const getCase = createServerFn({ method: "POST" })
       [data.id],
     ))[0] ?? null;
     const notes = await q<CaseNote>("SELECT * FROM case_notes WHERE case_id = ? ORDER BY id", [data.id]);
-    return { case: c, notes };
+    // Spis = všetko na jednom mieste: prepojené entity + dealy + história (fail-soft pred migráciou 0064).
+    const links = await q<CaseLink>("SELECT * FROM case_links WHERE case_id = ? ORDER BY link_type, id", [data.id]).catch(() => []);
+    const deals = await q<DealRow>("SELECT * FROM deals WHERE case_id = ? ORDER BY updated_at DESC", [data.id]).catch(() => []);
+    const history = await q<AuditRow>("SELECT * FROM audit_log WHERE detail LIKE ? ORDER BY id DESC LIMIT 25", [`%case #${data.id}%`]).catch(() => []);
+    return { case: c, notes, links, deals, history };
+  });
+
+export const linkCaseEntity = createServerFn({ method: "POST" })
+  .validator(z.object({ caseId: z.number(), linkType: z.enum(["parcel", "lv", "owner", "deal", "doc"]), datasetId: z.string().optional(), ref: z.string().min(1), label: z.string().optional(), role: roleSchema }))
+  .handler(async ({ data }): Promise<{ ok: boolean; id?: number | null; message?: string }> => {
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    try {
+      const res = await DB.prepare("INSERT INTO case_links (case_id, link_type, dataset_id, ref, label) VALUES (?,?,?,?,?)")
+        .bind(data.caseId, data.linkType, data.datasetId ?? null, data.ref, data.label ?? null).run();
+      await logAudit("case.link", data.role, `Case #${data.caseId} + ${data.linkType}: ${data.label ?? data.ref}`);
+      return { ok: true, id: res.meta?.last_row_id ?? null };
+    } catch (e) { return { ok: false, message: String((e as Error)?.message ?? e) }; }
+  });
+
+export const unlinkCaseEntity = createServerFn({ method: "POST" })
+  .validator(z.object({ linkId: z.number(), role: roleSchema }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const { DB } = bindings();
+    if (!DB) return { ok: false };
+    await DB.prepare("DELETE FROM case_links WHERE id = ?").bind(data.linkId).run();
+    await logAudit("case.unlink", data.role, `Case link #${data.linkId} odstránený.`);
+    return { ok: true };
   });
 
 export const createCase = createServerFn({ method: "POST" })
@@ -1640,21 +1668,26 @@ export const getDeals = createServerFn({ method: "POST" })
   });
 
 // ——— Deal pipeline: deal = LV, vlastníci ako úkony (Bod 2b) ———
-type DealRow = { id: string; dataset_id: string; lv_no: number; ku_name: string | null; status: string; score: number | null; note: string | null; created_at: string; updated_at: string };
+type DealRow = { id: string; dataset_id: string; lv_no: number; ku_name: string | null; status: string; score: number | null; note: string | null; created_at: string; updated_at: string; case_id?: number | null; odkup_eur?: number | null; next_step?: string | null };
+// Slovenské labely pre stavy pipeline (kľúče = DEAL_STATUSES). nájdi → konaj → uzavri.
+export const DEAL_STAGE_LABEL: Record<string, string> = { new: "Nájdený", checking: "Preverujeme", contacted: "Kontakt", negotiation: "Rokovanie", offer: "Ponuka", agreement: "Dohoda", closed_won: "Kúpené", closed_lost: "Zamietnuté" };
 type DealTaskRow = { id: number; deal_id: string; owner_name: string; share: string | null; addr: string | null; is_company: number; state: string; note: string | null };
 type DealNoteRow = { id: number; deal_id: string; author_role: string | null; body: string; created_at: string };
-const DEAL_STATUSES = ["new", "checking", "contacted", "negotiation", "closed_won", "closed_lost"] as const;
+const DEAL_STATUSES = ["new", "checking", "contacted", "negotiation", "offer", "agreement", "closed_won", "closed_lost"] as const;
 const TASK_STATES = ["pending", "contacted", "agreed", "signed", "declined"] as const;
 
 export const createDeal = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema, caseId: z.number().optional(), odkupEur: z.number().optional(), nextStep: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; id?: string; message?: string }> => {
     const role = data.role as Role;
     if (ownerAccess(role) !== "full") return { ok: false, message: "Rola nemá plný prístup na založenie dealu." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const existing = (await q<{ id: string }>("SELECT id FROM deals WHERE dataset_id = ? AND lv_no = ? LIMIT 1", [data.datasetId, data.lvNo]))[0];
-    if (existing) return { ok: true, id: existing.id };
+    if (existing) {
+      if (data.caseId) { try { await DB.prepare("INSERT INTO case_links (case_id, link_type, dataset_id, ref, label) VALUES (?,?,?,?,?)").bind(data.caseId, "deal", data.datasetId, existing.id, `Deal LV ${data.lvNo}`).run(); } catch { /* case_links pred 0064 */ } }
+      return { ok: true, id: existing.id };
+    }
     const sig = (await q<{ co_owners: number; has_spf: number; dedic: number; buildable: number; clean_title: number; absenter_ratio: number }>(
       "SELECT co_owners, has_spf, dedic, buildable, clean_title, absenter_ratio FROM lv_signals WHERE dataset_id = ? AND lv_no = ?",
       [data.datasetId, data.lvNo],
@@ -1664,8 +1697,9 @@ export const createDeal = createServerFn({ method: "POST" })
       : null;
     const ku = (await q<{ ku_name: string }>("SELECT ku_name FROM datasets WHERE id = ?", [data.datasetId]))[0]?.ku_name ?? null;
     const id = `deal-${data.datasetId}-${data.lvNo}-${Math.random().toString(36).slice(2, 6)}`;
-    await DB.prepare("INSERT INTO deals (id, dataset_id, lv_no, ku_name, status, score, created_by) VALUES (?,?,?,?,?,?,?)")
-      .bind(id, data.datasetId, data.lvNo, ku, "new", score, role).run();
+    await DB.prepare("INSERT INTO deals (id, dataset_id, lv_no, ku_name, status, score, created_by, case_id, odkup_eur, next_step) VALUES (?,?,?,?,?,?,?,?,?,?)")
+      .bind(id, data.datasetId, data.lvNo, ku, "new", score, role, data.caseId ?? null, data.odkupEur ?? null, data.nextStep ?? null).run();
+    if (data.caseId) { try { await DB.prepare("INSERT INTO case_links (case_id, link_type, dataset_id, ref, label) VALUES (?,?,?,?,?)").bind(data.caseId, "deal", data.datasetId, id, `Deal LV ${data.lvNo}`).run(); } catch { /* case_links pred 0064 */ } }
     const owners = await q<{ name: string; share: string | null; is_company: number; addr_obec: string | null; addr_cislo: string | null; addr_psc: string | null }>(
       "SELECT name, share, is_company, addr_obec, addr_cislo, addr_psc FROM lv_owners WHERE dataset_id = ? AND lv_no = ? ORDER BY is_company DESC, name",
       [data.datasetId, data.lvNo],
@@ -1709,8 +1743,29 @@ export const updateDealStatus = createServerFn({ method: "POST" })
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     await DB.prepare("UPDATE deals SET status = ?, updated_at = datetime('now') WHERE id = ?").bind(data.status, data.id).run();
-    await logAudit("deal.status", role, `Deal ${data.id} → ${data.status}.`);
+    await logAudit("deal.status", role, `Deal ${data.id} → ${DEAL_STAGE_LABEL[data.status] ?? data.status}.`);
     return { ok: true };
+  });
+
+// Úprava hodnoty odkupu / ďalšieho kroku / poznámky dealu (aditívne stĺpce z 0064).
+export const updateDeal = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string(), role: roleSchema, odkupEur: z.number().nullable().optional(), nextStep: z.string().nullable().optional(), note: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const role = data.role as Role;
+    if (ownerAccess(role) !== "full") return { ok: false, message: "Rola nemá oprávnenie meniť deal." };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const sets: string[] = []; const args: unknown[] = [];
+    if (data.odkupEur !== undefined) { sets.push("odkup_eur = ?"); args.push(data.odkupEur); }
+    if (data.nextStep !== undefined) { sets.push("next_step = ?"); args.push(data.nextStep); }
+    if (data.note !== undefined) { sets.push("note = ?"); args.push(data.note); }
+    if (!sets.length) return { ok: true };
+    sets.push("updated_at = datetime('now')");
+    try {
+      await DB.prepare(`UPDATE deals SET ${sets.join(", ")} WHERE id = ?`).bind(...args, data.id).run();
+      await logAudit("deal.update", role, `Deal ${data.id} upravený.`);
+      return { ok: true };
+    } catch (e) { return { ok: false, message: String((e as Error)?.message ?? e) }; }
   });
 
 export const updateDealTask = createServerFn({ method: "POST" })

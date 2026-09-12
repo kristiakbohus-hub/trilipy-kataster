@@ -1,6 +1,6 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { addCaseNote, createCase, getCase, getDatasets, listCases, updateCaseStatus } from "../lib/api/kataster.functions";
+import { addCaseNote, createCase, getCase, getDatasets, listCases, updateCaseStatus, linkCaseEntity, unlinkCaseEntity, DEAL_STAGE_LABEL } from "../lib/api/kataster.functions";
 import { CASE_KIND_LABEL, CASE_STATUS_META, type Case, type CaseNote } from "../lib/domain";
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
@@ -26,12 +26,29 @@ function CasesPage() {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const [selected, setSelected] = useState<{ case: (Case & { ku_name: string }) | null; notes: CaseNote[] } | null>(null);
+  const [selected, setSelected] = useState<Awaited<ReturnType<typeof getCase>> | null>(null);
   const [noteBody, setNoteBody] = useState("");
+  const [linkType, setLinkType] = useState<"parcel" | "lv" | "owner" | "doc">("lv");
+  const [linkRef, setLinkRef] = useState("");
+  const [linkLabel, setLinkLabel] = useState("");
+
+  const LINK_LABEL: Record<string, string> = { parcel: "Parcela", lv: "LV", owner: "Vlastník", deal: "Deal", doc: "Dokument" };
 
   async function openCase(id: number) {
     const r = await getCase({ data: { id } });
-    setSelected(r as { case: (Case & { ku_name: string }) | null; notes: CaseNote[] });
+    setSelected(r);
+  }
+
+  async function addLink() {
+    if (!selected?.case || linkRef.trim().length < 1) return;
+    await linkCaseEntity({ data: { caseId: selected.case.id, linkType, datasetId: selected.case.dataset_id, ref: linkRef.trim(), label: linkLabel.trim() || undefined, role } });
+    setLinkRef(""); setLinkLabel("");
+    void openCase(selected.case.id);
+  }
+  async function removeLink(linkId: number) {
+    if (!selected?.case) return;
+    await unlinkCaseEntity({ data: { linkId, role } });
+    void openCase(selected.case.id);
   }
 
   async function create() {
@@ -64,7 +81,7 @@ function CasesPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-fg">Cases</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted">
-          Pracovné prípady viazané na dataset a aktíva — status, poznámky, ďalšie kroky. Nie je to outreach CRM.
+          Spis k prípadu — na jednom mieste prepojené parcely, LV, vlastníci, dealy, poznámky, dokumenty a história. Citlivé owner dáta ostávajú rolovo chránené.
         </p>
       </div>
 
@@ -149,6 +166,44 @@ function CasesPage() {
                   ))}
                 </div>
 
+                {/* Prepojené aktíva — spis na jednom mieste */}
+                <div className="mt-4 border-t border-line pt-3">
+                  <div className="mb-2 text-[11px] uppercase tracking-wide text-muted">Prepojené aktíva ({selected.links.length})</div>
+                  {selected.links.length === 0 ? <div className="text-xs text-muted">Zatiaľ nič neprepojené.</div> : (
+                    <ul className="space-y-1">
+                      {selected.links.map((l) => (
+                        <li key={l.id} className="flex items-center justify-between gap-2 text-sm">
+                          <span className="text-fg"><span className="text-muted">{LINK_LABEL[l.link_type] ?? l.link_type}:</span> {l.label ?? l.ref}</span>
+                          <button onClick={() => void removeLink(l.id)} title="odpojiť" className="text-[11px] text-muted hover:text-fg">✕</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    <select value={linkType} onChange={(e) => setLinkType(e.target.value as typeof linkType)} className="rounded-md border border-line bg-paper px-2 py-1 text-xs text-fg">
+                      <option value="lv">LV</option><option value="parcel">Parcela</option><option value="owner">Vlastník</option><option value="doc">Dokument</option>
+                    </select>
+                    <input value={linkRef} onChange={(e) => setLinkRef(e.target.value)} placeholder="ref (LV č. / parcela / meno)" className="min-w-0 flex-1 rounded-md border border-line bg-paper px-2 py-1 text-xs text-fg" />
+                    <input value={linkLabel} onChange={(e) => setLinkLabel(e.target.value)} placeholder="popis (voliteľné)" className="min-w-0 flex-1 rounded-md border border-line bg-paper px-2 py-1 text-xs text-fg" />
+                    <button onClick={() => void addLink()} className="rounded-md border border-line px-2.5 py-1 text-xs text-fg hover:border-ink">+ prepojiť</button>
+                  </div>
+                </div>
+
+                {/* Dealy patriace do spisu */}
+                {selected.deals.length ? (
+                  <div className="mt-4 border-t border-line pt-3">
+                    <div className="mb-2 text-[11px] uppercase tracking-wide text-muted">Dealy ({selected.deals.length})</div>
+                    <ul className="space-y-1">
+                      {selected.deals.map((d) => (
+                        <li key={d.id} className="text-sm text-fg">
+                          LV {d.lv_no} <span className="text-muted">· {DEAL_STAGE_LABEL[d.status] ?? d.status}{d.odkup_eur ? ` · ${d.odkup_eur.toLocaleString("sk-SK")} €` : ""}</span>
+                          {d.next_step ? <span className="text-[11px] text-muted"> · ďalej: {d.next_step}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
                 <div className="mt-4 border-t border-line pt-3">
                   <div className="mb-2 text-[11px] uppercase tracking-wide text-muted">Poznámky ({selected.notes.length})</div>
                   <ul className="space-y-2">
@@ -164,6 +219,17 @@ function CasesPage() {
                     <button onClick={addNote} className="rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-cream">Pridať</button>
                   </div>
                 </div>
+
+                {selected.history.length ? (
+                  <div className="mt-4 border-t border-line pt-3">
+                    <div className="mb-2 text-[11px] uppercase tracking-wide text-muted">História ({selected.history.length})</div>
+                    <ul className="space-y-1">
+                      {selected.history.map((h) => (
+                        <li key={h.id} className="text-[12px] text-muted">{h.created_at?.slice(0, 16)} · {h.action}{h.detail ? ` — ${h.detail}` : ""}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
               </div>
             )}
           </Card>

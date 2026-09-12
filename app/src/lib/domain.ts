@@ -348,14 +348,16 @@ export function m2(n: number | null | undefined): string {
 
 // ——— Deal pipeline (Bod 2b) ———
 export const DEAL_STATUS: Record<string, { label: string; color: string }> = {
-  new: { label: "Nová", color: "#8a8a8a" },
-  checking: { label: "Preveruje sa", color: "#9a7b3e" },
-  contacted: { label: "Kontaktovaný", color: "#6b6f86" },
+  new: { label: "Nájdený", color: "#8a8a8a" },
+  checking: { label: "Preverujeme", color: "#9a7b3e" },
+  contacted: { label: "Kontakt", color: "#6b6f86" },
   negotiation: { label: "Rokovanie", color: "#5b7a58" },
-  closed_won: { label: "Uzavretá", color: "#3f6b3a" },
-  closed_lost: { label: "Zamietnutá", color: "#9c4a40" },
+  offer: { label: "Ponuka", color: "#4a6b8a" },
+  agreement: { label: "Dohoda", color: "#3f6b6b" },
+  closed_won: { label: "Kúpené", color: "#3f6b3a" },
+  closed_lost: { label: "Zamietnuté", color: "#9c4a40" },
 };
-export const DEAL_STATUS_ORDER = ["new", "checking", "contacted", "negotiation", "closed_won", "closed_lost"] as const;
+export const DEAL_STATUS_ORDER = ["new", "checking", "contacted", "negotiation", "offer", "agreement", "closed_won", "closed_lost"] as const;
 export const TASK_STATE: Record<string, { label: string; color: string }> = {
   pending: { label: "Čaká", color: "#8a8a8a" },
   contacted: { label: "Oslovený", color: "#9a7b3e" },

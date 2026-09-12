@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { getDeal, listDeals, updateDealStatus, updateDealTask, addDealNote } from "../lib/api/kataster.functions";
+import { getDeal, listDeals, updateDealStatus, updateDealTask, addDealNote, updateDeal } from "../lib/api/kataster.functions";
 import { DEAL_STATUS, DEAL_STATUS_ORDER, TASK_STATE, TASK_STATE_ORDER, eur, m2 } from "../lib/domain";
 import { Badge, Card, Disclaimer, Meter, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
@@ -71,10 +71,23 @@ function DealsPage() {
   const [detail, setDetail] = useState<DealDetail | null>(null);
   const [noteBody, setNoteBody] = useState("");
   const [busy, setBusy] = useState(false);
+  const [odkupInput, setOdkupInput] = useState("");
+  const [stepInput, setStepInput] = useState("");
 
   async function open(id: string) {
     setSel(id);
-    setDetail(await getDeal({ data: { id, role } }));
+    const d = await getDeal({ data: { id, role } });
+    setDetail(d);
+    setOdkupInput(d.deal?.odkup_eur != null ? String(d.deal.odkup_eur) : "");
+    setStepInput(d.deal?.next_step ?? "");
+  }
+  async function saveFields() {
+    if (!sel) return;
+    setBusy(true);
+    try {
+      await updateDeal({ data: { id: sel, role, odkupEur: odkupInput.trim() ? Number(odkupInput.replace(/\s/g, "")) : null, nextStep: stepInput.trim() || null } });
+      await open(sel); router.invalidate();
+    } finally { setBusy(false); }
   }
   async function setStatus(status: (typeof DEAL_STATUS_ORDER)[number]) {
     if (!sel) return;
@@ -160,6 +173,17 @@ function DealsPage() {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Hodnota odkupu + ďalší krok */}
+          <div className="mt-3 flex flex-wrap items-end gap-2">
+            <label className="text-[10px] uppercase tracking-wide text-muted">Hodnota odkupu (€)
+              <input value={odkupInput} onChange={(e) => setOdkupInput(e.target.value)} inputMode="numeric" placeholder="napr. 45000" className="mt-0.5 block w-32 rounded-md border border-line bg-paper px-2 py-1 text-sm text-fg" />
+            </label>
+            <label className="min-w-0 flex-1 text-[10px] uppercase tracking-wide text-muted">Ďalší krok
+              <input value={stepInput} onChange={(e) => setStepInput(e.target.value)} placeholder="napr. dohodnúť stretnutie s SPF" className="mt-0.5 block w-full rounded-md border border-line bg-paper px-2 py-1 text-sm text-fg" />
+            </label>
+            <button onClick={() => void saveFields()} disabled={busy} className="rounded-md border border-line px-3 py-1.5 text-xs text-fg hover:border-ink disabled:opacity-50">Uložiť</button>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
