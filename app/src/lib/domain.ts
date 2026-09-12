@@ -5,6 +5,7 @@
 export type AppPath =
   | "/"
   | "/prehlad"
+  | "/kalibracia"
   | "/mapa"
   | "/datasety"
   | "/browser"

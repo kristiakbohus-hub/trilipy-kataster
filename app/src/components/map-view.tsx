@@ -6,7 +6,8 @@ import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
 import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, type EsknParcel } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
 import { marketValueEur } from "../lib/domain";
-import { DEV_DEFAULTS, REGULATIV, type ZoneLike } from "../lib/development";
+import { REGULATIV, type ZoneLike } from "../lib/development";
+import { useCalibDev } from "../lib/calib";
 import { AccessibilityPanel } from "./accessibility-panel";
 import { Icon } from "./kit";
 import { CommentsPanel, WatchButton } from "./collab";
@@ -315,6 +316,7 @@ export function MapView({
   flyTo?: { lat: number; lng: number; zoom: number; nonce: number } | null;
 }) {
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const calibDev = useCalibDev(); // Fáza 5: kalibrované dev sadzby
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<View | null>(null);
   const [tool, setTool] = useState<Tool>("pan");
@@ -2269,7 +2271,7 @@ export function MapView({
                   useType={identified.use_type}
                   placement={fullLv?.parcelsC.find((p) => p.parcel_no === identified?.parcel_no)?.placement ?? null}
                   zone={effZone}
-                  opts={medians?.byt ? { ...DEV_DEFAULTS, predajEurM2: medians.byt } : DEV_DEFAULTS}
+                  opts={medians?.byt ? { ...calibDev.normal, predajEurM2: medians.byt } : calibDev.normal}
                 />
               </div>
             ) : null}

@@ -2681,6 +2681,7 @@ async function lvAvmAggregate(datasetId: string, lvNo: number): Promise<{
   const ds = (await q<{ region: string | null; ku_name: string | null }>("SELECT region, ku_name FROM datasets WHERE id=?", [datasetId]))[0] ?? null;
   const okres = okresFromRegion(ds?.region ?? null);
   const obec = ds?.ku_name ? ds.ku_name.replace(/^k\.ú\.\s*/i, "").trim() : null;
+  const calib = await getCalibMap(); // Fáza 5: kalibrované sadzby (raz na LV, nie per parcelu)
   const parcels = await q<{ parcel_no: string; area_m2: number | null; use_type: string | null; bpej_skupina: number | null; settled: number | null; lat: number | null; lng: number | null }>(
     "SELECT parcel_no, area_m2, use_type, bpej_skupina, settled, centroid_lat AS lat, centroid_lng AS lng FROM parcels WHERE dataset_id=? AND lv_no=? AND (kn_type IS NULL OR kn_type NOT LIKE 'E%') ORDER BY area_m2 DESC",
     [datasetId, lvNo]);
@@ -2691,7 +2692,7 @@ async function lvAvmAggregate(datasetId: string, lvNo: number): Promise<{
   for (const p of withGeo.slice(0, CAP)) {
     const { druhCode, umCode } = inferDruhCodes(p.use_type);
     let a: AvmResult;
-    try { a = await computeAvm(p.lat as number, p.lng as number, p.area_m2, druhCode, umCode, p.bpej_skupina, p.settled, okres, obec); }
+    try { a = await computeAvm(p.lat as number, p.lng as number, p.area_m2, druhCode, umCode, p.bpej_skupina, p.settled, okres, obec, calib); }
     catch { continue; }
     if (a.estimate_eur != null) { tot += a.estimate_eur; lo += a.low_eur ?? a.estimate_eur; hi += a.high_eur ?? a.estimate_eur; valued++; }
     if (!repr) { repr = { parcel_no: p.parcel_no, lat: p.lat as number, lng: p.lng as number, area_m2: p.area_m2 ?? 0, use_type: p.use_type }; reprAvm = a; }
@@ -3010,20 +3011,76 @@ export type EsknParcel = {
 
 // ——— AVM (automatický odhad hodnoty) — comparables z trhu + úpravy podľa druhu/umiestnenia/BPEJ/veľkosti/vysporiadanosti ———
 // Orientačný model, NIE znalecký posudok. Sadzby sú laditeľné (kataster profík vie dodať reálne čísla).
-const AG_BASE_PPM2: Record<number, number> = { 1: 1.5, 2: 2.0, 3: 3.0, 4: 6.0, 5: 5.0, 6: 1.0, 7: 0.6, 8: 0.3, 10: 2.5 };
+// Agri základy €/m² podľa druhu sú v calib (ag_base.*) / CALIB_DEFAULTS — Fáza 5.
 // Regionálny faktor pre poľnohosp./lesnú pôdu — trhové ceny pôdy sa v SR líšia rádovo (úrodné nížiny × hory).
 // Orientačné podľa verejných štatistík cien poľnohosp. pôdy SR. Stavebné pozemky idú cez trhové comps → tam sa NEaplikuje.
 // Read-free statický číselník podľa okresu (nezaťažuje D1).
 const AG_FERTILE_OKRESY = new Set(["Dunajská Streda", "Komárno", "Nové Zámky", "Galanta", "Šaľa", "Trnava", "Nitra", "Hlohovec", "Senec", "Trebišov", "Michalovce", "Rimavská Sobota", "Levice"]);
 const AG_MOUNTAIN_OKRESY = new Set(["Čadca", "Kysucké Nové Mesto", "Námestovo", "Tvrdošín", "Dolný Kubín", "Ružomberok", "Liptovský Mikuláš", "Poprad", "Kežmarok", "Stará Ľubovňa", "Brezno", "Gelnica", "Sabinov", "Medzilaborce", "Snina", "Bytča"]);
-function agRegionFactor(okres: string | null): number {
-  const o = (okres ?? "").trim();
-  if (!o) return 1.0;
-  if (AG_FERTILE_OKRESY.has(o)) return 1.5;    // úrodné nížiny — pôda drahšia
-  if (AG_MOUNTAIN_OKRESY.has(o)) return 0.65;  // hornaté/menej úrodné okresy (Kysuce, Orava, Liptov, Spiš…)
-  return 1.0;
+// ——— Fáza 5: kalibrácia AVM/GDV (calib tabuľka). Kód = fallback keď kľúč chýba. ———
+export type CalibMap = Record<string, number>;
+// Kódové defaulty = presne to, čím je naseedovaná calib (migrácia 0066). Fallback ak riadok chýba.
+export const CALIB_DEFAULTS: CalibMap = {
+  "ag_base.1": 1.5, "ag_base.2": 2.0, "ag_base.3": 3.0, "ag_base.4": 6.0, "ag_base.5": 5.0,
+  "ag_base.6": 1.0, "ag_base.7": 0.6, "ag_base.8": 0.3, "ag_base.10": 2.5, "ag_base.default": 1.5,
+  "region.fertile": 1.5, "region.mountain": 0.65, "region.default": 1.0,
+  "dev.m2_per_byt": 70, "dev.naklady_eur_m2": 2800, "dev.predaj_eur_m2": 2500,
+  "dev.low_m2_per_byt": 110, "dev.low_naklady_eur_m2": 1500, "dev.low_predaj_eur_m2": 1900,
+  "discount.unsettled": 0.8,
+};
+// Načíta calib mapu (malá tabuľka ~20 riadkov) zliatu nad defaultmi. Bez cache → admin zmeny platia hneď.
+async function getCalibMap(): Promise<CalibMap> {
+  const rows = await q<{ key: string; value: number }>("SELECT key, value FROM calib").catch(() => []);
+  const map: CalibMap = { ...CALIB_DEFAULTS };
+  for (const r of rows) map[r.key] = r.value;
+  return map;
 }
-async function computeAvm(lat: number, lng: number, area: number | null, druhCode: number | null, umCode: number | null, bpejSkupina: number | null, settled: number | null, okres: string | null, obec: string | null): Promise<AvmResult> {
+export type CalibRow = { key: string; value: number; category: string; label: string | null; unit: string | null; updated_at: string | null; updated_by: string | null; default_value: number | null };
+// Číta calib riadky pre admin UI (aj default z kódu na porovnanie). Bez auth — sadzby nie sú citlivé.
+export const getCalib = createServerFn({ method: "GET" }).handler(async (): Promise<CalibRow[]> => {
+  const rows = await q<CalibRow>("SELECT key, value, category, label, unit, updated_at, updated_by FROM calib ORDER BY category, key").catch(() => []);
+  return rows.map((r) => ({ ...r, default_value: CALIB_DEFAULTS[r.key] ?? null }));
+});
+// Rozsahy pre validáciu (fat-finger poistka) podľa kategórie.
+const CALIB_RANGE: Record<string, [number, number]> = { ag_base: [0.01, 500], region: [0.1, 5], dev: [1, 50000], discount: [0.05, 1] };
+// Uloží jednu sadzbu — LEN admin, audit-log. Kľúč musí existovať v CALIB_DEFAULTS (whitelist).
+export const setCalib = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), key: z.string(), value: z.number() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže meniť kalibráciu." };
+    if (!(data.key in CALIB_DEFAULTS)) return { ok: false, message: "Neznámy kľúč kalibrácie." };
+    const cat = data.key.split(".")[0];
+    const [lo, hi] = CALIB_RANGE[cat] ?? [0, 1e9];
+    if (!Number.isFinite(data.value) || data.value < lo || data.value > hi) return { ok: false, message: `Hodnota mimo rozsahu (${lo}–${hi}).` };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    await DB.prepare("UPDATE calib SET value=?, updated_at=datetime('now'), updated_by=? WHERE key=?").bind(data.value, u.email, data.key).run();
+    await logAudit("calib_set", u.role, `${data.key}=${data.value}`);
+    return { ok: true };
+  });
+// Reset jedného kľúča (alebo všetkých) na kódový default. LEN admin.
+export const resetCalib = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), key: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; reset?: number }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže meniť kalibráciu." };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const keys = data.key ? (data.key in CALIB_DEFAULTS ? [data.key] : []) : Object.keys(CALIB_DEFAULTS);
+    if (!keys.length) return { ok: false, message: "Neznámy kľúč kalibrácie." };
+    for (const k of keys) await DB.prepare("UPDATE calib SET value=?, updated_at=datetime('now'), updated_by=? WHERE key=?").bind(CALIB_DEFAULTS[k], u.email, k).run();
+    await logAudit("calib_reset", u.role, data.key ?? "all");
+    return { ok: true, reset: keys.length };
+  });
+function agRegionFactor(okres: string | null, calib: CalibMap): number {
+  const o = (okres ?? "").trim();
+  if (!o) return calib["region.default"] ?? 1.0;
+  if (AG_FERTILE_OKRESY.has(o)) return calib["region.fertile"] ?? 1.5;    // úrodné nížiny — pôda drahšia
+  if (AG_MOUNTAIN_OKRESY.has(o)) return calib["region.mountain"] ?? 0.65; // hornaté (Kysuce, Orava, Liptov, Spiš…)
+  return calib["region.default"] ?? 1.0;
+}
+async function computeAvm(lat: number, lng: number, area: number | null, druhCode: number | null, umCode: number | null, bpejSkupina: number | null, settled: number | null, okres: string | null, obec: string | null, calib: CalibMap): Promise<AvmResult> {
   const empty: AvmResult = { estimate_eur: null, low_eur: null, high_eur: null, ppm2: null, klass: "neznáme", comps: 0, confidence: "nízka", factors: [] };
   if (!area || area <= 0) return empty;
   const factors: string[] = [];
@@ -3056,17 +3113,18 @@ async function computeAvm(lat: number, lng: number, area: number | null, druhCod
       if (sizeF < 1) factors.push(`veľkosť ×${sizeF}`);
     }
   } else {
-    const base = (druhCode != null && AG_BASE_PPM2[druhCode]) ? AG_BASE_PPM2[druhCode] : 1.5;
+    const base = (druhCode != null ? calib[`ag_base.${druhCode}`] : undefined) ?? calib["ag_base.default"] ?? 1.5;
     let f = base;
     factors.push(`poľnohosp. základ ${base} €/m²`);
     if (bpejSkupina != null) { const bf = Math.max(0.5, Math.min(1.4, 1.4 - (bpejSkupina - 1) * 0.1)); f = f * bf; factors.push(`BPEJ skupina ${bpejSkupina} ×${bf.toFixed(2)}`); }
-    const rf = agRegionFactor(okres);
+    const rf = agRegionFactor(okres, calib);
     if (rf !== 1.0) { f = f * rf; factors.push(`región ${okres} ×${rf}`); }
     ppm2 = f; low = f * 0.6; high = f * 1.4;
     klass = druhCode === 7 ? "lesný pozemok" : druhCode === 8 ? "vodná plocha" : "poľnohospodárska pôda";
   }
   if (ppm2 == null) return { ...empty, comps: nComps };
-  if (settled === 0) { ppm2 *= 0.8; if (low != null) low *= 0.8; if (high != null) high *= 0.8; factors.push("nevysporiadaná ×0.8"); }
+  const unsettledF = calib["discount.unsettled"] ?? 0.8;
+  if (settled === 0) { ppm2 *= unsettledF; if (low != null) low *= unsettledF; if (high != null) high *= unsettledF; factors.push(`nevysporiadaná ×${unsettledF}`); }
   const confidence: AvmResult["confidence"] = buildable ? (nComps >= 20 ? "vysoká" : nComps >= 5 ? "stredná" : "nízka") : (bpejSkupina != null ? "stredná" : "nízka");
   return {
     estimate_eur: Math.round(area * ppm2),
@@ -3162,7 +3220,7 @@ export const esknIdentify = createServerFn({ method: "POST" })
     }
     // Best-effort obohatenie — nesmie zhodiť ESKN výsledok ani zobraziť zavádzajúcu hlášku
     try { out.ours = await lookupOurParcel(data.lat, data.lng, out.parcel_no); } catch { /* ignore */ }
-    try { const obec = out.ours?.ku_name ? out.ours.ku_name.replace(/^k\.ú\.\s*/i, "").trim() : null; out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null, out.ours?.okres ?? null, obec); } catch { /* ignore */ }
+    try { const obec = out.ours?.ku_name ? out.ours.ku_name.replace(/^k\.ú\.\s*/i, "").trim() : null; const calib = await getCalibMap(); out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null, out.ours?.okres ?? null, obec, calib); } catch { /* ignore */ }
     try { if (out.found || out.ours) await regCacheWrite(key, "eskn", out); } catch { /* ignore */ }
     return out;
   });

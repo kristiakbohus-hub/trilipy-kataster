@@ -6,7 +6,8 @@ import { useRole } from "../lib/role-context";
 import type { Role } from "../lib/domain";
 import { CommentsPanel, WatchButton } from "../components/collab";
 import { LegalRef } from "../components/legal-ref";
-import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEFAULTS, type Regulativ, type DevCalc } from "../lib/development";
+import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, type Regulativ, type DevCalc } from "../lib/development";
+import { useCalibDev, calibDevSync, preloadCalib } from "../lib/calib";
 
 type Content = Awaited<ReturnType<typeof getLvVypis>>;
 type DocType = "vypis" | "el";
@@ -35,6 +36,7 @@ function VypisPage() {
   const [docType, setDocType] = useState<DocType>(typ);
   const [parts, setParts] = useState({ A: true, B: true, C: true });
 
+  useEffect(() => { preloadCalib(); }, []); // Fáza 5: nahrej kalibráciu pre Word export (calibDevSync)
   useEffect(() => {
     let alive = true;
     getLvVypis({ data: { datasetId, lvNo, role } }).then((r) => alive && setC(r));
@@ -155,7 +157,8 @@ function VypisPage() {
         const regUsed = def ? regulativFromZone({ code: def.zone_code, name: def.funkcia, ipp: def.ipp, izp: def.izp, kz: def.kz }) : (regulativByCode(proxyZone(repr.use_type, null)) ?? null);
         if (regUsed && repr.area_m2 > 0) {
           const low = regUsed.ipp <= 0.7 || /bývanie|rodinn|ibv/i.test(`${regUsed.kategoria} ${regUsed.name}`);
-          const opts = low ? { m2PerByt: 110, nakladyEurM2Hpp: 1500, predajEurM2: 1900 } : DEV_DEFAULTS;
+          const cd = calibDevSync(); // kalibrované dev sadzby (Fáza 5)
+          const opts = low ? cd.low : cd.normal;
           const dev = developmentCalc(repr.area_m2, regUsed, opts);
           html += `<p style="font-size:12px">Územný plán &amp; zastavateľnosť: <b>${he(regUsed.name)}</b> (IZP ${regUsed.izp}, IPP ${regUsed.ipp}, KZ ${regUsed.kz}).`;
           if (dev.buildable) html += ` Zastavateľná ${m2(dev.izpArea)}, HPP ${m2(dev.hpp)}, ~ ${low ? Math.max(1, Math.round(dev.izpArea / 120)) + " RD jednotiek" : dev.byty + " bytov"}, GDV ${eur(dev.ekonomika.gdv)} €, náklady ${eur(dev.ekonomika.naklady)} €, marža ${dev.ekonomika.marzaPct} %.`;
@@ -681,6 +684,7 @@ function LvIntelSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }
   const [acc, setAcc] = useState<Awaited<ReturnType<typeof getParcelAccessibility>> | null>(null);
   const [accBusy, setAccBusy] = useState(false);
   const [err, setErr] = useState(false);
+  const calibDev = useCalibDev(); // Fáza 5: kalibrované dev sadzby
 
   useEffect(() => {
     let alive = true;
@@ -706,7 +710,7 @@ function LvIntelSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }
   const a = intel.avm;
   const repr = intel.repr;
   let dev: DevCalc | null = null; let regUsed: Regulativ | null = null; let regSource = "";
-  let lowDensity = false; let devOpts = DEV_DEFAULTS;
+  let lowDensity = false; let devOpts = calibDev.normal;
   if (repr) {
     const def = reg.find((r) => r.zone_code === "*" && r.ipp != null) ?? reg.find((r) => r.ipp != null);
     if (def) { regUsed = regulativFromZone({ code: def.zone_code, name: def.funkcia, ipp: def.ipp, izp: def.izp, kz: def.kz }); regSource = "ÚP regulatív obce"; }
@@ -714,7 +718,7 @@ function LvIntelSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }
     if (regUsed && repr.area_m2 > 0) {
       // IBV / rodinné domy (nízka hustota) majú iné predpoklady než bytovky (náklady/predaj/jednotky)
       lowDensity = regUsed.ipp <= 0.7 || /bývanie|rodinn|ibv/i.test(`${regUsed.kategoria} ${regUsed.name}`);
-      devOpts = lowDensity ? { m2PerByt: 110, nakladyEurM2Hpp: 1500, predajEurM2: 1900 } : DEV_DEFAULTS;
+      devOpts = lowDensity ? calibDev.low : calibDev.normal;
       dev = developmentCalc(repr.area_m2, regUsed, devOpts);
     }
   }

@@ -8,7 +8,8 @@ import {
   getUpDocs, getLocalityMedian, getParcelZone, getMarketListingsNear, esknIdentify,
 } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
-import { regulativFromZone, regulativByCode, proxyZone, developmentCalc, DEV_DEFAULTS } from "../lib/development";
+import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "../lib/development";
+import { useCalibDev } from "../lib/calib";
 
 export const Route = createFileRoute("/report/$datasetId/$parcelNo")({
   head: () => ({ meta: [{ title: "Dossier parcely — TRI LIPY KATASTER CORE" }] }),
@@ -74,10 +75,12 @@ function ReportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datasetId, parcelNo, role]);
 
+  const calibDev = useCalibDev(); // Fáza 5: kalibrované dev sadzby
+
   if (!parcel) return <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted">Parcela {parcelNo} sa v datasete nenašla. <Link to="/mapa" className="text-brand underline">Späť na mapu</Link></div>;
 
   const reg = regulativFromZone(zone) ?? regulativByCode(proxyZone(parcel.use_type, null));
-  const dev = parcel.area_m2 && reg ? developmentCalc(parcel.area_m2, reg, { ...DEV_DEFAULTS, predajEurM2: medPoz ?? DEV_DEFAULTS.predajEurM2 }) : null;
+  const dev = parcel.area_m2 && reg ? developmentCalc(parcel.area_m2, reg, { ...calibDev.normal, predajEurM2: medPoz ?? calibDev.normal.predajEurM2 }) : null;
   const odhadCeny = parcel.area_m2 && medPoz ? parcel.area_m2 * medPoz : null;
   const siete = parcel.centroid_lat != null && parcel.centroid_lng != null ? sieteLinks(parcel.centroid_lat, parcel.centroid_lng) : [];
 
