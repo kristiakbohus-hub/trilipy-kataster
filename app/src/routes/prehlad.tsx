@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getDashboard, type Dashboard } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
+import { DEAL_STATUS, DEAL_STATUS_ORDER } from "../lib/domain";
 
 export const Route = createFileRoute("/prehlad")({
   head: () => ({ meta: [{ title: "Prehľad / Dashboard — TRI LIPY KATASTER CORE" }] }),
@@ -11,6 +12,23 @@ export const Route = createFileRoute("/prehlad")({
 
 const nf = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("sk-SK"));
 const eur = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("sk-SK", { maximumFractionDigits: 0 }) + " €/m²");
+// Celé eurá (hodnota pipeline/spisov) — kompaktne (tis./mil.).
+const eur0 = (n: number | null | undefined) => {
+  if (n == null) return "—";
+  if (n >= 1_000_000) return (n / 1_000_000).toLocaleString("sk-SK", { maximumFractionDigits: 2 }) + " mil. €";
+  if (n >= 10_000) return Math.round(n / 1000).toLocaleString("sk-SK") + " tis. €";
+  return n.toLocaleString("sk-SK", { maximumFractionDigits: 0 }) + " €";
+};
+const ago = (s: string | null | undefined) => {
+  if (!s) return "—";
+  const t = Date.parse(s.replace(" ", "T") + (s.length <= 10 ? "T00:00:00" : "") + "Z");
+  if (Number.isNaN(t)) return s.slice(0, 16);
+  const days = Math.floor((Date.now() - t) / 86400000);
+  if (days <= 0) return "dnes";
+  if (days === 1) return "včera";
+  if (days < 31) return `pred ${days} dňami`;
+  return s.slice(0, 10);
+};
 
 function Kpi({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -60,6 +78,52 @@ function PrehladPage() {
           <Kpi label="Výmera" value={`${nf(d.kataster.area_ha)} ha`} />
         </div>
       </Card>
+
+      {/* Fáza 4: Deal pipeline (hodnota + fázy) + Spisy */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <SectionHeader title="Deal pipeline" hint="hodnota = zadané odkupy + AVM odhad" action={<Link to="/deals" className="text-xs text-brand hover:underline">Dealy →</Link>} />
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Kpi label="Otvorené dealy" value={nf(d.pipeline?.open)} />
+            <Kpi label="Zadané odkupy" value={eur0(d.pipeline?.value_set)} hint="dohodnuté ceny" />
+            <Kpi label="AVM odhad" value={eur0(d.pipeline?.value_est)} hint="bez zadanej ceny" />
+            <Kpi label="Kúpené" value={eur0(d.pipeline?.won_eur)} hint={`zamietnuté: ${nf(d.pipeline?.lost)}`} />
+          </div>
+          {d.pipeline?.stages?.length ? (
+            <div className="mt-3">
+              <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Podľa fázy</div>
+              <div className="space-y-1">
+                {DEAL_STATUS_ORDER.map((st) => {
+                  const row = d.pipeline.stages.find((s) => s.status === st);
+                  if (!row || row.count === 0) return null;
+                  const meta = DEAL_STATUS[st];
+                  return (
+                    <div key={st} className="flex items-center gap-2 text-sm">
+                      <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: meta?.color ?? "#888" }} />
+                      <span className="flex-1 text-fg">{meta?.label ?? st}</span>
+                      <span className="tabular-nums text-muted">{row.count}×</span>
+                      <span className="w-24 text-right tabular-nums text-fg">{eur0(row.value_eur)}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : <div className="mt-3 text-sm text-muted">Zatiaľ žiadne dealy — pridaj z Deal radaru alebo výpisu LV.</div>}
+        </Card>
+
+        <Card className="p-4">
+          <SectionHeader title="Spisy (cases)" hint="AVM potenciál otvorených spisov" action={<Link to="/cases" className="text-xs text-brand hover:underline">Spisy →</Link>} />
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Kpi label="Otvorené" value={nf(d.cases?.open)} />
+            <Kpi label="V revízii" value={nf(d.cases?.review)} />
+            <Kpi label="Uzavreté" value={nf(d.cases?.done)} />
+            <Kpi label="AVM potenciál" value={eur0(d.cases?.potential_eur)} hint={`${nf(d.cases?.linked_lvs)} LV v spisoch`} />
+          </div>
+          {(d.cases?.open ?? 0) + (d.cases?.review ?? 0) + (d.cases?.done ?? 0) === 0 ? (
+            <div className="mt-3 text-sm text-muted">Zatiaľ žiadne spisy — založ spis z výpisu LV alebo dealu.</div>
+          ) : null}
+        </Card>
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
@@ -122,7 +186,39 @@ function PrehladPage() {
         </Card>
       </div>
 
-      <div className="text-[11px] text-muted">Dashboard je cachovaný ~60 min (ťažké súčty sa nerátajú pri každom načítaní — D1 free tier). „Obnoviť" prepočíta teraz.</div>
+      {/* Fáza 4: čerstvosť dát + zmeny v katastri */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="p-4">
+          <SectionHeader title="Stav dát" hint="čerstvosť zdrojov (vždy naživo)" />
+          <div className="mt-2 space-y-2">
+            <div className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="text-muted">Posledný import k.ú.</span>
+              <span className="text-fg">{ago(d.status?.last_import)}{d.status?.last_import_ku ? <span className="text-muted"> · {d.status.last_import_ku}</span> : null}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="text-muted">Posledný scraper trhu</span>
+              <span className="text-fg">{ago(d.status?.last_scrape)}</span>
+            </div>
+            <div className="flex items-baseline justify-between gap-2 text-sm">
+              <span className="text-muted">Posledný beh alertov</span>
+              <span className="text-fg">{ago(d.status?.last_alert)}</span>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="p-4">
+          <SectionHeader title="Zmeny v katastri" hint="detegované pri re-importe (Fáza 3)" />
+          <div className="mt-2 grid grid-cols-2 gap-3">
+            <Kpi label="Zmeny 7 dní" value={nf(d.changes?.d7)} />
+            <Kpi label="Zmeny 30 dní" value={nf(d.changes?.d30)} />
+          </div>
+          <div className="mt-3 text-[12px] text-muted">
+            {d.changes?.last ? <>Posledná zmena: <span className="text-fg">{ago(d.changes.last)}</span>. Detaily v sekcii „História zmien" na výpise LV.</> : "Zmeny sa objavia po druhom importe k.ú. (starý ↔ nový stav)."}
+          </div>
+        </Card>
+      </div>
+
+      <div className="text-[11px] text-muted">Ťažké súčty (kataster, trh, ÚP) sú cachované ~12 h — D1 free tier; „Obnoviť" ich prepočíta. Pipeline, spisy, stav dát a zmeny sú vždy čerstvé.</div>
     </div>
   );
 }

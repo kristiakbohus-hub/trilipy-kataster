@@ -1872,13 +1872,65 @@ export type Dashboard = {
   trh: { medians: { pozemok: number | null; byt: number | null; dom: number | null }; listings: number; opps: number };
   up: { obce: number; docs: number; changes_7d: number; changes_30d: number };
   alerts: Array<{ kind: string; body: string; created_at: string }>;
+  // Fáza 4 — vždy čerstvé (lacné dopočty nad malými tabuľkami, mimo 12h cache):
+  pipeline: { open: number; value_set: number; value_est: number; won_eur: number; lost: number;
+    stages: Array<{ status: string; count: number; value_eur: number }> };
+  cases: { open: number; review: number; done: number; potential_eur: number; linked_lvs: number };
+  status: { last_import: string | null; last_import_ku: string | null; last_scrape: string | null; last_alert: string | null };
+  changes: { d7: number; d30: number; last: string | null };
 };
+
+// Fáza 4: lacné, vždy čerstvé sekcie dashboardu (pipeline hodnota+fázy, cases, čerstvosť dát, zmeny).
+// Hodnota dealu = zadané odkup_eur, inak AVM fallback (total_area × medián €/m² pozemku). Malé tabuľky.
+async function dashboardFresh(medPozemok: number | null): Promise<Pick<Dashboard, "pipeline" | "cases" | "status" | "changes">> {
+  const num = async (sql: string, args: unknown[] = []): Promise<number> => { try { return (await q<{ n: number }>(sql, args))[0]?.n ?? 0; } catch { return 0; } };
+  const mpz = medPozemok && medPozemok > 0 ? medPozemok : 0;
+  // Dealy + výmera prepojeného LV (PK join, lacné). Hodnota = odkup_eur ?? total_area×medián.
+  const deals = await q<{ status: string; odkup_eur: number | null; total_area: number | null }>(
+    "SELECT d.status, d.odkup_eur, s.total_area FROM deals d LEFT JOIN lv_signals s ON s.dataset_id=d.dataset_id AND s.lv_no=d.lv_no").catch(() => []);
+  const est = (area: number | null) => (mpz && area ? Math.round(area * mpz) : 0);
+  const stageMap = new Map<string, { count: number; value_eur: number }>();
+  let value_set = 0, value_est = 0, won_eur = 0, lost = 0, open = 0;
+  for (const d of deals) {
+    const val = d.odkup_eur != null ? d.odkup_eur : est(d.total_area);
+    const st = stageMap.get(d.status) ?? { count: 0, value_eur: 0 };
+    st.count++; st.value_eur += val; stageMap.set(d.status, st);
+    if (d.status === "closed_won") { won_eur += (d.odkup_eur ?? val); }
+    else if (d.status === "closed_lost") { lost++; }
+    else { open++; if (d.odkup_eur != null) value_set += d.odkup_eur; else value_est += est(d.total_area); }
+  }
+  const stages = [...stageMap.entries()].map(([status, v]) => ({ status, ...v }));
+  // Cases + hodnota prepojených LV (AVM potenciál otvorených spisov).
+  const caseCounts = await q<{ status: string; n: number }>("SELECT status, COUNT(*) n FROM cases GROUP BY status").catch(() => []);
+  const cCount = (s: string) => caseCounts.find((r) => r.status === s)?.n ?? 0;
+  const caseLvs = await q<{ total_area: number | null }>(
+    "SELECT s.total_area FROM cases c JOIN case_links cl ON cl.case_id=c.id AND cl.link_type='lv' LEFT JOIN lv_signals s ON s.dataset_id=cl.dataset_id AND s.lv_no=CAST(cl.ref AS INTEGER) WHERE c.status IN ('open','review')").catch(() => []);
+  const potential_eur = caseLvs.reduce((a, r) => a + est(r.total_area), 0);
+  // Čerstvosť dát.
+  const lastImp = (await q<{ u: string | null; ku: string | null }>("SELECT updated_at u, ku_name ku FROM datasets ORDER BY updated_at DESC LIMIT 1").catch(() => []))[0];
+  const lastScrape = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='last_refresh'").catch(() => []))[0]?.value ?? null;
+  const lastAlert = (await q<{ r: string | null }>("SELECT MAX(last_run) r FROM saved_search").catch(() => []))[0]?.r ?? null;
+  // Zmeny (Fáza 3).
+  const d7 = await num("SELECT COUNT(*) n FROM change_log WHERE detected_at >= datetime('now','-7 days')");
+  const d30 = await num("SELECT COUNT(*) n FROM change_log WHERE detected_at >= datetime('now','-30 days')");
+  const lastChg = (await q<{ d: string | null }>("SELECT MAX(detected_at) d FROM change_log").catch(() => []))[0]?.d ?? null;
+  return {
+    pipeline: { open, value_set, value_est, won_eur, lost, stages },
+    cases: { open: cCount("open"), review: cCount("review"), done: cCount("done"), potential_eur, linked_lvs: caseLvs.length },
+    status: { last_import: lastImp?.u ?? null, last_import_ku: lastImp?.ku ?? null, last_scrape: lastScrape, last_alert: lastAlert },
+    changes: { d7, d30, last: lastChg },
+  };
+}
 export const getDashboard = createServerFn({ method: "POST" })
   .validator(z.object({ refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<Dashboard> => {
     // Cache 12 h — ťažké COUNT-y (parcely 132k, vlastníci 952k) sa rátajú max ~2×/deň (D1 free tier). „Obnoviť" vynúti prepočet.
     const cached = await regCacheRead("dashboard:sr", !!data.refresh, 12 * 3600);
-    if (cached) return { ...(cached.payload as Dashboard), cached: true, ageDays: cached.ageDays };
+    if (cached) {
+      const p = cached.payload as Dashboard;
+      const fresh = await dashboardFresh(p.trh?.medians?.pozemok ?? null); // pipeline/cases/status/changes vždy čerstvé
+      return { ...p, ...fresh, cached: true, ageDays: cached.ageDays };
+    }
     const num = async (sql: string, args: unknown[] = []): Promise<number> => { try { return (await q<{ n: number }>(sql, args))[0]?.n ?? 0; } catch { return 0; } };
     // Predpočítané (0062): parcely/vlastníci/výmera ako SUM z malej datasets tabuľky — nie COUNT/SUM skeny nad 952k+ riadkami.
     const dstat = (await q<{ ds: number; p: number; o: number; a: number }>(
@@ -1905,13 +1957,16 @@ export const getDashboard = createServerFn({ method: "POST" })
     const ch30 = await num("SELECT COUNT(*) n FROM up_changes WHERE detected_at >= datetime('now','-30 days')");
     let alerts: Dashboard["alerts"] = [];
     try { alerts = await q<{ kind: string; body: string; created_at: string }>("SELECT kind, body, created_at FROM notifications ORDER BY id DESC LIMIT 8"); } catch { /* noop */ }
+    const medPozemok = await med("pozemok");
+    const fresh = await dashboardFresh(medPozemok); // pipeline/cases/status/changes — vždy čerstvé
     const out: Dashboard = {
       scope: "SR",
       kataster: { datasets, parcels, owners, lvs, area_ha: Math.round(area / 10000) },
       deal: { hot, open_deals, top },
-      trh: { medians: { pozemok: await med("pozemok"), byt: await med("byt"), dom: await med("dom") }, listings, opps },
+      trh: { medians: { pozemok: medPozemok, byt: await med("byt"), dom: await med("dom") }, listings, opps },
       up: { obce: up_obce, docs: up_docs, changes_7d: ch7, changes_30d: ch30 },
       alerts,
+      ...fresh,
     };
     try { await regCacheWrite("dashboard:sr", "dashboard", out); } catch { /* noop */ }
     return out;
