@@ -281,12 +281,34 @@ export const nlQuery = createServerFn({ method: "POST" })
     const cond: string[] = []; const args: unknown[] = [];
     if (/nevyspor|absent/.test(s)) cond.push("sig.absenter_ratio > 0");
     if (/\bspf\b|štát|stat/.test(s)) cond.push("sig.has_spf = 1");
-    if (/dedič|dedic/.test(s)) cond.push("sig.dedic = 1");
     if (/stavebn|zastavateľn|intravil/.test(s)) cond.push("sig.buildable = 1");
     if (/bez.?[tť]arch|čist/.test(s)) cond.push("sig.clean_title = 1");
     const mco = s.match(/(\d+)\s*(spoluvlast|podiel|vlastník)/); if (mco) { cond.push("sig.co_owners >= ?"); args.push(Number(mco[1])); }
     const ma = s.match(/nad\s*(\d{3,})/); if (ma) { cond.push("sig.total_area >= ?"); args.push(Number(ma[1])); }
-    if (/s\s*[tť]arch|zálož|exek|bremen|nečist|necist/.test(s)) cond.push("sig.clean_title = 0");
+    // ——— Právna udalosť + rok (lv_legal): dedičstvo/exekúcia/záložné/predaj/dar podľa roku ———
+    const yr = (() => {
+      let m = s.match(/od\s*(?:roku\s*)?((?:19|20)\d{2})/); if (m) return { op: ">=", y: Number(m[1]) };
+      m = s.match(/do\s*(?:roku\s*)?((?:19|20)\d{2})/); if (m) return { op: "<=", y: Number(m[1]) };
+      m = s.match(/(?:v\s*roku|roku|rok)\s*((?:19|20)\d{2})/); if (m) return { op: "=", y: Number(m[1]) };
+      m = s.match(/\b((?:19|20)\d{2})\b/); if (m) return { op: "=", y: Number(m[1]) };
+      return null;
+    })();
+    const legalEv: "inh" | "exek" | "lien" | "sale" | "gift" | null =
+      /prededen|dedič|dedic|zdeden/.test(s) ? "inh"
+      : /exek/.test(s) ? "exek"
+      : /zálož|zaloz/.test(s) ? "lien"
+      : (/predan|predaj|\bkúp|\bkup\b/.test(s) && !marketIntent) ? "sale"
+      : /\bdar(uj|ovan|om)?\b/.test(s) ? "gift" : null;
+    let legalJoin = false;
+    if (legalEv) {
+      legalJoin = true;
+      const mn = `ll.${legalEv}_min`, mx = `ll.${legalEv}_max`;
+      if (yr && yr.op === ">=") { cond.push(`${mx} >= ?`); args.push(yr.y); }
+      else if (yr && yr.op === "<=") { cond.push(`${mn} <= ?`); args.push(yr.y); }
+      else if (yr) { cond.push(`${mn} <= ? AND ${mx} >= ?`); args.push(yr.y, yr.y); }
+      else cond.push(`${mx} IS NOT NULL`);
+    } else if (/dedič|dedic/.test(s)) { cond.push("sig.dedic = 1"); } // spätná kompat
+    if (/s\s*[tť]arch|bremen|nečist|necist/.test(s) && !legalEv) cond.push("sig.clean_title = 0");
     // Post-filter intenty (aplikujú sa LACNO na top-N kandidátov cez indexované lookupy — NIE sken celej tabuľky):
     const wantCompany = /\bfirm|firemn|s\.?r\.?o|a\.?s\.?|právnick|pravnick|spolo[cč]n|družstv|druzstv/.test(s);
     const wantForeign = /zahrani[cč]|cudzin/.test(s);
@@ -298,18 +320,20 @@ export const nlQuery = createServerFn({ method: "POST" })
     const wantAccess = /dojazd|dostupn[oý]|pri\s*dia[lľ]nic|k\s*dia[lľ]nic|bl[ií]zko|pri\s*obchod/.test(s) || !!accMin;
     const wantSiete = /\bsiet|pr[ií]pojk|in[žz]iniersk|napojen|elektrin|\bplyn\b/.test(s);
     // LV sekcia sa naplní ak dopyt mieri na signály alebo na post-filter atribúty (inak by "Novák"/"byt" vrátili celú DB)
-    const lvRelevant = cond.length > 0 || wantCompany || wantForeign || wantEkn || wantNoLandslide || wantNoFlood || wantAccess || wantSiete;
+    const lvRelevant = cond.length > 0 || legalJoin || wantCompany || wantForeign || wantEkn || wantNoLandslide || wantNoFlood || wantAccess || wantSiete;
     const where = cond.length ? "WHERE " + cond.join(" AND ") : "";
     const rows = lvRelevant ? await q<NlHit>(
       `SELECT sig.dataset_id, d.ku_name, sig.lv_no, sig.co_owners, sig.has_spf, sig.dedic, sig.buildable,
               sig.clean_title, sig.absenter_ratio, sig.total_area, sig.oldest_birth_year
-       FROM lv_signals sig JOIN datasets d ON d.id = sig.dataset_id ${where} LIMIT 4000`, args) : [];
+       FROM lv_signals sig JOIN datasets d ON d.id = sig.dataset_id
+       ${legalJoin ? "JOIN lv_legal ll ON ll.dataset_id = sig.dataset_id AND ll.lv_no = sig.lv_no" : ""} ${where} LIMIT 4000`, args) : [];
     const w = { co: 0.3, spf: 0.25, dedic: 0.15, buildable: 0.15, absenter: 0.1, clean: 0.05 };
     const wsum = w.co + w.spf + w.dedic + w.buildable + w.absenter + w.clean;
     const scored = rows.map((r) => {
       const rawScore = (w.co * Math.min(r.co_owners ?? 0, 20)) / 20 + w.spf * (r.has_spf ?? 0) + w.dedic * (r.dedic ?? 0)
         + w.buildable * (r.buildable ?? 0) + w.absenter * (r.absenter_ratio ?? 0) + w.clean * (r.clean_title ?? 0);
       const reasons: string[] = [];
+      if (legalEv) reasons.push(({ inh: "dedičstvo", exek: "exekúcia", lien: "záložné právo", sale: "predaj", gift: "darovanie" })[legalEv] + (yr ? ` ${yr.op === "=" ? "" : yr.op + " "}${yr.y}` : ""));
       if ((r.co_owners ?? 0) >= 5) reasons.push(`${r.co_owners} spoluvlastníkov`);
       if (r.has_spf) reasons.push("SPF / štát");
       if (r.dedic) reasons.push(`dedičské${r.oldest_birth_year ? ` (${r.oldest_birth_year})` : ""}`);
