@@ -8,6 +8,7 @@ import { CommentsPanel, WatchButton } from "../components/collab";
 import { LegalRef } from "../components/legal-ref";
 import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, type Regulativ, type DevCalc } from "../lib/development";
 import { useCalibDev, calibDevSync, preloadCalib } from "../lib/calib";
+import { DocumentsPanel } from "../components/documents-panel";
 
 type Content = Awaited<ReturnType<typeof getLvVypis>>;
 type DocType = "vypis" | "el";
@@ -419,6 +420,9 @@ function VypisPage() {
             <LvIntelSection datasetId={datasetId} lvNo={lvNo} />
             <LvSettlementSection datasetId={datasetId} lvNo={lvNo} role={role} />
             <LvHistorySection datasetId={datasetId} lvNo={lvNo} />
+            <Section title="Dokumenty (interné — PDF/GP/ZPMZ/zmluvy)">
+              <DocumentsPanel datasetId={datasetId} subjectType="lv" subjectRef={String(lvNo)} role={role} />
+            </Section>
             {parts.A ? (
               <Section title="Časť A — Majetková podstata">
                 {/* Parcely registra „C" — katastrálna mapa */}

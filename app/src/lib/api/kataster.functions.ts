@@ -1536,6 +1536,74 @@ export const deleteRaster = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ——— Fáza 6: Dokumenty (PDF/DOCX/GP/ZPMZ/zmluvy) v R2, prepojené na spis/LV/parcelu/vlastníka ———
+export type DocRow = { id: string; dataset_id: string; case_id: number | null; subject_type: string | null; subject_ref: string | null; name: string; kind: string; mime: string | null; size_bytes: number | null; note: string | null; created_by: string | null; created_at: string };
+export const DOC_KINDS = ["vypis", "GP", "ZPMZ", "zmluva", "foto", "ine"] as const;
+// Zoznam dokumentov pre spis alebo subjekt (LV/parcela/vlastník). Fail-soft pred 0068.
+export const listDocuments = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string().optional(), caseId: z.number().optional(), subjectType: z.string().optional(), subjectRef: z.string().optional() }))
+  .handler(async ({ data }): Promise<DocRow[]> => {
+    const cond: string[] = []; const args: unknown[] = [];
+    if (data.caseId != null) { cond.push("case_id = ?"); args.push(data.caseId); }
+    else if (data.datasetId && data.subjectType && data.subjectRef) { cond.push("dataset_id = ? AND subject_type = ? AND subject_ref = ?"); args.push(data.datasetId, data.subjectType, data.subjectRef); }
+    else if (data.datasetId) { cond.push("dataset_id = ?"); args.push(data.datasetId); }
+    else return [];
+    return q<DocRow>(`SELECT id, dataset_id, case_id, subject_type, subject_ref, name, kind, mime, size_bytes, note, created_by, created_at FROM documents WHERE ${cond.join(" AND ")} ORDER BY created_at DESC`, args).catch(() => []);
+  });
+// Nahranie dokumentu (klient pošle base64). Gate canRunPipeline. Bytes → R2, metadáta → D1.
+export const uploadDocument = createServerFn({ method: "POST" })
+  .validator(z.object({
+    datasetId: z.string(), caseId: z.number().optional(), subjectType: z.string().optional(), subjectRef: z.string().optional(),
+    name: z.string().min(1).max(200), kind: z.enum(["vypis", "GP", "ZPMZ", "zmluva", "foto", "ine"]).default("ine"), mime: z.string(), sizeBytes: z.number().int().nonnegative(),
+    dataBase64: z.string().min(8).max(13_000_000), // ~9,7 MB binárne
+    role: roleSchema,
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; id?: string; message?: string }> => {
+    const role = data.role as Role;
+    if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie nahrať dokument." };
+    const { DB, STORAGE } = bindings();
+    if (!DB || !STORAGE) return { ok: false, message: "Úložisko (R2) nie je dostupné." };
+    const id = `doc-${data.datasetId}-${Math.random().toString(36).slice(2, 9)}`;
+    const key = `docs/${data.datasetId}/${id}`;
+    await STORAGE.put(key, b64ToBytes(data.dataBase64), { httpMetadata: { contentType: data.mime } });
+    await DB.prepare(
+      "INSERT INTO documents (id, dataset_id, case_id, subject_type, subject_ref, name, kind, mime, size_bytes, r2_key, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+    )
+      .bind(id, data.datasetId, data.caseId ?? null, data.subjectType ?? null, data.subjectRef ?? null, data.name, data.kind, data.mime, data.sizeBytes, key, role)
+      .run();
+    // ak visí na spise, prepoj aj cez case_links (doc) — nadväzuje na Fázu 1
+    if (data.caseId != null) { try { await DB.prepare("INSERT INTO case_links (case_id, link_type, dataset_id, ref, label) VALUES (?,?,?,?,?)").bind(data.caseId, "doc", data.datasetId, id, data.name).run(); } catch { /* case_links voliteľné */ } }
+    await logAudit("document.upload", role, `Dokument „${data.name}" (${data.kind}) nahratý.`, data.datasetId);
+    return { ok: true, id };
+  });
+// Stiahnutie/zobrazenie — R2 get → data: URL (v prehliadači appky, nie artifact).
+export const getDocumentData = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; dataUrl?: string; name?: string; mime?: string }> => {
+    const { STORAGE } = bindings();
+    if (!STORAGE) return { ok: false };
+    const row = (await q<{ r2_key: string; mime: string | null; name: string }>("SELECT r2_key, mime, name FROM documents WHERE id = ?", [data.id]))[0];
+    if (!row) return { ok: false };
+    const obj = await STORAGE.get(row.r2_key);
+    if (!obj) return { ok: false };
+    const buf = new Uint8Array(await obj.arrayBuffer());
+    return { ok: true, name: row.name, mime: row.mime ?? "application/octet-stream", dataUrl: `data:${row.mime ?? "application/octet-stream"};base64,${bytesToB64(buf)}` };
+  });
+export const deleteDocument = createServerFn({ method: "POST" })
+  .validator(z.object({ id: z.string(), role: roleSchema }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const role = data.role as Role;
+    if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie mazať dokument." };
+    const { DB, STORAGE } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const row = (await q<{ r2_key: string }>("SELECT r2_key FROM documents WHERE id = ?", [data.id]))[0];
+    if (row && STORAGE) await STORAGE.delete(row.r2_key);
+    await DB.prepare("DELETE FROM documents WHERE id = ?").bind(data.id).run();
+    try { await DB.prepare("DELETE FROM case_links WHERE link_type='doc' AND ref = ?").bind(data.id).run(); } catch { /* voliteľné */ }
+    await logAudit("document.delete", role, `Dokument ${data.id} odstránený.`);
+    return { ok: true };
+  });
+
 // ——— Príležitosti pre mapový režim (parcela↔skóre) ———
 export const getMapOpportunities = createServerFn({ method: "POST" })
   .validator(z.object({ datasetId: z.string() }))

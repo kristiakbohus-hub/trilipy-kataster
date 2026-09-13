@@ -3,6 +3,7 @@ import { useState } from "react";
 import { addCaseNote, createCase, getCase, getDatasets, listCases, updateCaseStatus, linkCaseEntity, unlinkCaseEntity, DEAL_STAGE_LABEL } from "../lib/api/kataster.functions";
 import { CASE_KIND_LABEL, CASE_STATUS_META, type Case, type CaseNote } from "../lib/domain";
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
+import { DocumentsPanel } from "../components/documents-panel";
 import { useRole } from "../lib/role-context";
 
 type Kind = "vysporiadanie" | "screening" | "pristup" | "ine";
@@ -218,6 +219,11 @@ function CasesPage() {
                     <input value={noteBody} onChange={(e) => setNoteBody(e.target.value)} placeholder="Pridať poznámku…" className="flex-1 rounded-md border border-line bg-paper px-3 py-1.5 text-sm text-fg outline-none focus:border-brand" />
                     <button onClick={addNote} className="rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-cream">Pridať</button>
                   </div>
+                </div>
+
+                <div className="mt-4 border-t border-line pt-3">
+                  <div className="mb-2 text-[11px] uppercase tracking-wide text-muted">Dokumenty</div>
+                  <DocumentsPanel datasetId={selected.case.dataset_id} caseId={selected.case.id} subjectType="case" subjectRef={String(selected.case.id)} role={role} />
                 </div>
 
                 {selected.history.length ? (

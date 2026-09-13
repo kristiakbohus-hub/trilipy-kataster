@@ -10,6 +10,7 @@ import {
 import { useRole } from "../lib/role-context";
 import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "../lib/development";
 import { useCalibDev } from "../lib/calib";
+import { DocumentsPanel } from "../components/documents-panel";
 
 export const Route = createFileRoute("/report/$datasetId/$parcelNo")({
   head: () => ({ meta: [{ title: "Dossier parcely — TRI LIPY KATASTER CORE" }] }),
@@ -214,6 +215,12 @@ function ReportPage() {
           </ul>
         ) : <Muted>Žiadne ÚP dokumenty pre k.ú.</Muted>}
       </Section>
+
+      <div className="no-print">
+        <Section title="Dokumenty k parcele (interné)">
+          <DocumentsPanel datasetId={datasetId} subjectType="parcel" subjectRef={parcelNo} role={role} compact />
+        </Section>
+      </div>
 
       {!ready ? <div className="no-print mt-4 text-center text-xs text-muted">Načítavam dáta dossieru…</div> : null}
       <div className="mt-6 border-t border-line pt-2 text-[10px] leading-snug text-muted">
