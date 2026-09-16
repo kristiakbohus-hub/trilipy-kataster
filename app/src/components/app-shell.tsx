@@ -96,13 +96,13 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-dvh bg-cream text-fg">
       {/* Sidebar (desktop) — svetlý, minimalistický (brandbook) */}
       <aside className="fixed inset-y-0 left-0 hidden w-60 flex-col border-r border-line bg-paper px-3 py-4 md:flex">
-        <div className="px-2">
+        <div className="shrink-0 px-2">
           <Brand />
         </div>
-        <nav className="mt-6 flex flex-col gap-1">
+        <nav className="mt-6 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
           <NavList pathname={pathname} />
         </nav>
-        <div className="mt-auto rounded-md border border-line bg-cream p-3 text-[11px] leading-relaxed text-muted">
+        <div className="mt-3 shrink-0 rounded-md border border-line bg-cream p-3 text-[11px] leading-relaxed text-muted">
           <div className="font-display mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-fg">Fakty na rovinu.</div>
           Interný pracovný nástroj. Nepodáva právne ani geodetické závery. Owner-sensitive dáta rolovo chránené.
         </div>

@@ -1071,14 +1071,17 @@ export function MapView({
     if (!st || !st.moved) {
       const hit = hitTest(x, y);
       if (hit) {
+        // Naša parcela má vlastný rich panel — NEspúšťaj ESKN identify (bránil by stabilite panela: „blázni sa").
+        setEsknHit(null);
         setIdentified(hit);
         if (e.ctrlKey || e.metaKey || e.shiftKey) { toggleSel(hit.id); pushEvent(`Výber prepnutý — parcela ${hit.parcel_no}.`); }
         else selectOne(hit.id);
       } else {
         setIdentified(null);
         if (!(e.ctrlKey || e.metaKey || e.shiftKey)) setSelection([]);
+        // ESKN identify len pre prázdne miesto / parcelu mimo našich k.ú.
+        if (esknMode) { const ll = unproject(x, y); runEsknIdentify(ll.lng, ll.lat); }
       }
-      if (esknMode) { const ll = unproject(x, y); runEsknIdentify(ll.lng, ll.lat); }
     }
   };
 
@@ -1492,7 +1495,7 @@ export function MapView({
 
         {/* Živý ESKN identify — panel len pre parcelu MIMO našich k.ú. (pri našej parcele sa ESKN+AVM zlúči do rich panela nižšie → vždy len jeden panel) */}
         {esknMode && (esknHit || esknBusy) && !identified ? (
-          <div className="absolute right-14 top-16 bottom-14 z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur max-md:inset-x-2 max-md:right-2 max-md:top-auto max-md:bottom-2 max-md:max-h-[58vh] max-md:w-auto">
+          <div className="absolute left-3 top-16 bottom-14 z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur max-md:inset-x-2 max-md:right-2 max-md:top-auto max-md:bottom-2 max-md:max-h-[58vh] max-md:w-auto">
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="font-semibold text-fg">Parcela — ESKN + naše dáta</span>
               <button onClick={() => setEsknHit(null)} className="text-muted hover:text-fg" title="Zavrieť">✕</button>
@@ -1680,7 +1683,7 @@ export function MapView({
 
       {/* Pravý vertikálny toolbar (ZBGIS štýl): zoom + poloha */}
       {view ? (
-        <div className="absolute right-3 top-16 z-20 flex flex-col overflow-hidden rounded-lg border border-line bg-surface/95 shadow backdrop-blur">
+        <div className="absolute bottom-24 right-3 z-20 flex flex-col overflow-hidden rounded-lg border border-line bg-surface/95 shadow backdrop-blur">
           <button onClick={() => setView({ X: view.X, Y: view.Y, zoom: Math.min(ZMAX, view.zoom + 1) })} title="Priblížiť" className="h-8 w-8 border-b border-line text-lg leading-none text-fg hover:bg-surface-2">+</button>
           <button onClick={() => setView({ X: view.X, Y: view.Y, zoom: Math.max(ZMIN, view.zoom - 1) })} title="Oddialiť" className="h-8 w-8 border-b border-line text-lg leading-none text-fg hover:bg-surface-2">−</button>
           <button onClick={locateMe} title="Moja poloha (GPS)" className="h-8 w-8 border-b border-line text-sm leading-none text-fg hover:bg-surface-2">◎</button>
@@ -1697,7 +1700,7 @@ export function MapView({
         </div>
       ) : null}
 
-      <div className="absolute left-3 top-3 flex w-52 flex-col gap-2">
+      <div className="absolute right-3 top-32 z-20 flex max-h-[calc(100%-9rem)] w-52 flex-col gap-2 overflow-y-auto">
         <div className="flex overflow-hidden rounded-lg border border-line bg-surface/95 backdrop-blur">
           {([["pan", "arrow", "Pan"], ["select", "target", "Výber"], ["measure", "ruler", "Meranie"], ["upinfo", "zone", "ÚP"]] as const).map(([t, ic, lbl]) => (
             <button
@@ -2129,7 +2132,7 @@ export function MapView({
           <a href="/reporty" className="mt-1.5 block text-center text-[10px] text-muted underline hover:text-fg">Report Center (evidenčný list, pack) →</a>
         </div>
       ) : identified ? (
-        <div className="absolute right-14 top-16 bottom-14 z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface/95 p-4 backdrop-blur max-md:inset-x-2 max-md:right-2 max-md:top-auto max-md:bottom-2 max-md:max-h-[58vh] max-md:w-auto">
+        <div className="absolute left-3 top-16 bottom-14 z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface/95 p-4 backdrop-blur max-md:inset-x-2 max-md:right-2 max-md:top-auto max-md:bottom-2 max-md:max-h-[58vh] max-md:w-auto">
           <div className="flex items-start justify-between">
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted">Parcela {identified.kn_type}</div>
@@ -2309,10 +2312,20 @@ export function MapView({
             <div className="mt-3"><SietiPanel lat={identified.centroid_lat} lng={identified.centroid_lng} /></div>
           ) : null}
 
+          {/* Primárna akcia — Výpis z LV (jeden klik, hore v paneli, netreba rozbaľovať) */}
+          {identified.lv_no != null && datasetId ? (
+            <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId, lvNo: String(identified.lv_no) }} search={{ typ: "vypis" as const }}
+              className="mt-3 flex items-center justify-center gap-1 rounded-md border border-ink bg-ink px-3 py-2 text-sm font-medium text-cream hover:opacity-90">
+              📄 Výpis z LV č. {identified.lv_no} →
+            </Link>
+          ) : identified.lv_no != null && !datasetId ? (
+            <div className="mt-3 rounded-md border border-line px-3 py-2 text-center text-xs text-muted">Výpis LV otvoríš z datasetu (vyber k.ú. v Datasety) — táto mapa nemá kontext datasetu.</div>
+          ) : null}
+
           {/* PDF dossier parcely — jedno-klik podklad na klienta/kolegu */}
           {identified.parcel_no && datasetId ? (
             <Link to="/report/$datasetId/$parcelNo" params={{ datasetId, parcelNo: identified.parcel_no }}
-              className="mt-3 flex items-center justify-center gap-1 rounded-md border border-ink bg-ink px-3 py-2 text-sm font-medium text-cream hover:opacity-90">
+              className="mt-2 flex items-center justify-center gap-1 rounded-md border border-line px-3 py-2 text-sm font-medium text-fg hover:bg-surface-2">
               📄 PDF dossier parcely →
             </Link>
           ) : null}
