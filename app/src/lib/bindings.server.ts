@@ -24,6 +24,7 @@ type AppEnv = {
   CONTAINER?: DurableObjectNamespace;
   HF_ENV?: string;
   APP_SLUG?: string;
+  ANTHROPIC_API_KEY?: string; // secret — LLM NL prieskum (Haiku). Ak nie je nastavený, NL padá späť na pravidlá.
 };
 
 export function bindings(): AppEnv {

@@ -14,15 +14,15 @@ export const Route = createFileRoute("/prieskum")({
 type Res = Awaited<ReturnType<typeof nlQuery>>;
 
 const EXAMPLES = [
+  "prededené v roku 2026 nad 3000 m²",
+  "exekúcia zapísaná od roku 2025",
+  "záložné právo od 2024 stavebné",
+  "dedičstvo 2023 aspoň 5 spoluvlastníkov",
   "absentér nevysporiadané 5 spoluvlastníkov",
   "SPF štát stavebný potenciál",
   "dedičské bez tiarch nad 5000",
   "firmy dedičské",
-  "s ťarchami SPF",
   "E-KN nevysporiadané",
-  "zahraniční vlastníci dedičské",
-  "stavebné bez zosuvu",
-  "dedičské do 10 min k diaľnici",
   "Novák",
   "pozemok Čadca do 30000",
   "byt Žilina predaj",
@@ -128,7 +128,8 @@ function PrieskumPage() {
       ) : null}
 
       {res && !empty ? (
-        <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-2">
+          {res.llmUsed ? <span className="rounded-full border border-brand/40 bg-brand/5 px-2 py-0.5 text-[11px] text-brand" title="Dopyt spracovala AI (Claude Haiku) — rozumie ľubovoľným podmienkam vrátane rokov a právnych udalostí">🤖 AI porozumela dopytu</span> : <span />}
           <button onClick={exportShortlist} className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-fg hover:border-ink" title="Branded prehľad nájdených LV / vlastníkov / inzerátov (.doc) na tlač / poradu">⬇ Export shortlist (.doc)</button>
         </div>
       ) : null}

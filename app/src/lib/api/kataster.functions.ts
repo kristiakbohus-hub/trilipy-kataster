@@ -263,8 +263,88 @@ type NlHit = {
   dataset_id: string; ku_name: string; lv_no: number; co_owners: number; has_spf: number;
   dedic: number; buildable: number; clean_title: number; absenter_ratio: number; total_area: number; oldest_birth_year: number | null;
 };
+// ——— LLM vrstva NL prieskumu (Haiku): NL dopyt → štruktúrovaný filter cez forced tool ———
+// Bezpečné: beží LEN keď je nastavený ANTHROPIC_API_KEY (secret). Pri chýbajúcom kľúči / chybe → null → padne späť na pravidlá.
+// LLM NEgeneruje SQL — vráti len whitelist polia, ktoré ja preložím na parametrizované SQL.
+type LlmNlFilter = {
+  co_owners_min?: number; has_spf?: boolean; buildable?: boolean; clean_title?: boolean;
+  total_area_min?: number; total_area_max?: number; oldest_birth_year_max?: number;
+  legal?: { event: "inheritance" | "execution" | "lien" | "sale" | "gift"; yearOp: "gte" | "lte" | "eq" | "any"; year?: number };
+  sort?: "score" | "area" | "owners";
+};
+const LLM_LEGAL_COL: Record<string, "inh" | "exek" | "lien" | "sale" | "gift"> = { inheritance: "inh", execution: "exek", lien: "lien", sale: "sale", gift: "gift" };
+const LLM_LEGAL_LABEL: Record<string, string> = { inheritance: "dedičstvo", execution: "exekúcia", lien: "záložné právo", sale: "predaj", gift: "darovanie" };
+
+async function llmParseNl(query: string, apiKey: string): Promise<LlmNlFilter | null> {
+  const tool = {
+    name: "filter_lv",
+    description: "Preloží prirodzený dopyt používateľa na filter listov vlastníctva (LV) v slovenskom katastri. Vyplň len polia, ktoré dopyt naozaj spomína.",
+    input_schema: {
+      type: "object",
+      properties: {
+        co_owners_min: { type: "integer", description: "minimálny počet spoluvlastníkov na LV" },
+        has_spf: { type: "boolean", description: "LV s podielom SPF/štátu" },
+        buildable: { type: "boolean", description: "stavebný/zastavateľný potenciál" },
+        clean_title: { type: "boolean", description: "true = bez tiarch (čistý titul); false = s ťarchami/nečistý" },
+        total_area_min: { type: "integer", description: "minimálna celková výmera LV v m²" },
+        total_area_max: { type: "integer", description: "maximálna celková výmera LV v m²" },
+        oldest_birth_year_max: { type: "integer", description: "najstarší vlastník narodený najneskôr v tomto roku (starí vlastníci)" },
+        legal: {
+          type: "object", description: "právna udalosť na LV a jej rok",
+          properties: {
+            event: { type: "string", enum: ["inheritance", "execution", "lien", "sale", "gift"], description: "dedičstvo/prededené=inheritance, exekúcia=execution, záložné právo=lien, predaj/kúpa=sale, darovanie=gift" },
+            yearOp: { type: "string", enum: ["gte", "lte", "eq", "any"], description: "od roku=gte, do roku=lte, v roku=eq, bez roku=any" },
+            year: { type: "integer" },
+          },
+          required: ["event", "yearOp"],
+        },
+        sort: { type: "string", enum: ["score", "area", "owners"] },
+      },
+    },
+  };
+  const body = {
+    model: "claude-haiku-4-5", max_tokens: 1024,
+    system: "Si prekladač dopytov pre slovenský kataster nehnuteľností. Používateľ zadá dopyt v prirodzenej reči (slovensky) a ty zavoláš nástroj filter_lv s poľami, ktoré dopyt vyjadruje. Vyplň LEN spomenuté polia; nič si nevymýšľaj. Roky sú 4-ciferné (napr. 2025).",
+    tools: [tool], tool_choice: { type: "tool", name: "filter_lv" },
+    messages: [{ role: "user", content: query }],
+  };
+  const r = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) return null;
+  const j = (await r.json()) as { content?: Array<{ type: string; input?: LlmNlFilter }> };
+  const tu = (j.content ?? []).find((c) => c.type === "tool_use");
+  return tu?.input ?? null;
+}
+// Preloží LLM filter na parametrizované SQL podmienky (whitelist). Vráti reason label pre právnu udalosť.
+function applyLlmFilter(f: LlmNlFilter, cond: string[], args: unknown[]): { legalJoin: boolean; reason: string | null } {
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const cm = num(f.co_owners_min); if (cm != null) { cond.push("sig.co_owners >= ?"); args.push(cm); }
+  if (f.has_spf === true) cond.push("sig.has_spf = 1");
+  if (f.buildable === true) cond.push("sig.buildable = 1");
+  if (f.clean_title === true) cond.push("sig.clean_title = 1");
+  if (f.clean_title === false) cond.push("sig.clean_title = 0");
+  const amin = num(f.total_area_min); if (amin != null) { cond.push("sig.total_area >= ?"); args.push(amin); }
+  const amax = num(f.total_area_max); if (amax != null) { cond.push("sig.total_area <= ?"); args.push(amax); }
+  const oby = num(f.oldest_birth_year_max); if (oby != null) { cond.push("sig.oldest_birth_year <= ?"); args.push(oby); }
+  let legalJoin = false; let reason: string | null = null;
+  const col = f.legal ? LLM_LEGAL_COL[f.legal.event] : undefined;
+  if (f.legal && col) {
+    legalJoin = true;
+    const mn = `ll.${col}_min`, mx = `ll.${col}_max`, y = num(f.legal.year);
+    if (f.legal.yearOp === "gte" && y != null) { cond.push(`${mx} >= ?`); args.push(y); }
+    else if (f.legal.yearOp === "lte" && y != null) { cond.push(`${mn} <= ?`); args.push(y); }
+    else if (f.legal.yearOp === "eq" && y != null) { cond.push(`${mn} <= ? AND ${mx} >= ?`); args.push(y, y); }
+    else cond.push(`${mx} IS NOT NULL`);
+    reason = LLM_LEGAL_LABEL[f.legal.event] + (y != null ? ` ${f.legal.yearOp === "gte" ? "od " : f.legal.yearOp === "lte" ? "do " : ""}${y}` : "");
+  }
+  return { legalJoin, reason };
+}
+
 export const nlQuery = createServerFn({ method: "POST" })
-  .validator(z.object({ query: z.string(), role: roleSchema, sort: z.enum(["score", "area", "owners"]).optional() }))
+  .validator(z.object({ query: z.string(), role: roleSchema, sort: z.enum(["score", "area", "owners"]).optional(), llm: z.boolean().optional() }))
   .handler(async ({ data }) => {
     const raw = data.query.trim();
     const s = raw.toLowerCase();
@@ -309,6 +389,17 @@ export const nlQuery = createServerFn({ method: "POST" })
       else cond.push(`${mx} IS NOT NULL`);
     } else if (/dedič|dedic/.test(s)) { cond.push("sig.dedic = 1"); } // spätná kompat
     if (/s\s*[tť]arch|bremen|nečist|necist/.test(s) && !legalEv) cond.push("sig.clean_title = 0");
+    // ——— LLM vrstva (Haiku): ak je secret ANTHROPIC_API_KEY, nahraď regex-filter presnejším štruktúrovaným. Fallback = regex vyššie. ———
+    let llmUsed = false; let llmReason: string | null = null;
+    const _apiKey = bindings().ANTHROPIC_API_KEY;
+    if (_apiKey && data.llm !== false && raw.length >= 3) {
+      const f = await llmParseNl(raw, _apiKey).catch(() => null);
+      if (f && Object.keys(f).length > 0) {
+        cond.length = 0; args.length = 0;                 // zahoď regex-filter, použi LLM (presnejší)
+        const ap = applyLlmFilter(f, cond, args);
+        legalJoin = ap.legalJoin; llmReason = ap.reason; llmUsed = true;
+      }
+    }
     // Post-filter intenty (aplikujú sa LACNO na top-N kandidátov cez indexované lookupy — NIE sken celej tabuľky):
     const wantCompany = /\bfirm|firemn|s\.?r\.?o|a\.?s\.?|právnick|pravnick|spolo[cč]n|družstv|druzstv/.test(s);
     const wantForeign = /zahrani[cč]|cudzin/.test(s);
@@ -333,7 +424,8 @@ export const nlQuery = createServerFn({ method: "POST" })
       const rawScore = (w.co * Math.min(r.co_owners ?? 0, 20)) / 20 + w.spf * (r.has_spf ?? 0) + w.dedic * (r.dedic ?? 0)
         + w.buildable * (r.buildable ?? 0) + w.absenter * (r.absenter_ratio ?? 0) + w.clean * (r.clean_title ?? 0);
       const reasons: string[] = [];
-      if (legalEv) reasons.push(({ inh: "dedičstvo", exek: "exekúcia", lien: "záložné právo", sale: "predaj", gift: "darovanie" })[legalEv] + (yr ? ` ${yr.op === "=" ? "" : yr.op + " "}${yr.y}` : ""));
+      if (llmUsed) { if (llmReason) reasons.push(llmReason); }
+      else if (legalEv) reasons.push(({ inh: "dedičstvo", exek: "exekúcia", lien: "záložné právo", sale: "predaj", gift: "darovanie" })[legalEv] + (yr ? ` ${yr.op === "=" ? "" : yr.op + " "}${yr.y}` : ""));
       if ((r.co_owners ?? 0) >= 5) reasons.push(`${r.co_owners} spoluvlastníkov`);
       if (r.has_spf) reasons.push("SPF / štát");
       if (r.dedic) reasons.push(`dedičské${r.oldest_birth_year ? ` (${r.oldest_birth_year})` : ""}`);
@@ -452,6 +544,7 @@ export const nlQuery = createServerFn({ method: "POST" })
       lv: { count: scoredF.length, results: scoredF.slice(0, 80), note: lvNote },
       owners,
       market,
+      llmUsed,
     };
   });
 
@@ -828,7 +921,7 @@ export const runMyAlerts = createServerFn({ method: "POST" })
     let newTotal = 0;
     for (const sv of rows) {
       let res: Awaited<ReturnType<typeof nlQuery>> | null = null;
-      try { res = await nlQuery({ data: { query: sv.query, role: data.role, sort: ((sv.sort as "score" | "area" | "owners") || "score") } }); } catch { continue; }
+      try { res = await nlQuery({ data: { query: sv.query, role: data.role, sort: ((sv.sort as "score" | "area" | "owners") || "score"), llm: false } }); } catch { continue; }
       const hits = res?.lv.results ?? [];
       const seen = new Set((await q<{ gid: string }>("SELECT gid FROM alert_seen WHERE saved_id=?", [sv.id])).map((r) => r.gid));
       const firstRun = seen.size === 0;
@@ -858,7 +951,7 @@ async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; 
     checked++;
     const role = ((await q<{ role: string }>("SELECT role FROM users WHERE id=?", [sv.user_id]))[0]?.role ?? "analytik") as Role;
     let res: Awaited<ReturnType<typeof nlQuery>> | null = null;
-    try { res = await nlQuery({ data: { query: sv.query, role, sort: ((sv.sort as "score" | "area" | "owners") || "score") } }); } catch { continue; }
+    try { res = await nlQuery({ data: { query: sv.query, role, sort: ((sv.sort as "score" | "area" | "owners") || "score"), llm: false } }); } catch { continue; }
     const hits = res?.lv.results ?? [];
     const seen = new Set((await q<{ gid: string }>("SELECT gid FROM alert_seen WHERE saved_id=?", [sv.id])).map((r) => r.gid));
     const firstRun = seen.size === 0;
