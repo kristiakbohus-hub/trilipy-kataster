@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "./kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -91,6 +91,8 @@ function RoleSwitcher() {
 export function AppShell({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const { signOut, user } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
+  useEffect(() => { setMenuOpen(false); }, [pathname]); // zavri mobilné menu po prechode
 
   return (
     <div className="min-h-dvh bg-cream text-fg">
@@ -112,6 +114,13 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="md:pl-60">
         <header className="sticky top-0 z-30 border-b border-line bg-cream/90 backdrop-blur">
           <div className="flex items-center gap-3 px-4 py-3 md:px-6">
+            <button
+              onClick={() => setMenuOpen(true)}
+              aria-label="Otvoriť menu"
+              className="-ml-1 rounded-md border border-line px-2.5 py-1.5 text-lg leading-none text-fg hover:bg-surface-2 md:hidden"
+            >
+              ☰
+            </button>
             <div className="md:hidden">
               <Brand />
             </div>
@@ -132,14 +141,26 @@ export function AppShell({ children }: { children: ReactNode }) {
               </button>
             </div>
           </div>
-          {/* Mobile nav */}
-          <nav className="flex gap-1 overflow-x-auto border-t border-line px-3 py-2 md:hidden">
-            <NavList pathname={pathname} />
-          </nav>
         </header>
 
         <main className="mx-auto max-w-[1200px] px-4 py-6 md:px-6 md:py-8">{children}</main>
       </div>
+
+      {/* Mobilné menu — výsuvný panel (hamburger) namiesto stlačeného horizontálneho pásu */}
+      {menuOpen ? (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setMenuOpen(false)} aria-hidden />
+          <aside className="absolute inset-y-0 left-0 flex w-[82%] max-w-xs flex-col border-r border-line bg-paper px-3 py-4 shadow-xl">
+            <div className="flex shrink-0 items-center justify-between px-2">
+              <Brand />
+              <button onClick={() => setMenuOpen(false)} aria-label="Zavrieť menu" className="rounded-md border border-line px-2.5 py-1 text-lg leading-none text-fg hover:bg-surface-2">✕</button>
+            </div>
+            <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
+              <NavList pathname={pathname} onNavigate={() => setMenuOpen(false)} />
+            </nav>
+          </aside>
+        </div>
+      ) : null}
     </div>
   );
 }
