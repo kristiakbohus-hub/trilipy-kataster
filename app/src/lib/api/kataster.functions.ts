@@ -540,8 +540,31 @@ export const nlQuery = createServerFn({ method: "POST" })
       market = { count: mrows.length, results: mrows };
     }
 
+    // ——— 1b) Nehnuteľnosti podľa AKTUÁLNEJ akvizície (asset_acquisitions) — presné byt/parcela hity ———
+    // Jadro NL prieskumu pre „byty prededené v roku 2026", „exekúcia zapísaná od 2025" na úrovni
+    // konkrétnej nehnuteľnosti (nie len LV). Riadi sa rovnakými signálmi (typ udalosti + rok + druh).
+    type FlatHit = { kod_ku: string; ku_name: string | null; lv_number: string | null; asset_type: string | null; unit_number: string | null; area_m2: number | null; acquisition_kind: string | null; registration_year: number | null; instrument_year: number | null; owner_addr_differs: number; has_person: number };
+    let flats: { count: number; results: FlatHit[] } = { count: 0, results: [] };
+    const acqKind = legalEv ? ({ inh: "inheritance", exek: "execution", lien: "lien", sale: "sale", gift: "gift" } as const)[legalEv] : null;
+    if (acqKind) {
+      const fcond: string[] = ["acquisition_kind = ?"]; const fargs: unknown[] = [acqKind];
+      if (yr && yr.op === ">=") { fcond.push("registration_year >= ?"); fargs.push(yr.y); }
+      else if (yr && yr.op === "<=") { fcond.push("registration_year <= ?"); fargs.push(yr.y); }
+      else if (yr) { fcond.push("registration_year = ?"); fargs.push(yr.y); }
+      const at = /\bbyt/.test(s) ? "flat" : /pozem|parcel/.test(s) ? "parcel" : /\bdom|stavb|budov/.test(s) ? "building" : null;
+      if (at === "flat") fcond.push("asset_type = 'flat'");
+      else if (at === "parcel") fcond.push("asset_type IN ('parcel_c','parcel_e')");
+      else if (at === "building") fcond.push("asset_type = 'building'");
+      if (/mimo\s*mest|neb[yý]v|absent|vlastník\s*inde|cudzin/.test(s)) fcond.push("owner_addr_differs = 1");
+      const frows = await q<FlatHit>(
+        `SELECT kod_ku, ku_name, lv_number, asset_type, unit_number, area_m2, acquisition_kind, registration_year, instrument_year, owner_addr_differs, has_person
+         FROM asset_acquisitions WHERE ${fcond.join(" AND ")} ORDER BY registration_year DESC, kod_ku, lv_number LIMIT 300`, fargs).catch(() => [] as FlatHit[]);
+      flats = { count: frows.length, results: frows };
+    }
+
     return {
       lv: { count: scoredF.length, results: scoredF.slice(0, 80), note: lvNote },
+      flats,
       owners,
       market,
       llmUsed,
@@ -1010,6 +1033,34 @@ export const ingestChanges = createServerFn({ method: "POST" })
     const batch = data.changes.map((c) => stmt.bind(c.datasetId ?? null, c.lvNo ?? null, c.parcelNo ?? null, c.entity, c.field ?? null, c.oldValue ?? null, c.newValue ?? null, c.changeType, c.importance ?? "normal", data.runId ?? null));
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
     return { ok: true, inserted: data.changes.length };
+  });
+
+// Bulk zápis per-nehnuteľnosť akvizícií (Mac → asset_acquisitions). Auth = alert_secret.
+// replaceKu: pred vložením zmaže dané k.ú. (idempotentný re-push). Batch ≤1000 riadkov/volanie.
+export const ingestAcquisitions = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    replaceKu: z.array(z.string()).max(64).optional(),
+    rows: z.array(z.object({
+      kodKu: z.string(), kuName: z.string().optional(), lvNumber: z.string().optional(),
+      assetType: z.string().optional(), assetId: z.number().optional(), unitNumber: z.string().optional(),
+      areaM2: z.number().optional(), kind: z.string().optional(), regYear: z.number().optional(),
+      instYear: z.number().optional(), addrDiffers: z.number().optional(), hasPerson: z.number().optional(),
+    })).max(1000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    if (data.replaceKu && data.replaceKu.length) {
+      const ph = data.replaceKu.map(() => "?").join(",");
+      await DB.prepare(`DELETE FROM asset_acquisitions WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
+    }
+    const stmt = DB.prepare("INSERT INTO asset_acquisitions (kod_ku,ku_name,lv_number,asset_type,asset_id,unit_number,area_m2,acquisition_kind,registration_year,instrument_year,owner_addr_differs,has_person) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.lvNumber ?? null, r.assetType ?? null, r.assetId ?? null, r.unitNumber ?? null, r.areaM2 ?? null, r.kind ?? null, r.regYear ?? null, r.instYear ?? null, r.addrDiffers ?? 0, r.hasPerson ?? 0));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
   });
 
 // ——— PDF výstup: Výpis z LV / Evidenčný list (pracovný, TRI LIPY brand) ———

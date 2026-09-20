@@ -40,6 +40,7 @@ import { Route as OgcRouteImport } from './routes/ogc'
 import { Route as MapproxyRouteImport } from './routes/mapproxy'
 import { Route as ApiRunAlertsRouteImport } from './routes/api.run-alerts'
 import { Route as ApiIngestChangesRouteImport } from './routes/api.ingest-changes'
+import { Route as ApiIngestAcquisitionsRouteImport } from './routes/api.ingest-acquisitions'
 import { Route as VlastniciRouteImport } from './routes/vlastnici'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as PravnyReferentRouteImport } from './routes/pravny-referent'
@@ -200,6 +201,11 @@ const ApiIngestChangesRoute = ApiIngestChangesRouteImport.update({
   path: '/api/ingest-changes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestAcquisitionsRoute = ApiIngestAcquisitionsRouteImport.update({
+  id: '/api/ingest-acquisitions',
+  path: '/api/ingest-acquisitions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlastniciRoute = VlastniciRouteImport.update({
   id: '/vlastnici',
   path: '/vlastnici',
@@ -249,6 +255,7 @@ export interface FileRoutesByFullPath {
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
+  '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -286,6 +293,7 @@ export interface FileRoutesByTo {
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
+  '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -324,6 +332,7 @@ export interface FileRoutesById {
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
+  '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -363,6 +372,7 @@ export interface FileRouteTypes {
     | '/mapproxy'
     | '/api/run-alerts'
     | '/api/ingest-changes'
+    | '/api/ingest-acquisitions'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -400,6 +410,7 @@ export interface FileRouteTypes {
     | '/mapproxy'
     | '/api/run-alerts'
     | '/api/ingest-changes'
+    | '/api/ingest-acquisitions'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -437,6 +448,7 @@ export interface FileRouteTypes {
     | '/mapproxy'
     | '/api/run-alerts'
     | '/api/ingest-changes'
+    | '/api/ingest-acquisitions'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/upinfo/$id'
@@ -473,6 +485,7 @@ export interface RootRouteChildren {
   MapproxyRoute: typeof MapproxyRoute
   ApiRunAlertsRoute: typeof ApiRunAlertsRoute
   ApiIngestChangesRoute: typeof ApiIngestChangesRoute
+  ApiIngestAcquisitionsRoute: typeof ApiIngestAcquisitionsRoute
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
   ReportDatasetIdParcelNoRoute: typeof ReportDatasetIdParcelNoRoute
@@ -517,6 +530,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ingest-changes'
       fullPath: '/api/ingest-changes'
       preLoaderRoute: typeof ApiIngestChangesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-acquisitions': {
+      id: '/api/ingest-acquisitions'
+      path: '/api/ingest-acquisitions'
+      fullPath: '/api/ingest-acquisitions'
+      preLoaderRoute: typeof ApiIngestAcquisitionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/run-alerts': {
@@ -761,6 +781,7 @@ const rootRouteChildren: RootRouteChildren = {
   MapproxyRoute: MapproxyRoute,
   ApiRunAlertsRoute: ApiRunAlertsRoute,
   ApiIngestChangesRoute: ApiIngestChangesRoute,
+  ApiIngestAcquisitionsRoute: ApiIngestAcquisitionsRoute,
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,
   ReportDatasetIdParcelNoRoute: ReportDatasetIdParcelNoRoute,

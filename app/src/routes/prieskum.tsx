@@ -45,7 +45,7 @@ function PrieskumPage() {
     finally { setBusy(false); }
   }
 
-  const empty = res && res.lv.count === 0 && res.owners.count === 0 && res.market.count === 0;
+  const empty = res && res.lv.count === 0 && res.flats.count === 0 && res.owners.count === 0 && res.market.count === 0;
 
   function exportShortlist() {
     if (!res) return;
@@ -59,6 +59,13 @@ function PrieskumPage() {
       body += res.lv.results.map((r) => `<tr><td>${r.score}</td><td>${he(r.ku_name ?? "")}</td><td>${r.lv_no}</td><td>${r.co_owners}</td><td>${r.total_area.toLocaleString("sk-SK")} m²</td><td>${he(r.reasons.join(", "))}</td></tr>`).join("");
       body += `</table>`;
       if (res.lv.note) body += `<p style="font-size:10px;color:#888">${he(res.lv.note)}</p>`;
+    }
+    if (res.flats.results.length) {
+      const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "predaj", gift: "darovanie", execution: "exekúcia", lien: "záložné" };
+      const typSk: Record<string, string> = { flat: "byt", parcel_c: "parcela C", parcel_e: "parcela E", building: "stavba" };
+      body += `<h3 style="font-family:Georgia,serif">Nehnuteľnosti podľa právnej udalosti (${res.flats.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["k.ú.", "LV", "Typ", "Udalosť", "Rok", "Výmera", "Vlastník inde"]);
+      body += res.flats.results.map((f) => `<tr><td>${he(f.ku_name ?? f.kod_ku)}</td><td>${he(f.lv_number ?? "")}</td><td>${he(typSk[f.asset_type ?? ""] ?? f.asset_type ?? "")}</td><td>${he(kindSk[f.acquisition_kind ?? ""] ?? f.acquisition_kind ?? "")}</td><td>${f.registration_year ?? ""}</td><td>${f.area_m2 ? Math.round(f.area_m2).toLocaleString("sk-SK") + " m²" : ""}</td><td>${f.owner_addr_differs ? "áno" : ""}</td></tr>`).join("");
+      body += `</table>`;
     }
     if (res.owners.results.length) {
       body += `<h3 style="font-family:Georgia,serif">Vlastníci (${res.owners.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["Meno", "Typ", "Výskyt"]);
@@ -155,6 +162,31 @@ function PrieskumPage() {
                 </div>
               </div>
             ))}
+          </div>
+        </Card>
+      ) : null}
+
+      {/* ——— Nehnuteľnosti podľa právnej udalosti (asset_acquisitions) ——— */}
+      {res && res.flats.count > 0 ? (
+        <Card className="p-4">
+          <SectionHeader title={`Nehnuteľnosti podľa právnej udalosti (${res.flats.count})`} hint={res.flats.count >= 300 ? "top 300" : "konkrétne byty/parcely podľa aktuálneho nadobúdacieho titulu"} />
+          <div className="mt-2 divide-y divide-line">
+            {res.flats.results.map((f, i) => {
+              const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "predaj", gift: "darovanie", execution: "exekúcia", lien: "záložné" };
+              const typSk: Record<string, string> = { flat: "byt", parcel_c: "parcela C", parcel_e: "parcela E", building: "stavba" };
+              return (
+                <div key={`${f.kod_ku}-${f.lv_number}-${i}`} className="flex items-center gap-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-fg">{typSk[f.asset_type ?? ""] ?? f.asset_type} · LV {f.lv_number ?? "—"} · {f.ku_name ?? f.kod_ku}</div>
+                    <div className="truncate text-[12px] text-muted">
+                      {kindSk[f.acquisition_kind ?? ""] ?? f.acquisition_kind}{f.registration_year ? ` ${f.registration_year}` : ""}
+                      {f.area_m2 ? ` · ${Math.round(f.area_m2).toLocaleString("sk-SK")} m²` : ""}
+                      {f.owner_addr_differs ? " · vlastník býva inde" : ""}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </Card>
       ) : null}
