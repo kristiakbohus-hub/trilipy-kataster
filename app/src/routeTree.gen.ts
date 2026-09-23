@@ -41,6 +41,7 @@ import { Route as MapproxyRouteImport } from './routes/mapproxy'
 import { Route as ApiRunAlertsRouteImport } from './routes/api.run-alerts'
 import { Route as ApiIngestChangesRouteImport } from './routes/api.ingest-changes'
 import { Route as ApiIngestAcquisitionsRouteImport } from './routes/api.ingest-acquisitions'
+import { Route as ApiIngestLandsearchRouteImport } from './routes/api.ingest-landsearch'
 import { Route as VlastniciRouteImport } from './routes/vlastnici'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as PravnyReferentRouteImport } from './routes/pravny-referent'
@@ -206,6 +207,11 @@ const ApiIngestAcquisitionsRoute = ApiIngestAcquisitionsRouteImport.update({
   path: '/api/ingest-acquisitions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestLandsearchRoute = ApiIngestLandsearchRouteImport.update({
+  id: '/api/ingest-landsearch',
+  path: '/api/ingest-landsearch',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlastniciRoute = VlastniciRouteImport.update({
   id: '/vlastnici',
   path: '/vlastnici',
@@ -256,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
+  '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -294,6 +301,7 @@ export interface FileRoutesByTo {
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
+  '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -333,6 +341,7 @@ export interface FileRoutesById {
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
+  '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -373,6 +382,7 @@ export interface FileRouteTypes {
     | '/api/run-alerts'
     | '/api/ingest-changes'
     | '/api/ingest-acquisitions'
+    | '/api/ingest-landsearch'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -411,6 +421,7 @@ export interface FileRouteTypes {
     | '/api/run-alerts'
     | '/api/ingest-changes'
     | '/api/ingest-acquisitions'
+    | '/api/ingest-landsearch'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -449,6 +460,7 @@ export interface FileRouteTypes {
     | '/api/run-alerts'
     | '/api/ingest-changes'
     | '/api/ingest-acquisitions'
+    | '/api/ingest-landsearch'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/upinfo/$id'
@@ -486,6 +498,7 @@ export interface RootRouteChildren {
   ApiRunAlertsRoute: typeof ApiRunAlertsRoute
   ApiIngestChangesRoute: typeof ApiIngestChangesRoute
   ApiIngestAcquisitionsRoute: typeof ApiIngestAcquisitionsRoute
+  ApiIngestLandsearchRoute: typeof ApiIngestLandsearchRoute
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
   ReportDatasetIdParcelNoRoute: typeof ReportDatasetIdParcelNoRoute
@@ -537,6 +550,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ingest-acquisitions'
       fullPath: '/api/ingest-acquisitions'
       preLoaderRoute: typeof ApiIngestAcquisitionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-landsearch': {
+      id: '/api/ingest-landsearch'
+      path: '/api/ingest-landsearch'
+      fullPath: '/api/ingest-landsearch'
+      preLoaderRoute: typeof ApiIngestLandsearchRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/run-alerts': {
@@ -782,6 +802,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiRunAlertsRoute: ApiRunAlertsRoute,
   ApiIngestChangesRoute: ApiIngestChangesRoute,
   ApiIngestAcquisitionsRoute: ApiIngestAcquisitionsRoute,
+  ApiIngestLandsearchRoute: ApiIngestLandsearchRoute,
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,
   ReportDatasetIdParcelNoRoute: ReportDatasetIdParcelNoRoute,

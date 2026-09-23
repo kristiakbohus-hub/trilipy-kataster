@@ -45,7 +45,7 @@ function PrieskumPage() {
     finally { setBusy(false); }
   }
 
-  const empty = res && res.lv.count === 0 && res.flats.count === 0 && res.owners.count === 0 && res.market.count === 0;
+  const empty = res && res.lv.count === 0 && res.flats.count === 0 && (res.land?.count ?? 0) === 0 && res.owners.count === 0 && res.market.count === 0;
 
   function exportShortlist() {
     if (!res) return;
@@ -182,6 +182,32 @@ function PrieskumPage() {
                       {kindSk[f.acquisition_kind ?? ""] ?? f.acquisition_kind}{f.registration_year ? ` ${f.registration_year}` : ""}
                       {f.area_m2 ? ` · ${Math.round(f.area_m2).toLocaleString("sk-SK")} m²` : ""}
                       {f.owner_addr_differs ? " · vlastník býva inde" : ""}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ) : null}
+
+      {/* ——— Pozemkové príležitosti (land-search) ——— */}
+      {res && (res.land?.count ?? 0) > 0 ? (
+        <Card className="p-4">
+          <SectionHeader title={`Pozemkové príležitosti (${res.land!.count})`} hint={res.land!.count >= 200 ? "top 200 podľa skóre" : "vhodné celky pre výstavbu — zoradené podľa skóre kvality"} />
+          <div className="mt-2 divide-y divide-line">
+            {res.land!.results.map((o, i) => {
+              const badge = o.verdict === "MATCH" ? "#1E7A3E" : "#B8860B";
+              return (
+                <div key={`${o.kod_ku}-${o.parcels}-${i}`} className="flex items-center gap-3 py-2">
+                  <span className="rounded-full px-2 py-0.5 text-[11px] font-bold text-white" style={{ background: badge }}>{o.verdict}</span>
+                  <div className="text-sm font-bold tabular-nums text-fg">{o.quality ?? "—"}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium text-fg">
+                      {o.area_m2 ? `${o.area_m2.toLocaleString("sk-SK")} m²` : ""} · {o.parcels ?? ""} · {o.ku_name ?? o.kod_ku}
+                    </div>
+                    <div className="truncate text-[12px] text-muted">
+                      {o.zone ?? ""}{o.shape ? ` · ${o.shape}` : ""}{o.access != null ? ` · prístup ${o.access}` : ""}{o.slope != null ? ` · svah ${o.slope} %` : ""}{o.access_times ? ` · ${o.access_times}` : ""}{o.ppf ? " · ⚠ PPF" : ""}
                     </div>
                   </div>
                 </div>

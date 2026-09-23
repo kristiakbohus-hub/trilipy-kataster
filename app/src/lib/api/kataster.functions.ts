@@ -562,9 +562,25 @@ export const nlQuery = createServerFn({ method: "POST" })
       flats = { count: frows.length, results: frows };
     }
 
+    // ——— 1c) POZEMKOVÉ PRÍLEŽITOSTI (land-search, predpočítané z Mac gold_li_engine → landsearch_results) ———
+    type LandHit = { kod_ku: string; ku_name: string | null; purpose: string | null; verdict: string | null; quality: number | null; area_m2: number | null; n_parcels: number | null; parcels: string | null; shape: string | null; zone: string | null; build: string | null; access: number | null; slope: number | null; frontage: number | null; ppf: number | null; existing_use: string | null; yard: string | null; access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null };
+    let land: { count: number; results: LandHit[] } = { count: 0, results: [] };
+    const landIntent = /pozemk|pozemok|stavebn|v[yý]stavb|lokalit|supermarket|pr[ií]le[žz]itost/.test(s);
+    if (landIntent) {
+      const lc: string[] = []; const la: unknown[] = [];
+      if (capName) { lc.push("ku_name LIKE ?"); la.push(`%${capName[1]}%`); }
+      if (/b[yý]van|rodinn|obytn|rezidenc/.test(s)) { lc.push("purpose = 'residential'"); }
+      else if (/priemysel|sklad|logist|hala/.test(s)) { lc.push("purpose = 'industrial'"); }
+      const lrows = await q<LandHit>(
+        `SELECT kod_ku, ku_name, purpose, verdict, quality, area_m2, n_parcels, parcels, shape, zone, build, access, slope, frontage, ppf, existing_use, yard, access_times, owners, n_owners, reason
+         FROM landsearch_results ${lc.length ? "WHERE " + lc.join(" AND ") : ""} ORDER BY (verdict = 'MATCH') DESC, quality DESC LIMIT 200`, la).catch(() => [] as LandHit[]);
+      land = { count: lrows.length, results: lrows };
+    }
+
     return {
       lv: { count: scoredF.length, results: scoredF.slice(0, 80), note: lvNote },
       flats,
+      land,
       owners,
       market,
       llmUsed,
@@ -1059,6 +1075,37 @@ export const ingestAcquisitions = createServerFn({ method: "POST" })
     }
     const stmt = DB.prepare("INSERT INTO asset_acquisitions (kod_ku,ku_name,lv_number,asset_type,asset_id,unit_number,area_m2,acquisition_kind,registration_year,instrument_year,owner_addr_differs,has_person) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
     const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.lvNumber ?? null, r.assetType ?? null, r.assetId ?? null, r.unitNumber ?? null, r.areaM2 ?? null, r.kind ?? null, r.regYear ?? null, r.instYear ?? null, r.addrDiffers ?? 0, r.hasPerson ?? 0));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
+  });
+
+// Bulk zápis POZEMKOVÝCH PRÍLEŽITOSTÍ (Mac gold_li_engine → landsearch_results). Auth = alert_secret.
+// replaceKu: pred vložením zmaže dané k.ú. (idempotentný re-push). Batch ≤1000 riadkov/volanie.
+export const ingestLandsearch = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    replaceKu: z.array(z.string()).max(64).optional(),
+    rows: z.array(z.object({
+      kodKu: z.string(), kuName: z.string().optional(), purpose: z.string().optional(),
+      verdict: z.string().optional(), quality: z.number().optional(), areaM2: z.number().optional(),
+      nParcels: z.number().optional(), parcels: z.string().optional(), shape: z.string().optional(),
+      zone: z.string().optional(), build: z.string().optional(), access: z.number().optional(),
+      slope: z.number().optional(), frontage: z.number().optional(), ppf: z.number().optional(),
+      existingUse: z.string().optional(), yard: z.string().optional(), accessTimes: z.string().optional(),
+      owners: z.string().optional(), nOwners: z.number().optional(), reason: z.string().optional(),
+    })).max(1000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    if (data.replaceKu && data.replaceKu.length) {
+      const ph = data.replaceKu.map(() => "?").join(",");
+      await DB.prepare(`DELETE FROM landsearch_results WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
+    }
+    const stmt = DB.prepare("INSERT INTO landsearch_results (kod_ku,ku_name,purpose,verdict,quality,area_m2,n_parcels,parcels,shape,zone,build,access,slope,frontage,ppf,existing_use,yard,access_times,owners,n_owners,reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.purpose ?? null, r.verdict ?? null, r.quality ?? null, r.areaM2 ?? null, r.nParcels ?? null, r.parcels ?? null, r.shape ?? null, r.zone ?? null, r.build ?? null, r.access ?? null, r.slope ?? null, r.frontage ?? null, r.ppf ?? 0, r.existingUse ?? null, r.yard ?? null, r.accessTimes ?? null, r.owners ?? null, r.nOwners ?? null, r.reason ?? null));
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
     return { ok: true, inserted: data.rows.length };
   });
