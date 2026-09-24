@@ -81,7 +81,7 @@ function RanoPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
                     <span className="font-medium text-fg">{l.title ?? "—"}</span>
-                    {l.privatny ? <Badge>súkromný</Badge> : <Badge>agentúra</Badge>}
+                    {l.privatny ? <Badge color="#1E7A3E">súkromný</Badge> : <Badge color="#6b7280">agentúra</Badge>}
                   </div>
                   <div className="mt-0.5 text-[12px] text-muted">
                     {l.obec ?? l.okres ?? ""}{l.area_m2 ? ` · ${l.area_m2.toLocaleString("sk-SK")} m²` : ""} · {eur(l.price_eur)}{l.price_per_m2 ? ` (${Math.round(l.price_per_m2)} €/m²)` : ""}
