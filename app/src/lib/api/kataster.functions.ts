@@ -3194,7 +3194,9 @@ function parseMorningPrompt(s: string, okresy: string[]): { ptype?: string; okre
   const t = (s || "").toLowerCase();
   const norm = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
   let ptype: string | undefined;
-  if (/chat|chalup/.test(t)) ptype = "chata";
+  const kwExtra: string[] = [];
+  // POZOR: scraper kategorizuje len dom/pozemok/byt (chata/chalupa NIE) → chatu hľadaj kľúčovým slovom v titulku.
+  if (/chat|chalup/.test(t)) kwExtra.push("chat");
   else if (/\bbyt/.test(t)) ptype = "byt";
   else if (/\bdom\b|rodinn/.test(t)) ptype = "dom";
   else if (/pozem|parcel|stavebn/.test(t)) ptype = "pozemok";
@@ -3205,7 +3207,7 @@ function parseMorningPrompt(s: string, okresy: string[]): { ptype?: string; okre
   const nt = norm(t);
   if (/kysuc/.test(nt)) okres = "Čadca";                       // región Kysuce → okres Čadca
   if (!okres) for (const o of okresy) if (nt.includes(norm(o))) { okres = o; break; }
-  const keywords = _MORNING_KW.filter((k) => t.includes(k));
+  const keywords = [...kwExtra, ..._MORNING_KW.filter((k) => t.includes(k))];
   return { ptype, okres, maxPrice, keywords };
 }
 export const getMorningBriefing = createServerFn({ method: "POST" })
