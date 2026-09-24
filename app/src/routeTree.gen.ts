@@ -42,6 +42,7 @@ import { Route as ApiRunAlertsRouteImport } from './routes/api.run-alerts'
 import { Route as ApiIngestChangesRouteImport } from './routes/api.ingest-changes'
 import { Route as ApiIngestAcquisitionsRouteImport } from './routes/api.ingest-acquisitions'
 import { Route as ApiIngestLandsearchRouteImport } from './routes/api.ingest-landsearch'
+import { Route as ApiIngestParcelZoningRouteImport } from './routes/api.ingest-parcel-zoning'
 import { Route as VlastniciRouteImport } from './routes/vlastnici'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as PravnyReferentRouteImport } from './routes/pravny-referent'
@@ -212,6 +213,11 @@ const ApiIngestLandsearchRoute = ApiIngestLandsearchRouteImport.update({
   path: '/api/ingest-landsearch',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestParcelZoningRoute = ApiIngestParcelZoningRouteImport.update({
+  id: '/api/ingest-parcel-zoning',
+  path: '/api/ingest-parcel-zoning',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const VlastniciRoute = VlastniciRouteImport.update({
   id: '/vlastnici',
   path: '/vlastnici',
@@ -263,6 +269,7 @@ export interface FileRoutesByFullPath {
   '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
+  '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -302,6 +309,7 @@ export interface FileRoutesByTo {
   '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
+  '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -342,6 +350,7 @@ export interface FileRoutesById {
   '/api/ingest-changes': typeof ApiIngestChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
+  '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
@@ -383,6 +392,7 @@ export interface FileRouteTypes {
     | '/api/ingest-changes'
     | '/api/ingest-acquisitions'
     | '/api/ingest-landsearch'
+    | '/api/ingest-parcel-zoning'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -422,6 +432,7 @@ export interface FileRouteTypes {
     | '/api/ingest-changes'
     | '/api/ingest-acquisitions'
     | '/api/ingest-landsearch'
+    | '/api/ingest-parcel-zoning'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
@@ -461,6 +472,7 @@ export interface FileRouteTypes {
     | '/api/ingest-changes'
     | '/api/ingest-acquisitions'
     | '/api/ingest-landsearch'
+    | '/api/ingest-parcel-zoning'
     | '/sitemap.xml'
     | '/reporty/$id'
     | '/upinfo/$id'
@@ -499,6 +511,7 @@ export interface RootRouteChildren {
   ApiIngestChangesRoute: typeof ApiIngestChangesRoute
   ApiIngestAcquisitionsRoute: typeof ApiIngestAcquisitionsRoute
   ApiIngestLandsearchRoute: typeof ApiIngestLandsearchRoute
+  ApiIngestParcelZoningRoute: typeof ApiIngestParcelZoningRoute
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
   ReportDatasetIdParcelNoRoute: typeof ReportDatasetIdParcelNoRoute
@@ -557,6 +570,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ingest-landsearch'
       fullPath: '/api/ingest-landsearch'
       preLoaderRoute: typeof ApiIngestLandsearchRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-parcel-zoning': {
+      id: '/api/ingest-parcel-zoning'
+      path: '/api/ingest-parcel-zoning'
+      fullPath: '/api/ingest-parcel-zoning'
+      preLoaderRoute: typeof ApiIngestParcelZoningRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/run-alerts': {
@@ -803,6 +823,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiIngestChangesRoute: ApiIngestChangesRoute,
   ApiIngestAcquisitionsRoute: ApiIngestAcquisitionsRoute,
   ApiIngestLandsearchRoute: ApiIngestLandsearchRoute,
+  ApiIngestParcelZoningRoute: ApiIngestParcelZoningRoute,
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,
   ReportDatasetIdParcelNoRoute: ReportDatasetIdParcelNoRoute,

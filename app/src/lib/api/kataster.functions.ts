@@ -1110,6 +1110,48 @@ export const ingestLandsearch = createServerFn({ method: "POST" })
     return { ok: true, inserted: data.rows.length };
   });
 
+// ——— PER-PARCELA funkčné využitie z ÚP (georef výkres / GISPLAN WMS) — plní Mac, zobrazí LV výpis ———
+// replaceKu: pred vložením zmaže dané k.ú. (idempotentný re-push). Batch ≤1000 riadkov/volanie.
+export const ingestParcelZoning = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    replaceKu: z.array(z.string()).max(64).optional(),
+    rows: z.array(z.object({
+      kodKu: z.string(), parcelNo: z.string(), register: z.string(),
+      zone: z.string().optional(), verdict: z.string().optional(),
+    })).max(1000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    if (data.replaceKu && data.replaceKu.length) {
+      const ph = data.replaceKu.map(() => "?").join(",");
+      await DB.prepare(`DELETE FROM parcel_zoning WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
+    }
+    const stmt = DB.prepare("INSERT OR REPLACE INTO parcel_zoning (kod_ku,parcel_no,register,zone,verdict) VALUES (?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.parcelNo, r.register, r.zone ?? null, r.verdict ?? null));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
+  });
+
+// Per-LV funkčné využitie: pre parcely LV vráti { "parcelNo|register": zone }. Číta len parcely LV (šetrí D1).
+export const getLvZoning = createServerFn({ method: "POST" })
+  .validator(z.object({ kodKu: z.string(), parcels: z.array(z.object({ parcel_no: z.string(), register: z.string() })).max(600) }))
+  .handler(async ({ data }): Promise<Record<string, string>> => {
+    if (!data.parcels.length) return {};
+    const nums = Array.from(new Set(data.parcels.map((p) => p.parcel_no)));
+    const ph = nums.map(() => "?").join(",");
+    const rows = await q<{ parcel_no: string; register: string; zone: string | null }>(
+      `SELECT parcel_no, register, zone FROM parcel_zoning WHERE kod_ku=? AND parcel_no IN (${ph})`,
+      [data.kodKu, ...nums],
+    ).catch(() => []);
+    const m: Record<string, string> = {};
+    for (const r of rows) if (r.zone) m[`${r.parcel_no}|${r.register}`] = r.zone;
+    return m;
+  });
+
 // ——— PDF výstup: Výpis z LV / Evidenčný list (pracovný, TRI LIPY brand) ———
 type DocParcel = { register: string; parcel_no: string; area_m2: number; drp_text: string | null; placement: string | null };
 type DocBuilding = { descr: string; on_parcel: string | null };
