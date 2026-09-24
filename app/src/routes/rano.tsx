@@ -18,15 +18,19 @@ function RanoPage() {
   const [okres, setOkres] = useState("");
   const [ptype, setPtype] = useState("");
   const [onlyPrivate, setOnlyPrivate] = useState(true);
+  const [prompt, setPrompt] = useState("");
+  const [promptApplied, setPromptApplied] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     let alive = true; setBusy(true);
-    getMorningBriefing({ data: { okres: okres || undefined, ptype: ptype || undefined, onlyPrivate, limit: 15 } })
+    getMorningBriefing({ data: { okres: okres || undefined, ptype: ptype || undefined, onlyPrivate, prompt: promptApplied || undefined, limit: 15 } })
       .then((r) => { if (alive) { setB(r); setBusy(false); } })
       .catch(() => { if (alive) setBusy(false); });
     return () => { alive = false; };
-  }, [okres, ptype, onlyPrivate]);
+  }, [okres, ptype, onlyPrivate, promptApplied]);
+  const pz = b.parsed;
+  const parsedTxt = pz ? [pz.ptype, pz.okres, pz.maxPrice ? `do ${pz.maxPrice.toLocaleString("sk-SK")} €` : null, ...(pz.keywords ?? [])].filter(Boolean).join(" · ") : "";
 
   const dnes = b.today ? new Date(b.today).toLocaleDateString("sk-SK", { weekday: "long", day: "numeric", month: "long" }) : "";
   const greet = (() => { const h = new Date().getHours(); return h < 10 ? "Dobré ráno" : h < 18 ? "Dobrý deň" : "Dobrý večer"; })();
@@ -45,6 +49,21 @@ function RanoPage() {
         <Stat label="Súkromné príležitosti" value={String(b.summary.privateOpps)} />
         <Stat label="Naše ÚP deals (MATCH)" value={String(b.summary.upDeals)} />
       </div>
+
+      {/* Free-text prompt — „dnes hľadám…" */}
+      <form onSubmit={(e) => { e.preventDefault(); setPromptApplied(prompt.trim()); }} className="rounded-lg border border-line bg-surface/60 p-3">
+        <div className="flex gap-2">
+          <input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="napr. hľadám chatu do 30k v Kysuciach s výhľadom…"
+            className="min-w-0 flex-1 rounded-md border border-line bg-bg px-3 py-2 text-sm text-fg placeholder:text-muted" />
+          <button type="submit" className="shrink-0 rounded-md bg-ink px-4 py-2 text-sm font-medium text-cream">Hľadať</button>
+          {promptApplied ? <button type="button" onClick={() => { setPrompt(""); setPromptApplied(""); }} className="shrink-0 rounded-md border border-line px-3 py-2 text-sm text-muted hover:text-fg" aria-label="Vyčistiť">×</button> : null}
+        </div>
+        {promptApplied ? (
+          <div className="mt-1.5 text-[12px] text-muted">
+            {parsedTxt ? <>Rozumiem: <span className="font-medium text-fg">{parsedTxt}</span></> : "Nerozpoznal som konkrétne parametre — skús napr. „chata do 30000 v okrese Čadca s výhľadom"."}
+          </div>
+        ) : null}
+      </form>
 
       {/* Nastaviteľné podľa lokality + typu */}
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-surface/60 p-3">

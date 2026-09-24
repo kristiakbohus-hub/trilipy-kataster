@@ -3188,11 +3188,32 @@ export const getDealRadar = createServerFn({ method: "POST" })
 //     + naše ÚP-development príležitosti, nastaviteľné podľa lokality (okres) a typu (ptype). ———
 export type MorningListing = MarketOpp & { score: number; step: string; privatny: boolean };
 export type MorningUp = { kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null };
+// Parser free-text promptu „hľadám chatu do 30k v Kysuciach s výhľadom" → typ + okres + max cena + kľúčové slová.
+const _MORNING_KW = ["výhľad", "vyhlad", "les", "rieka", "potok", "jazero", "slneč", "slnec", "rovinat", "ticho", "záhrad", "zahrad", "sieť", "siet", "voda", "elektri", "prístup", "pristup", "juh", "svah"];
+function parseMorningPrompt(s: string, okresy: string[]): { ptype?: string; okres?: string; maxPrice?: number; keywords: string[] } {
+  const t = (s || "").toLowerCase();
+  const norm = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
+  let ptype: string | undefined;
+  if (/chat|chalup/.test(t)) ptype = "chata";
+  else if (/\bbyt/.test(t)) ptype = "byt";
+  else if (/\bdom\b|rodinn/.test(t)) ptype = "dom";
+  else if (/pozem|parcel|stavebn/.test(t)) ptype = "pozemok";
+  let maxPrice: number | undefined;
+  const pm = t.match(/(?:do|max|pod|za)\s*([\d][\d\s]{1,9})\s*(k\b|tis|000|eur|€)?/);
+  if (pm) { let n = parseInt(pm[1].replace(/\s/g, ""), 10); const u = pm[2] || ""; if (/k\b|tis/.test(u) || n < 1000) n *= 1000; if (n >= 1000) maxPrice = n; }
+  let okres: string | undefined;
+  const nt = norm(t);
+  if (/kysuc/.test(nt)) okres = "Čadca";                       // región Kysuce → okres Čadca
+  if (!okres) for (const o of okresy) if (nt.includes(norm(o))) { okres = o; break; }
+  const keywords = _MORNING_KW.filter((k) => t.includes(k));
+  return { ptype, okres, maxPrice, keywords };
+}
 export const getMorningBriefing = createServerFn({ method: "POST" })
-  .validator(z.object({ okres: z.string().optional(), ptype: z.string().optional(), onlyPrivate: z.boolean().optional(), limit: z.number().optional() }))
+  .validator(z.object({ okres: z.string().optional(), ptype: z.string().optional(), onlyPrivate: z.boolean().optional(), limit: z.number().optional(), prompt: z.string().optional() }))
   .handler(async ({ data }): Promise<{
     today: string | null; summary: { newToday: number; drops: number; upDeals: number; privateOpps: number };
     listings: MorningListing[]; up: MorningUp[]; okresy: string[]; ptypes: string[];
+    parsed: { ptype: string | null; okres: string | null; maxPrice: number | null; keywords: string[] };
   }> => {
     const limit = data.limit ?? 15;
     const today = (await q<{ d: string }>("SELECT MAX(last_seen) d FROM market_listings").catch(() => []))[0]?.d ?? null;
@@ -3204,12 +3225,17 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
     const okresy = (await q<{ okres: string }>("SELECT DISTINCT okres FROM market_opportunities WHERE okres IS NOT NULL ORDER BY okres").catch(() => [])).map((r) => r.okres);
     const ptypes = (await q<{ ptype: string }>("SELECT DISTINCT ptype FROM market_opportunities WHERE ptype IS NOT NULL ORDER BY ptype").catch(() => [])).map((r) => r.ptype);
     // scorovaná inzercia (default LEN súkromná = bazos; agentúra = reality)
+    const parsed = parseMorningPrompt(data.prompt ?? "", okresy);
+    const effOkres = data.okres || parsed.okres;
+    const effPtype = data.ptype || parsed.ptype;
     const w: string[] = ["(below_market_pct IS NOT NULL OR price_drop_pct IS NOT NULL)", "(price_per_m2 IS NULL OR price_per_m2 >= 2)",
       "((ptype IN ('dom','byt','chata','chalupa') AND price_eur >= 15000) OR (ptype NOT IN ('dom','byt','chata','chalupa') AND price_eur >= 2000))"];
     const a: unknown[] = [];
     if (data.onlyPrivate !== false) w.push("source = 'bazos'");
-    if (data.okres) { w.push("okres = ?"); a.push(data.okres); }
-    if (data.ptype) { w.push("ptype = ?"); a.push(data.ptype); }
+    if (effOkres) { w.push("okres = ?"); a.push(effOkres); }
+    if (effPtype) { w.push("ptype = ?"); a.push(effPtype); }
+    if (parsed.maxPrice) { w.push("price_eur <= ?"); a.push(parsed.maxPrice); }
+    for (const kw of parsed.keywords) { w.push("lower(title) LIKE ?"); a.push(`%${kw}%`); }
     const raw = await q<MarketOpp>(
       `SELECT source,url,title,ptype,deal,okres,obec,area_m2,price_eur,price_per_m2,days_on_market,price_drop_pct,below_market_pct,flags
        FROM market_opportunities WHERE ${w.join(" AND ")} GROUP BY url
@@ -3225,13 +3251,14 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
     // naše ÚP-development príležitosti (genuine: bývanie/hromadné, MATCH) + obecný trhový kontext
     const upW: string[] = ["ls.verdict = 'MATCH'", "ls.purpose = 'residential'", "ls.zone IN ('bývanie/rekreácia','hromadné bývanie')"];
     const upA: unknown[] = [];
-    if (data.okres) { upW.push("ds.region LIKE ?"); upA.push(`%${data.okres}%`); }
+    if (effOkres) { upW.push("ds.region LIKE ?"); upA.push(`%${effOkres}%`); }
     const up = await q<MorningUp>(
       `SELECT ls.kod_ku, COALESCE(ds.ku_name, ls.ku_name) ku_name, ls.quality, ls.area_m2, ls.parcels, ls.zone, ls.ppf, om.median_ppm2 market_ppm2
        FROM landsearch_results ls LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
        LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
        WHERE ${upW.join(" AND ")} ORDER BY ls.quality DESC LIMIT 8`, upA).catch(() => [] as MorningUp[]);
-    return { today, summary: { newToday: c1, drops: c2, upDeals: c3, privateOpps: listings.length }, listings, up, okresy, ptypes };
+    return { today, summary: { newToday: c1, drops: c2, upDeals: c3, privateOpps: listings.length }, listings, up, okresy, ptypes,
+      parsed: { ptype: effPtype ?? null, okres: effOkres ?? null, maxPrice: parsed.maxPrice ?? null, keywords: parsed.keywords } };
   });
 
 // ——— OSM dostupnosť (doprava + občianska vybavenosť) cez Overpass API ———
