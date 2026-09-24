@@ -3184,6 +3184,56 @@ export const getDealRadar = createServerFn({ method: "POST" })
     return { lv, market };
   });
 
+// ——— „DOBRÉ RÁNO" denný brífing — jedna karta: dnes dôležité + scorovaná SÚKROMNÁ inzercia (koho zavolať)
+//     + naše ÚP-development príležitosti, nastaviteľné podľa lokality (okres) a typu (ptype). ———
+export type MorningListing = MarketOpp & { score: number; step: string; privatny: boolean };
+export type MorningUp = { kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null };
+export const getMorningBriefing = createServerFn({ method: "POST" })
+  .validator(z.object({ okres: z.string().optional(), ptype: z.string().optional(), onlyPrivate: z.boolean().optional(), limit: z.number().optional() }))
+  .handler(async ({ data }): Promise<{
+    today: string | null; summary: { newToday: number; drops: number; upDeals: number; privateOpps: number };
+    listings: MorningListing[]; up: MorningUp[]; okresy: string[]; ptypes: string[];
+  }> => {
+    const limit = data.limit ?? 15;
+    const today = (await q<{ d: string }>("SELECT MAX(last_seen) d FROM market_listings").catch(() => []))[0]?.d ?? null;
+    // dnes dôležité (súhrn)
+    const c1 = (await q<{ n: number }>("SELECT COUNT(*) n FROM market_listings WHERE last_seen = ?", [today]).catch(() => []))[0]?.n ?? 0;
+    const c2 = (await q<{ n: number }>("SELECT COUNT(*) n FROM market_opportunities WHERE price_drop_pct > 0").catch(() => []))[0]?.n ?? 0;
+    const c3 = (await q<{ n: number }>("SELECT COUNT(*) n FROM landsearch_results WHERE verdict = 'MATCH'").catch(() => []))[0]?.n ?? 0;
+    // číselníky pre filter (lokalita + typ)
+    const okresy = (await q<{ okres: string }>("SELECT DISTINCT okres FROM market_opportunities WHERE okres IS NOT NULL ORDER BY okres").catch(() => [])).map((r) => r.okres);
+    const ptypes = (await q<{ ptype: string }>("SELECT DISTINCT ptype FROM market_opportunities WHERE ptype IS NOT NULL ORDER BY ptype").catch(() => [])).map((r) => r.ptype);
+    // scorovaná inzercia (default LEN súkromná = bazos; agentúra = reality)
+    const w: string[] = ["(below_market_pct IS NOT NULL OR price_drop_pct IS NOT NULL)", "(price_per_m2 IS NULL OR price_per_m2 >= 2)",
+      "((ptype IN ('dom','byt','chata','chalupa') AND price_eur >= 15000) OR (ptype NOT IN ('dom','byt','chata','chalupa') AND price_eur >= 2000))"];
+    const a: unknown[] = [];
+    if (data.onlyPrivate !== false) w.push("source = 'bazos'");
+    if (data.okres) { w.push("okres = ?"); a.push(data.okres); }
+    if (data.ptype) { w.push("ptype = ?"); a.push(data.ptype); }
+    const raw = await q<MarketOpp>(
+      `SELECT source,url,title,ptype,deal,okres,obec,area_m2,price_eur,price_per_m2,days_on_market,price_drop_pct,below_market_pct,flags
+       FROM market_opportunities WHERE ${w.join(" AND ")} GROUP BY url
+       ORDER BY (COALESCE(below_market_pct,0) + COALESCE(price_drop_pct,0) + (CASE WHEN days_on_market > 90 THEN 12 ELSE 0 END)) DESC LIMIT ?`, [...a, limit]).catch(() => [] as MarketOpp[]);
+    const listings: MorningListing[] = raw.map((l) => {
+      const below = l.below_market_pct ?? 0, drop = l.price_drop_pct ?? 0, dom = l.days_on_market ?? 0;
+      const score = Math.round(Math.min(100, below * 0.6 + drop * 0.9 + (dom > 120 ? 18 : dom > 60 ? 10 : 0)));
+      const step = drop > 0
+        ? `Cena klesla o ${Math.round(drop)} % — zavolať predajcovi, priestor na vyjednávanie`
+        : dom > 90 ? `${dom} dní v ponuke — motivovaný predajca, osloviť` : "Osloviť predajcu / preveriť pozemok";
+      return { ...l, score, step, privatny: l.source === "bazos" };
+    });
+    // naše ÚP-development príležitosti (genuine: bývanie/hromadné, MATCH) + obecný trhový kontext
+    const upW: string[] = ["ls.verdict = 'MATCH'", "ls.purpose = 'residential'", "ls.zone IN ('bývanie/rekreácia','hromadné bývanie')"];
+    const upA: unknown[] = [];
+    if (data.okres) { upW.push("ds.region LIKE ?"); upA.push(`%${data.okres}%`); }
+    const up = await q<MorningUp>(
+      `SELECT ls.kod_ku, COALESCE(ds.ku_name, ls.ku_name) ku_name, ls.quality, ls.area_m2, ls.parcels, ls.zone, ls.ppf, om.median_ppm2 market_ppm2
+       FROM landsearch_results ls LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
+       LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
+       WHERE ${upW.join(" AND ")} ORDER BY ls.quality DESC LIMIT 8`, upA).catch(() => [] as MorningUp[]);
+    return { today, summary: { newToday: c1, drops: c2, upDeals: c3, privateOpps: listings.length }, listings, up, okresy, ptypes };
+  });
+
 // ——— OSM dostupnosť (doprava + občianska vybavenosť) cez Overpass API ———
 type PoiHit = { name: string | null; dist: number; drive_min: number };
 type Accessibility = { transport: Record<string, PoiHit | null>; amenities: Record<string, PoiHit | null>; infra: Record<string, PoiHit | null>; cached?: boolean; ageDays?: number };

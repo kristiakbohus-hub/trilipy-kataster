@@ -20,6 +20,7 @@ import { Route as AktivitaRouteImport } from './routes/aktivita'
 import { Route as PrehladRouteImport } from './routes/prehlad'
 import { Route as KalibraciaRouteImport } from './routes/kalibracia'
 import { Route as PoklesyRouteImport } from './routes/poklesy'
+import { Route as RanoRouteImport } from './routes/rano'
 import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
 import { Route as ReportyRouteImport } from './routes/reporty'
@@ -101,6 +102,11 @@ const PrehladRoute = PrehladRouteImport.update({
 const PoklesyRoute = PoklesyRouteImport.update({
   id: '/poklesy',
   path: '/poklesy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RanoRoute = RanoRouteImport.update({
+  id: '/rano',
+  path: '/rano',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WatchlistRoute = WatchlistRouteImport.update({
@@ -256,6 +262,7 @@ export interface FileRoutesByFullPath {
   '/prehlad': typeof PrehladRoute
   '/kalibracia': typeof KalibraciaRoute
   '/poklesy': typeof PoklesyRoute
+  '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
@@ -296,6 +303,7 @@ export interface FileRoutesByTo {
   '/prehlad': typeof PrehladRoute
   '/kalibracia': typeof KalibraciaRoute
   '/poklesy': typeof PoklesyRoute
+  '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
@@ -337,6 +345,7 @@ export interface FileRoutesById {
   '/prehlad': typeof PrehladRoute
   '/kalibracia': typeof KalibraciaRoute
   '/poklesy': typeof PoklesyRoute
+  '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
@@ -379,6 +388,7 @@ export interface FileRouteTypes {
     | '/prehlad'
     | '/kalibracia'
     | '/poklesy'
+    | '/rano'
     | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
@@ -419,6 +429,7 @@ export interface FileRouteTypes {
     | '/prehlad'
     | '/kalibracia'
     | '/poklesy'
+    | '/rano'
     | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
@@ -459,6 +470,7 @@ export interface FileRouteTypes {
     | '/prehlad'
     | '/kalibracia'
     | '/poklesy'
+    | '/rano'
     | '/watchlist'
     | '/trhova-historia'
     | '/pravny-referent'
@@ -497,6 +509,7 @@ export interface RootRouteChildren {
   PrehladRoute: typeof PrehladRoute
   KalibraciaRoute: typeof KalibraciaRoute
   PoklesyRoute: typeof PoklesyRoute
+  RanoRoute: typeof RanoRoute
   WatchlistRoute: typeof WatchlistRoute
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
   PravnyReferentRoute: typeof PravnyReferentRoute
@@ -647,6 +660,13 @@ declare module '@tanstack/react-router' {
       path: '/poklesy'
       fullPath: '/poklesy'
       preLoaderRoute: typeof PoklesyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rano': {
+      id: '/rano'
+      path: '/rano'
+      fullPath: '/rano'
+      preLoaderRoute: typeof RanoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/watchlist': {
@@ -809,6 +829,7 @@ const rootRouteChildren: RootRouteChildren = {
   PrehladRoute: PrehladRoute,
   KalibraciaRoute: KalibraciaRoute,
   PoklesyRoute: PoklesyRoute,
+  RanoRoute: RanoRoute,
   WatchlistRoute: WatchlistRoute,
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,
   PravnyReferentRoute: PravnyReferentRoute,
