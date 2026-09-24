@@ -209,6 +209,13 @@ function PrieskumPage() {
                     <div className="truncate text-[12px] text-muted">
                       {o.zone ?? ""}{o.shape ? ` · ${o.shape}` : ""}{o.access != null ? ` · prístup ${o.access}` : ""}{o.slope != null ? ` · svah ${o.slope} %` : ""}{o.access_times ? ` · ${o.access_times}` : ""}{o.ppf ? " · ⚠ PPF" : ""}
                     </div>
+                    {o.market_ppm2 != null ? (
+                      <div className="text-[12px] text-fg/75">
+                        Trh v obci ~<b className="tabular-nums">{o.market_ppm2} €/m²</b>
+                        {o.market_n != null && o.market_n < 3 ? " (orient.)" : ""}
+                        {o.area_m2 ? ` · odhad hodnoty ~${Math.round(o.area_m2 * o.market_ppm2).toLocaleString("sk-SK")} €` : ""}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );

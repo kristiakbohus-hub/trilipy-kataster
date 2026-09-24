@@ -563,7 +563,7 @@ export const nlQuery = createServerFn({ method: "POST" })
     }
 
     // ——— 1c) POZEMKOVÉ PRÍLEŽITOSTI (land-search, predpočítané z Mac gold_li_engine → landsearch_results) ———
-    type LandHit = { kod_ku: string; ku_name: string | null; purpose: string | null; verdict: string | null; quality: number | null; area_m2: number | null; n_parcels: number | null; parcels: string | null; shape: string | null; zone: string | null; build: string | null; access: number | null; slope: number | null; frontage: number | null; ppf: number | null; existing_use: string | null; yard: string | null; access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null };
+    type LandHit = { kod_ku: string; ku_name: string | null; purpose: string | null; verdict: string | null; quality: number | null; area_m2: number | null; n_parcels: number | null; parcels: string | null; shape: string | null; zone: string | null; build: string | null; access: number | null; slope: number | null; frontage: number | null; ppf: number | null; existing_use: string | null; yard: string | null; access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null; market_ppm2: number | null; market_n: number | null };
     let land: { count: number; results: LandHit[] } = { count: 0, results: [] };
     const landIntent = /pozemk|pozemok|stavebn|v[yý]stavb|lokalit|supermarket|pr[ií]le[žz]itost/.test(s);
     if (landIntent) {
@@ -572,8 +572,10 @@ export const nlQuery = createServerFn({ method: "POST" })
       if (/b[yý]van|rodinn|obytn|rezidenc/.test(s)) { lc.push("purpose = 'residential'"); }
       else if (/priemysel|sklad|logist|hala/.test(s)) { lc.push("purpose = 'industrial'"); }
       const lrows = await q<LandHit>(
-        `SELECT kod_ku, ku_name, purpose, verdict, quality, area_m2, n_parcels, parcels, shape, zone, build, access, slope, frontage, ppf, existing_use, yard, access_times, owners, n_owners, reason
-         FROM landsearch_results ${lc.length ? "WHERE " + lc.join(" AND ") : ""} ORDER BY (verdict = 'MATCH') DESC, quality DESC LIMIT 200`, la).catch(() => [] as LandHit[]);
+        `SELECT ls.kod_ku, ls.ku_name, ls.purpose, ls.verdict, ls.quality, ls.area_m2, ls.n_parcels, ls.parcels, ls.shape, ls.zone, ls.build, ls.access, ls.slope, ls.frontage, ls.ppf, ls.existing_use, ls.yard, ls.access_times, ls.owners, ls.n_owners, ls.reason,
+            om.median_ppm2 AS market_ppm2, om.n AS market_n
+         FROM landsearch_results ls LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(ls.ku_name, 'k.ú.', ''), 'k.ú', ''))
+         ${lc.length ? "WHERE " + lc.map((x) => x.replace(/^ku_name|^purpose/, (m) => "ls." + m)).join(" AND ") : ""} ORDER BY (ls.verdict = 'MATCH') DESC, ls.quality DESC LIMIT 200`, la).catch(() => [] as LandHit[]);
       land = { count: lrows.length, results: lrows };
     }
 
