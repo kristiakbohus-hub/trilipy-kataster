@@ -60,7 +60,7 @@ function RanoPage() {
         </div>
         {promptApplied ? (
           <div className="mt-1.5 text-[12px] text-muted">
-            {parsedTxt ? <>Rozumiem: <span className="font-medium text-fg">{parsedTxt}</span></> : "Nerozpoznal som konkrétne parametre — skús napr. „chata do 30000 v okrese Čadca s výhľadom"."}
+            {parsedTxt ? <>Rozumiem: <span className="font-medium text-fg">{parsedTxt}</span></> : "Nerozpoznal som konkrétne parametre — skús napr.: chata do 30000 v okrese Čadca s výhľadom."}
           </div>
         ) : null}
       </form>
