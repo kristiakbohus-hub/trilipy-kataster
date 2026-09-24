@@ -574,7 +574,9 @@ export const nlQuery = createServerFn({ method: "POST" })
       const lrows = await q<LandHit>(
         `SELECT ls.kod_ku, ls.ku_name, ls.purpose, ls.verdict, ls.quality, ls.area_m2, ls.n_parcels, ls.parcels, ls.shape, ls.zone, ls.build, ls.access, ls.slope, ls.frontage, ls.ppf, ls.existing_use, ls.yard, ls.access_times, ls.owners, ls.n_owners, ls.reason,
             om.median_ppm2 AS market_ppm2, om.n AS market_n
-         FROM landsearch_results ls LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(ls.ku_name, 'k.ú.', ''), 'k.ú', ''))
+         FROM landsearch_results ls
+         LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
+         LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
          ${lc.length ? "WHERE " + lc.map((x) => x.replace(/^ku_name|^purpose/, (m) => "ls." + m)).join(" AND ") : ""} ORDER BY (ls.verdict = 'MATCH') DESC, ls.quality DESC LIMIT 200`, la).catch(() => [] as LandHit[]);
       land = { count: lrows.length, results: lrows };
     }
