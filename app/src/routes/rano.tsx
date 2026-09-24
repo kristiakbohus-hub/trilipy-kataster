@@ -8,7 +8,7 @@ const eur = (n: number | null) => (n == null ? "—" : n.toLocaleString("sk-SK",
 
 export const Route = createFileRoute("/rano")({
   head: () => ({ meta: [{ title: "Dobré ráno — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getMorningBriefing({ data: { limit: 15 } }).catch((): Brief => ({ today: null, summary: { newToday: 0, drops: 0, upDeals: 0, privateOpps: 0 }, listings: [], up: [], okresy: [], ptypes: [] })),
+  loader: async () => await getMorningBriefing({ data: { limit: 15 } }).catch((): Brief => ({ today: null, summary: { newToday: 0, drops: 0, upDeals: 0, privateOpps: 0 }, listings: [], up: [], okresy: [], ptypes: [], parsed: { ptype: null, okres: null, maxPrice: null, keywords: [] } })),
   component: RanoPage,
 });
 
