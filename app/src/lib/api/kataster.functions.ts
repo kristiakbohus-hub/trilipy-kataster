@@ -2872,13 +2872,15 @@ export const ingestDataset = createServerFn({ method: "POST" })
         .bind(did, data.kodKu, d.kuName ?? data.kodKu, d.region ?? null, d.knType ?? "C-KN", "ready_with_warnings", 100, 0.85, "import_auto", `Auto import ${data.kodKu} (41_IMPORT).`, d.nParcels ?? null, d.nOwners ?? null, d.sumArea ?? null).run();
     }
     try {
-      const rid = () => (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)).replace(/-/g, "").slice(0, 12);
       const slug = (s: string) => s.replace(/\//g, "-");
+      const toInt = (v: unknown): number | null => { if (v == null || v === "") return null; const n = parseInt(String(v), 10); return Number.isFinite(n) ? n : null; };
       const stmts: ReturnType<typeof DB.prepare>[] = [];
-      for (const p of data.parcels ?? []) stmts.push(DB.prepare("INSERT OR REPLACE INTO parcels (id,dataset_id,parcel_no,kn_type,area_m2,use_type,lv_no,geometry_quality,centroid_lat,centroid_lng,geometry_json,bpej,bpej_skupina) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${did}-${slug(p.parcelNo)}`, did, p.parcelNo, p.knType ?? "C-KN", p.areaM2 ?? null, p.useType ?? null, p.lvNo ?? null, "derived", p.centroidLat ?? null, p.centroidLng ?? null, p.geometryJson ?? null, p.bpej ?? null, p.bpejSkupina ?? null));
-      for (const l of data.lvs ?? []) stmts.push(DB.prepare("INSERT OR REPLACE INTO lvs (id,dataset_id,lv_no,co_owners,note) VALUES (?,?,?,?,?)").bind(`${did}-${l.lvNo}`, did, l.lvNo, l.coOwners ?? null, l.note ?? null));
-      for (const o of data.owners ?? []) stmts.push(DB.prepare("INSERT INTO lv_owners (id,dataset_id,lv_no,name,share,is_company,birth_date,title,born_name,ico,addr_obec,addr_cislo,addr_psc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${did}-${o.lvNo}-${rid()}`, did, o.lvNo, o.name ?? null, o.share ?? null, o.isCompany ?? 0, o.birthDate ?? null, o.title ?? null, o.bornName ?? null, o.ico ?? null, o.addrObec ?? null, o.addrCislo ?? null, o.addrPsc ?? null));
-      for (const b of data.bpej ?? []) stmts.push(DB.prepare("INSERT OR REPLACE INTO bpej_zones (id,dataset_id,code,skupina,geometry_json) VALUES (?,?,?,?,?)").bind(`${did}-${slug(b.code)}-${rid()}`, did, b.code, b.skupina ?? null, b.geometryJson ?? null));
+      // parcels: id je TEXT PK; area_m2 INTEGER NOT NULL DEFAULT 0; lv_no INTEGER (nullable)
+      for (const p of data.parcels ?? []) stmts.push(DB.prepare("INSERT OR REPLACE INTO parcels (id,dataset_id,parcel_no,kn_type,area_m2,use_type,lv_no,geometry_quality,centroid_lat,centroid_lng,geometry_json,bpej,bpej_skupina) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${did}-${slug(p.parcelNo)}`, did, p.parcelNo, p.knType ?? "C-KN", Math.round(p.areaM2 ?? 0), p.useType ?? null, toInt(p.lvNo), "derived", p.centroidLat ?? null, p.centroidLng ?? null, p.geometryJson ?? null, p.bpej ?? null, p.bpejSkupina ?? null));
+      // lvs/lv_owners/bpej_zones: id je INTEGER AUTOINCREMENT → VYNECHAŤ; lv_no INTEGER NOT NULL
+      for (const l of data.lvs ?? []) { const lv = toInt(l.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT INTO lvs (dataset_id,lv_no,co_owners,note) VALUES (?,?,?,?)").bind(did, lv, l.coOwners ?? 0, l.note ?? null)); }
+      for (const o of data.owners ?? []) { const lv = toInt(o.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT INTO lv_owners (dataset_id,lv_no,name,share,is_company,birth_date,title,born_name,ico,addr_obec,addr_cislo,addr_psc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(did, lv, o.name ?? "?", o.share ?? null, o.isCompany ?? 0, o.birthDate ?? null, o.title ?? null, o.bornName ?? null, o.ico ?? null, o.addrObec ?? null, o.addrCislo ?? null, o.addrPsc ?? null)); }
+      for (const b of data.bpej ?? []) { if (!b.geometryJson) continue; stmts.push(DB.prepare("INSERT INTO bpej_zones (dataset_id,code,skupina,geometry_json) VALUES (?,?,?,?)").bind(did, b.code, b.skupina ?? null, b.geometryJson)); }
       for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
       return { ok: true, parcels: (data.parcels ?? []).length, owners: (data.owners ?? []).length };
     } catch (e) {
