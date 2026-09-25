@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { getPriceDrops, getBuildingLand, type PriceDrop, type BuildingDeal } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
@@ -51,6 +51,12 @@ function PoklesyPage() {
           Inzeráty, ktorým klesla cena (motivovaný predajca) v okresoch Čadca, Kysucké Nové Mesto a Žilina — najčistejší deal signál.
           Rovnaké dáta ako denný Telegram ranný radar. Orientačné; over si aktuálnosť inzerátu.
         </p>
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-sm">
+        <Link to="/ceny" className="rounded-full border border-line px-3 py-1 text-muted hover:border-ink hover:text-fg">Prehľad cien</Link>
+        <span className="rounded-full border border-ink px-3 py-1 font-medium text-fg">Cenové poklesy</span>
+        <Link to="/trhova-historia" className="rounded-full border border-line px-3 py-1 text-muted hover:border-ink hover:text-fg">Trhová história</Link>
       </div>
 
       <Card className="p-4">

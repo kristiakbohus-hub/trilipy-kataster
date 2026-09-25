@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities, refreshMarketData, refreshMarketListings, refreshMarketPriceHistory, getMarketListings, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
@@ -149,6 +149,12 @@ function CenyPage() {
   return (
     <div className="mx-auto max-w-5xl px-4 py-6">
       <SectionHeader title="Trhové ceny nehnuteľností" hint="Zo scrapu inzercie (denne). Medián ceny za m² podľa kraja → okresu → lokality, trend, príležitosti." />
+
+      <div className="mb-4 flex flex-wrap gap-2 text-sm">
+        <span className="rounded-full border border-ink px-3 py-1 font-medium text-fg">Prehľad cien</span>
+        <Link to="/poklesy" className="rounded-full border border-line px-3 py-1 text-muted hover:border-ink hover:text-fg">Cenové poklesy</Link>
+        <Link to="/trhova-historia" className="rounded-full border border-line px-3 py-1 text-muted hover:border-ink hover:text-fg">Trhová história</Link>
+      </div>
 
       <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
         {PTYPES.map((p) => (

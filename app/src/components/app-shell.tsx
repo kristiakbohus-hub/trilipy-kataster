@@ -28,8 +28,6 @@ const NAV_GROUPS: NavGroup[] = [
   ] },
   { title: "Trh", items: [
     { to: "/ceny", label: "Trhové ceny", icon: "target" },
-    { to: "/poklesy", label: "Cenové poklesy", icon: "report" },
-    { to: "/trhova-historia", label: "Trhová história", icon: "report" },
   ] },
   { title: "Nástroje", collapsible: true, items: [
     { to: "/import", label: "Import & intake", icon: "upload" },
