@@ -2757,7 +2757,7 @@ export function avmCategory(druh: string | null | undefined): keyof typeof AVM_D
   if (/záhrad|zahrad/.test(t)) return "zahrada";
   if (/les/.test(t)) return "les";
   if (/vodn/.test(t)) return "vodna";
-  if (/orn|trávny|travny|ttp|lúk|luk|chme|vinic|ovoc|sad|pasien|poľnohos|polnohos/.test(t)) return "polnohosp";
+  if (/orn|trávn|travn|ttp|lúk|luk|chme|vinic|ovoc|sad|pasien|poľnohos|polnohos/.test(t)) return "polnohosp";
   return "ostatna";
 }
 const _avmMedian = (a: number[]): number | null => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
