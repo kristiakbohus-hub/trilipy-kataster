@@ -6,31 +6,42 @@ import { useAuth } from "../lib/auth-context";
 import { NotifBell } from "./collab";
 import { ROLES, type AppPath, type Role } from "../lib/domain";
 
-const NAV: { to: AppPath; label: string; icon: string }[] = [
-  { to: "/", label: "Mission Control", icon: "mission" },
-  { to: "/rano", label: "Dobré ráno", icon: "mission" },
-  { to: "/prehlad", label: "Prehľad / Dashboard", icon: "report" },
-  { to: "/mapa", label: "Mapa / GIS", icon: "map" },
-  { to: "/datasety", label: "Datasety", icon: "database" },
-  { to: "/browser", label: "Kataster Browser", icon: "table" },
-  { to: "/vlastnici", label: "Vlastníci", icon: "target" },
-  { to: "/zoning", label: "Územný plán & prístup", icon: "zone" },
-  { to: "/prilezitosti", label: "Príležitosti", icon: "target" },
-  { to: "/deal-radar", label: "Deal radar", icon: "target" },
-  { to: "/watchlist", label: "Watchlist", icon: "target" },
-  { to: "/aktivita", label: "Denník aktivity", icon: "report" },
-  { to: "/prieskum", label: "NL prieskum", icon: "target" },
-  { to: "/deals", label: "Deal pipeline", icon: "folder" },
-  { to: "/cases", label: "Cases", icon: "folder" },
-  { to: "/import", label: "Import & intake", icon: "upload" },
-  { to: "/reporty", label: "Reporty", icon: "report" },
-  { to: "/pravny-referent", label: "Právny referent", icon: "report" },
-  { to: "/ceny", label: "Trhové ceny", icon: "target" },
-  { to: "/poklesy", label: "Cenové poklesy", icon: "report" },
-  { to: "/trhova-historia", label: "Trhová história", icon: "report" },
-  { to: "/kalibracia", label: "Kalibrácia AVM/GDV", icon: "target" },
-  { to: "/gdpr", label: "GDPR", icon: "shield" },
-  { to: "/system", label: "System Status", icon: "shield" },
+type NavItem = { to: AppPath; label: string; icon: string };
+type NavGroup = { title?: string; collapsible?: boolean; items: NavItem[] };
+// Zoskupené menu (zjednodušenie 20+ položiek → 5 sekcií). „Domov" = Dobré ráno; menej časté v zbaliteľných Nástrojoch.
+const NAV_GROUPS: NavGroup[] = [
+  { items: [{ to: "/rano", label: "Domov", icon: "mission" }] },
+  { title: "Hľadať & deals", items: [
+    { to: "/prieskum", label: "Hľadať / prieskum", icon: "target" },
+    { to: "/prilezitosti", label: "ÚP príležitosti", icon: "zone" },
+    { to: "/deal-radar", label: "Deal radar", icon: "target" },
+    { to: "/watchlist", label: "Watchlist", icon: "target" },
+    { to: "/deals", label: "Pipeline", icon: "folder" },
+    { to: "/cases", label: "Cases", icon: "folder" },
+  ] },
+  { title: "Kataster", items: [
+    { to: "/mapa", label: "Mapa / GIS", icon: "map" },
+    { to: "/browser", label: "Kataster browser", icon: "table" },
+    { to: "/vlastnici", label: "Vlastníci", icon: "target" },
+    { to: "/datasety", label: "Datasety", icon: "database" },
+    { to: "/zoning", label: "Územný plán", icon: "zone" },
+  ] },
+  { title: "Trh", items: [
+    { to: "/ceny", label: "Trhové ceny", icon: "target" },
+    { to: "/poklesy", label: "Cenové poklesy", icon: "report" },
+    { to: "/trhova-historia", label: "Trhová história", icon: "report" },
+  ] },
+  { title: "Nástroje", collapsible: true, items: [
+    { to: "/import", label: "Import & intake", icon: "upload" },
+    { to: "/reporty", label: "Reporty", icon: "report" },
+    { to: "/pravny-referent", label: "Právny referent", icon: "report" },
+    { to: "/kalibracia", label: "Kalibrácia AVM/GDV", icon: "target" },
+    { to: "/aktivita", label: "Denník aktivity", icon: "report" },
+    { to: "/", label: "Mission Control", icon: "mission" },
+    { to: "/prehlad", label: "Prehľad / Dashboard", icon: "report" },
+    { to: "/gdpr", label: "GDPR", icon: "shield" },
+    { to: "/system", label: "System Status", icon: "shield" },
+  ] },
 ];
 
 function Brand() {
@@ -46,24 +57,50 @@ function Brand() {
 }
 
 function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () => void }) {
+  const [openMore, setOpenMore] = useState(false);
+  const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
+  const renderItem = (item: NavItem) => {
+    const active = isActive(item.to);
+    return (
+      <Link
+        key={item.to}
+        to={item.to}
+        onClick={onNavigate}
+        className={
+          "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors " +
+          (active ? "bg-surface-2 text-fg" : "text-muted hover:bg-surface-2/70 hover:text-fg")
+        }
+        style={active ? { boxShadow: "inset 2px 0 0 #333333" } : undefined}
+      >
+        <Icon name={item.icon} size={17} />
+        <span className="truncate">{item.label}</span>
+      </Link>
+    );
+  };
   return (
     <>
-      {NAV.map((item) => {
-        const active = item.to === "/" ? pathname === "/" : pathname.startsWith(item.to);
+      {NAV_GROUPS.map((group, gi) => {
+        if (group.collapsible) {
+          const open = openMore || group.items.some((it) => isActive(it.to));
+          return (
+            <div key={gi} className="mt-2">
+              <button
+                type="button"
+                onClick={() => setOpenMore((v) => !v)}
+                className="flex w-full items-center justify-between rounded-md px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted hover:text-fg"
+              >
+                <span>{group.title}</span>
+                <span className="text-xs">{open ? "▾" : "▸"}</span>
+              </button>
+              {open ? <div className="flex flex-col gap-1">{group.items.map(renderItem)}</div> : null}
+            </div>
+          );
+        }
         return (
-          <Link
-            key={item.to}
-            to={item.to}
-            onClick={onNavigate}
-            className={
-              "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm transition-colors " +
-              (active ? "bg-surface-2 text-fg" : "text-muted hover:bg-surface-2/70 hover:text-fg")
-            }
-            style={active ? { boxShadow: "inset 2px 0 0 #333333" } : undefined}
-          >
-            <Icon name={item.icon} size={17} />
-            <span className="truncate">{item.label}</span>
-          </Link>
+          <div key={gi} className={gi === 0 ? "flex flex-col gap-1" : "mt-2 flex flex-col gap-1"}>
+            {group.title ? <div className="px-3 pb-0.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted">{group.title}</div> : null}
+            {group.items.map(renderItem)}
+          </div>
         );
       })}
     </>
