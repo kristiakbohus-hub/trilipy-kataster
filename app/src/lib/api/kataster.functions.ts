@@ -2853,6 +2853,8 @@ export const ingestDataset = createServerFn({ method: "POST" })
     lvs: z.array(z.object({ lvNo: z.string(), coOwners: z.number().nullable().optional(), note: z.string().nullable().optional() })).optional(),
     owners: z.array(z.object({ lvNo: z.string(), name: z.string().nullable().optional(), share: z.string().nullable().optional(), isCompany: z.number().nullable().optional(), birthDate: z.string().nullable().optional(), title: z.string().nullable().optional(), bornName: z.string().nullable().optional(), ico: z.string().nullable().optional(), addrObec: z.string().nullable().optional(), addrCislo: z.string().nullable().optional(), addrPsc: z.string().nullable().optional() })).optional(),
     bpej: z.array(z.object({ code: z.string(), skupina: z.number().nullable().optional(), geometryJson: z.string().nullable().optional() })).optional(),
+    signals: z.array(z.object({ lvNo: z.string(), coOwners: z.number().nullable().optional(), hasSpf: z.number().nullable().optional(), dedic: z.number().nullable().optional(), buildable: z.number().nullable().optional(), cleanTitle: z.number().nullable().optional(), absenterRatio: z.number().nullable().optional(), totalArea: z.number().nullable().optional() })).optional(),
+    titles: z.array(z.object({ lvNo: z.string(), kind: z.string(), txt: z.string() })).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string; parcels?: number; owners?: number }> => {
     const { DB } = bindings();
@@ -2866,6 +2868,8 @@ export const ingestDataset = createServerFn({ method: "POST" })
         DB.prepare("DELETE FROM lvs WHERE dataset_id=?").bind(did),
         DB.prepare("DELETE FROM lv_owners WHERE dataset_id=?").bind(did),
         DB.prepare("DELETE FROM bpej_zones WHERE dataset_id=?").bind(did),
+        DB.prepare("DELETE FROM lv_signals WHERE dataset_id=?").bind(did),
+        DB.prepare("DELETE FROM lv_titles WHERE dataset_id=?").bind(did),
       ]);
       const d = data.dataset ?? {};
       await DB.prepare("INSERT INTO datasets (id,ku_code,ku_name,region,kn_type,status,geometry_coverage,canonical_confidence,import_version,updated_at,note,n_parcels,n_owners,sum_area_m2) VALUES (?,?,?,?,?,?,?,?,?,date('now'),?,?,?,?) ON CONFLICT(id) DO UPDATE SET ku_name=excluded.ku_name,region=excluded.region,kn_type=excluded.kn_type,updated_at=excluded.updated_at,note=excluded.note,n_parcels=excluded.n_parcels,n_owners=excluded.n_owners,sum_area_m2=excluded.sum_area_m2")
@@ -2881,6 +2885,9 @@ export const ingestDataset = createServerFn({ method: "POST" })
       for (const l of data.lvs ?? []) { const lv = toInt(l.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT INTO lvs (dataset_id,lv_no,co_owners,note) VALUES (?,?,?,?)").bind(did, lv, l.coOwners ?? 0, l.note ?? null)); }
       for (const o of data.owners ?? []) { const lv = toInt(o.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT INTO lv_owners (dataset_id,lv_no,name,share,is_company,birth_date,title,born_name,ico,addr_obec,addr_cislo,addr_psc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(did, lv, o.name ?? "?", o.share ?? null, o.isCompany ?? 0, o.birthDate ?? null, o.title ?? null, o.bornName ?? null, o.ico ?? null, o.addrObec ?? null, o.addrCislo ?? null, o.addrPsc ?? null)); }
       for (const b of data.bpej ?? []) { if (!b.geometryJson) continue; stmts.push(DB.prepare("INSERT INTO bpej_zones (dataset_id,code,skupina,geometry_json) VALUES (?,?,?,?)").bind(did, b.code, b.skupina ?? null, b.geometryJson)); }
+      // lv_signals: PK(dataset_id,lv_no); trigger dopočíta signal_score. lv_titles: id AUTOINCREMENT (vynechať), kind+txt NOT NULL
+      for (const s of data.signals ?? []) { const lv = toInt(s.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT OR REPLACE INTO lv_signals (dataset_id,lv_no,co_owners,has_spf,dedic,buildable,clean_title,absenter_ratio,total_area) VALUES (?,?,?,?,?,?,?,?,?)").bind(did, lv, s.coOwners ?? null, s.hasSpf ?? null, s.dedic ?? null, s.buildable ?? null, s.cleanTitle ?? null, s.absenterRatio ?? null, s.totalArea ?? null)); }
+      for (const t of data.titles ?? []) { const lv = toInt(t.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT INTO lv_titles (dataset_id,lv_no,kind,txt) VALUES (?,?,?,?)").bind(did, lv, t.kind || "titul", t.txt || "—")); }
       for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
       return { ok: true, parcels: (data.parcels ?? []).length, owners: (data.owners ?? []).length };
     } catch (e) {
