@@ -2802,6 +2802,27 @@ export const getParcelAvm = createServerFn({ method: "POST" })
     return { okres: data.okres ?? null, category: cat, ppm2AsIs, valueAsIs, ppm2Stavebny, valuePotential, marginPct, basis: row?.basis ?? "default", nComps: (row?.n_realized ?? 0) + (row?.n_asking ?? 0) };
   });
 
+export type LvParcelAvm = { asIs: number | null; potential: number | null; margin: number | null; category: string };
+// AVM per parcela pre LV výpis: ako-je (podľa druhu) vs potenciál (ako stavebné) + margin. Kľúč = "parcel_no|register".
+export const getLvAvm = createServerFn({ method: "POST" })
+  .validator(z.object({ kodKu: z.string(), parcels: z.array(z.object({ key: z.string(), druh: z.string().nullable().optional(), areaM2: z.number().nullable().optional() })) }))
+  .handler(async ({ data }): Promise<Record<string, LvParcelAvm>> => {
+    const okres = (await q<{ okres: string }>("SELECT TRIM(REPLACE(SUBSTR(region,1,INSTR(region || ' · ', ' · ')-1),'okres ','')) okres FROM datasets WHERE ku_code = ? LIMIT 1", [data.kodKu]))[0]?.okres;
+    const stav = okres ? (await q<{ p: number }>("SELECT ppm2_stavebny p FROM avm_index WHERE okres = ?", [okres]))[0]?.p ?? null : null;
+    const stavPpm2 = stav ?? AVM_DEFAULT.stavebny;
+    const out: Record<string, LvParcelAvm> = {};
+    for (const p of data.parcels) {
+      const area = p.areaM2 ?? 0;
+      const cat = avmCategory(p.druh);
+      const asIsPpm2 = cat === "stavebny" ? stavPpm2 : AVM_DEFAULT[cat];
+      const potential = area > 0 ? Math.round(stavPpm2 * area) : null;
+      const asIs = area > 0 ? Math.round(asIsPpm2 * area) : null;
+      const margin = potential && asIs && cat !== "stavebny" ? Math.round((potential - asIs) / potential * 100) : null;
+      out[p.key] = { asIs, potential, margin, category: cat };
+    }
+    return out;
+  });
+
 // Kompletný market ingest cez secret (pre GitHub Actions curl) — index+opps+listing chunky+pricehistory z verejného URL.
 // Auth: x-alert-secret === D1 market_meta.alert_secret. Zvnútra volá role-guarded fns ako 'admin' (secret už overil).
 export const ingestMarketAll = createServerFn({ method: "POST" })

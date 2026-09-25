@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility, getChanges, getLvZoning } from "../lib/api/kataster.functions";
+import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility, getChanges, getLvZoning, getLvAvm, type LvParcelAvm } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 import type { Role } from "../lib/domain";
@@ -27,13 +27,21 @@ export const Route = createFileRoute("/vypis/$datasetId/$lvNo")({
     const kodKu = content.dataset?.ku_code ?? "";
     const parcels = [...(content.parcelsC ?? []), ...(content.parcelsE ?? [])].map((p) => ({ parcel_no: p.parcel_no, register: p.register }));
     const zoning = kodKu && parcels.length ? await getLvZoning({ data: { kodKu, parcels } }).catch(() => ({} as Record<string, string>)) : {};
-    return { datasetId, lvNo, content, zoning };
+    const avmParcels = [...(content.parcelsC ?? []), ...(content.parcelsE ?? [])].map((p) => ({ key: `${p.parcel_no}|${p.register}`, druh: p.drp_text ?? null, areaM2: p.area_m2 ?? null }));
+    const avm = kodKu && avmParcels.length ? await getLvAvm({ data: { kodKu, parcels: avmParcels } }).catch(() => ({} as Record<string, LvParcelAvm>)) : {};
+    return { datasetId, lvNo, content, zoning, avm };
   },
   component: VypisPage,
 });
 
 function VypisPage() {
-  const { datasetId, lvNo, content: initial, zoning } = Route.useLoaderData();
+  const { datasetId, lvNo, content: initial, zoning, avm } = Route.useLoaderData();
+  const avmCell = (key: string) => {
+    const a = avm[key];
+    if (!a || a.potential == null) return "—";
+    const k = (n: number | null) => (n == null ? "—" : n >= 10000 ? Math.round(n / 1000) + "k €" : n.toLocaleString("sk-SK") + " €");
+    return a.margin ? `${k(a.asIs)} → ${k(a.potential)} (+${a.margin} %)` : k(a.potential);
+  };
   const { typ } = Route.useSearch();
   const { role } = useRole();
   const [c, setC] = useState<Content>(initial);
@@ -387,8 +395,8 @@ function VypisPage() {
             <Section title="Pozemky pozemkovoknižného stavu (register E-KN)">
               {c.parcelsE.length ? (
                 <Table
-                  head={["Register", "Parcelné číslo", "Výmera", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)"]}
-                  rows={c.parcelsE.map((p) => ["E-KN", p.parcel_no, m2(p.area_m2), p.drp_text ?? "—", p.placement ?? "—", zoning[`${p.parcel_no}|${p.register}`] ?? "—"])}
+                  head={["Register", "Parcelné číslo", "Výmera", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)", "AVM (ako-je → potenciál)"]}
+                  rows={c.parcelsE.map((p) => ["E-KN", p.parcel_no, m2(p.area_m2), p.drp_text ?? "—", p.placement ?? "—", zoning[`${p.parcel_no}|${p.register}`] ?? "—", avmCell(`${p.parcel_no}|${p.register}`)])}
                   mono={[1]}
                 />
               ) : (
@@ -432,13 +440,14 @@ function VypisPage() {
                 <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Parcely registra „C" evidované na katastrálnej mape</div>
                 {c.parcelsC.length ? (
                   <Table
-                    head={["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)", "Vysporiadané", "BPEJ", "Odňatie – trvalé"]}
+                    head={["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)", "AVM (ako-je → potenciál)", "Vysporiadané", "BPEJ", "Odňatie – trvalé"]}
                     rows={c.parcelsC.map((p) => [
                       p.parcel_no,
                       m2(p.area_m2),
                       p.drp_text ?? "—",
                       p.placement ?? "—",
                       zoning[`${p.parcel_no}|${p.register}`] ?? "—",
+                      avmCell(`${p.parcel_no}|${p.register}`),
                       p.settled === 1 ? "áno" : p.settled === 0 ? "nie" : "—",
                       p.bpej ? `${p.bpej}${p.skupina != null ? ` (${p.skupina}/9)` : ""}` : (p.skupina != null ? `${p.skupina}/9` : "—"),
                       p.odnatie_trvale != null ? `${eur(p.odnatie_trvale)} €` : "—",
@@ -454,8 +463,8 @@ function VypisPage() {
                   <div className="mt-3">
                     <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Parcely registra „E" evidované na mape určeného operátu</div>
                     <Table
-                      head={["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)"]}
-                      rows={c.parcelsE.map((p) => [p.parcel_no, m2(p.area_m2), p.drp_text ?? "—", p.placement ?? "—", zoning[`${p.parcel_no}|${p.register}`] ?? "—"])}
+                      head={["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)", "AVM (ako-je → potenciál)"]}
+                      rows={c.parcelsE.map((p) => [p.parcel_no, m2(p.area_m2), p.drp_text ?? "—", p.placement ?? "—", zoning[`${p.parcel_no}|${p.register}`] ?? "—", avmCell(`${p.parcel_no}|${p.register}`)])}
                       mono={[0]}
                     />
                   </div>
