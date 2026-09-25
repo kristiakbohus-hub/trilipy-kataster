@@ -2736,11 +2736,66 @@ export const refreshMarketPriceHistory = createServerFn({ method: "POST" })
     return { ok: true, count: stmts.length };
   });
 
+// ——— AVM (odhad hodnoty) — €/m² per okres × druh pozemku ———
+// Kalibrované defaulty €/m² (Kysuce) — orná/les/záhrada sa na trhu takmer nepredávajú, tak default.
+const AVM_DEFAULT: Record<string, number> = { stavebny: 45, zastavany: 40, zahrada: 15, polnohosp: 1.5, les: 1.0, ostatna: 8, vodna: 0.3 };
+export function avmCategory(druh: string | null | undefined): keyof typeof AVM_DEFAULT {
+  const t = (druh ?? "").toLowerCase();
+  if (/zastavan|nádvor|nadvor/.test(t)) return "zastavany";
+  if (/záhrad|zahrad/.test(t)) return "zahrada";
+  if (/les/.test(t)) return "les";
+  if (/vodn/.test(t)) return "vodna";
+  if (/orn|trávny|travny|ttp|lúk|luk|chme|vinic|ovoc|sad|pasien|poľnohos|polnohos/.test(t)) return "polnohosp";
+  return "ostatna";
+}
+const _avmMedian = (a: number[]): number | null => { if (!a.length) return null; const s = [...a].sort((x, y) => x - y); const m = Math.floor(s.length / 2); return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+// Prepočíta avm_index (€/m² stavebných pozemkov per okres, asking medián + realized blend). Volá sa pri ingeste.
+async function computeAvmIndex(): Promise<number> {
+  const { DB } = bindings();
+  if (!DB) return 0;
+  const ask = await q<{ okres: string; ppm2: number }>("SELECT okres, ppm2 FROM market_listings WHERE ptype='pozemok' AND removed_at IS NULL AND ppm2 BETWEEN 5 AND 300 AND lower(title) LIKE '%stavebn%' AND okres IS NOT NULL");
+  const rel = await q<{ okres: string; ppm2: number }>("SELECT okres, ppm2 FROM market_listings WHERE ptype='pozemok' AND removed_at IS NOT NULL AND (julianday(removed_at)-julianday(last_seen))<=14 AND ppm2 BETWEEN 5 AND 300 AND lower(title) LIKE '%stavebn%' AND okres IS NOT NULL");
+  const A: Record<string, number[]> = {}, R: Record<string, number[]> = {};
+  for (const r of ask) (A[r.okres] ??= []).push(r.ppm2);
+  for (const r of rel) (R[r.okres] ??= []).push(r.ppm2);
+  const stmts: ReturnType<typeof DB.prepare>[] = [];
+  for (const ok of new Set([...Object.keys(A), ...Object.keys(R)])) {
+    const a = A[ok] ?? [], rr = R[ok] ?? [], na = a.length, nr = rr.length;
+    const ma = _avmMedian(a), mr = _avmMedian(rr);
+    let ppm2: number | null = null, basis = "asking";
+    if (nr >= 5) { ppm2 = mr; basis = "realized"; }
+    else if (nr >= 3 && na >= 3 && mr != null && ma != null) { ppm2 = Math.round((mr * 0.6 + ma * 0.4) * 10) / 10; basis = "blend"; }
+    else if (na >= 3) { ppm2 = ma; basis = "asking"; }
+    else continue;
+    stmts.push(DB.prepare("INSERT INTO avm_index (okres,ppm2_stavebny,n_asking,ppm2_realized,n_realized,basis,updated) VALUES (?,?,?,?,?,?,date('now')) ON CONFLICT(okres) DO UPDATE SET ppm2_stavebny=excluded.ppm2_stavebny,n_asking=excluded.n_asking,ppm2_realized=excluded.ppm2_realized,n_realized=excluded.n_realized,basis=excluded.basis,updated=excluded.updated").bind(ok, ppm2, na, mr, nr, basis));
+  }
+  for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
+  return stmts.length;
+}
+
+export type AvmEstimate = { okres: string | null; category: string; ppm2AsIs: number; valueAsIs: number | null; ppm2Stavebny: number | null; valuePotential: number | null; marginPct: number | null; basis: string; nComps: number };
+// Odhad hodnoty parcely: ako-je (podľa druhu) vs potenciál (ak stavebné) → dev margin.
+export const getParcelAvm = createServerFn({ method: "POST" })
+  .validator(z.object({ okres: z.string().optional(), druh: z.string().optional(), areaM2: z.number(), buildable: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<AvmEstimate> => {
+    const cat = avmCategory(data.druh);
+    const row = data.okres ? (await q<{ ppm2_stavebny: number; basis: string; n_asking: number; n_realized: number }>("SELECT ppm2_stavebny, basis, n_asking, n_realized FROM avm_index WHERE okres = ?", [data.okres]))[0] : undefined;
+    const ppm2Stavebny = row?.ppm2_stavebny ?? null;
+    const ppm2AsIs = cat === "stavebny" ? (ppm2Stavebny ?? AVM_DEFAULT.stavebny) : AVM_DEFAULT[cat];
+    const area = data.areaM2 || 0;
+    const valueAsIs = area > 0 ? Math.round(ppm2AsIs * area) : null;
+    // potenciál = ak je (alebo môže byť) stavebné → stavebný €/m²
+    const potPpm2 = ppm2Stavebny ?? AVM_DEFAULT.stavebny;
+    const valuePotential = (data.buildable && area > 0 && cat !== "stavebny") ? Math.round(potPpm2 * area) : null;
+    const marginPct = valuePotential && valueAsIs ? Math.round((valuePotential - valueAsIs) / valuePotential * 100) : null;
+    return { okres: data.okres ?? null, category: cat, ppm2AsIs, valueAsIs, ppm2Stavebny, valuePotential, marginPct, basis: row?.basis ?? "default", nComps: (row?.n_realized ?? 0) + (row?.n_asking ?? 0) };
+  });
+
 // Kompletný market ingest cez secret (pre GitHub Actions curl) — index+opps+listing chunky+pricehistory z verejného URL.
 // Auth: x-alert-secret === D1 market_meta.alert_secret. Zvnútra volá role-guarded fns ako 'admin' (secret už overil).
 export const ingestMarketAll = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string() }))
-  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; opps?: number; listings?: number; ph?: number; chunks?: number }> => {
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; opps?: number; listings?: number; ph?: number; chunks?: number; avm?: number }> => {
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "DB nedostupná" };
     const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
@@ -2762,7 +2817,8 @@ export const ingestMarketAll = createServerFn({ method: "POST" })
       const rp = await refreshMarketPriceHistory({ data: { url: u, role: adminRole } }).catch(() => ({ ok: false, count: 0 }));
       ph += rp.count ?? 0;
     }
-    return { ok: true, opps: r1.opps, listings, ph, chunks: r1.chunks };
+    const avm = await computeAvmIndex().catch(() => 0);
+    return { ok: true, opps: r1.opps, listings, ph, chunks: r1.chunks, avm };
   });
 
 export type PricePoint = { day: string; price_eur: number | null; ppm2: number | null };
