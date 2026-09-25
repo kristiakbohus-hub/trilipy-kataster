@@ -2706,8 +2706,8 @@ export const refreshMarketListings = createServerFn({ method: "POST" })
       if (ppm2 == null && area && area > 5 && price && price > 0) ppm2 = ppm2Sane(o.ptype, price / area);
       const okres = normOkres(o.okres, o.obec);
       return DB.prepare(
-      "INSERT INTO market_listings (source,ext_id,url,title,ptype,deal,obec,psc,lat,lng,area_m2,rooms,price_eur,ppm2,first_seen,last_seen,first_price,flags,okres) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source,ext_id) DO UPDATE SET url=excluded.url,title=excluded.title,obec=excluded.obec,psc=excluded.psc,lat=excluded.lat,lng=excluded.lng,area_m2=excluded.area_m2,price_eur=excluded.price_eur,ppm2=excluded.ppm2,last_seen=excluded.last_seen,flags=excluded.flags,okres=excluded.okres")
-      .bind(s(o.source) ?? "bazos", s(o.ext_id), s(o.url), s(o.title), s(o.ptype), s(o.deal), s(o.obec), s(o.psc), num(o.lat), num(o.lng), area, num(o.rooms), price, ppm2, s(o.first_seen ?? o.listed), s(o.last_seen), priceSane(num(o.first_price ?? o.price_eur ?? o.price)), s(o.flags), okres); });
+      "INSERT INTO market_listings (source,ext_id,url,title,ptype,deal,obec,psc,lat,lng,area_m2,rooms,price_eur,ppm2,first_seen,last_seen,first_price,flags,okres,removed_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(source,ext_id) DO UPDATE SET url=excluded.url,title=excluded.title,ptype=excluded.ptype,obec=excluded.obec,psc=excluded.psc,lat=excluded.lat,lng=excluded.lng,area_m2=excluded.area_m2,price_eur=excluded.price_eur,ppm2=excluded.ppm2,last_seen=excluded.last_seen,flags=excluded.flags,okres=excluded.okres,removed_at=excluded.removed_at")
+      .bind(s(o.source) ?? "bazos", s(o.ext_id), s(o.url), s(o.title), s(o.ptype), s(o.deal), s(o.obec), s(o.psc), num(o.lat), num(o.lng), area, num(o.rooms), price, ppm2, s(o.first_seen ?? o.listed), s(o.last_seen), priceSane(num(o.first_price ?? o.price_eur ?? o.price)), s(o.flags), okres, s(o.removed_at)); });
     for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
     return { ok: true, count: stmts.length };
   });
@@ -3188,6 +3188,8 @@ export const getDealRadar = createServerFn({ method: "POST" })
 //     + naše ÚP-development príležitosti, nastaviteľné podľa lokality (okres) a typu (ptype). ———
 export type MorningListing = MarketOpp & { score: number; step: string; privatny: boolean };
 export type MorningUp = { kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null };
+// Zmiznuté z trhu (re-verify 301 = vymazané): zachovaný snapshot; posledná cena ≈ odhad predajnej ceny.
+export type MorningGone = { url: string | null; title: string | null; ptype: string | null; okres: string | null; obec: string | null; area_m2: number | null; price_eur: number | null; first_price: number | null; days_listed: number | null; removed_at: string | null; drop_pct: number | null; privatny: boolean };
 // Parser free-text promptu „hľadám chatu do 30k v Kysuciach s výhľadom" → typ + okres + max cena + kľúčové slová.
 const _MORNING_KW = ["výhľad", "vyhlad", "les", "rieka", "potok", "jazero", "slneč", "slnec", "rovinat", "ticho", "záhrad", "zahrad", "sieť", "siet", "voda", "elektri", "prístup", "pristup", "juh", "svah"];
 function parseMorningPrompt(s: string, okresy: string[]): { ptype?: string; okres?: string; maxPrice?: number; keywords: string[] } {
@@ -3214,7 +3216,7 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
   .validator(z.object({ okres: z.string().optional(), ptype: z.string().optional(), onlyPrivate: z.boolean().optional(), limit: z.number().optional(), prompt: z.string().optional() }))
   .handler(async ({ data }): Promise<{
     today: string | null; summary: { newToday: number; drops: number; upDeals: number; privateOpps: number };
-    listings: MorningListing[]; up: MorningUp[]; okresy: string[]; ptypes: string[];
+    listings: MorningListing[]; gone: MorningGone[]; up: MorningUp[]; okresy: string[]; ptypes: string[];
     parsed: { ptype: string | null; okres: string | null; maxPrice: number | null; keywords: string[] };
   }> => {
     const limit = data.limit ?? 15;
@@ -3234,7 +3236,7 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
     const parsed = parseMorningPrompt(data.prompt ?? "", okresy);
     const effOkres = data.okres || parsed.okres;
     const effPtype = data.ptype || parsed.ptype;
-    const w: string[] = [ACT, "(ls.ppm2 IS NULL OR ls.ppm2 >= 2)",
+    const w: string[] = [ACT, "ls.removed_at IS NULL", "(ls.ppm2 IS NULL OR ls.ppm2 >= 2)",
       "((ls.ptype IN ('dom','byt') AND ls.price_eur >= 15000) OR (ls.ptype IN ('chata','chalupa') AND ls.price_eur >= 5000) OR (ls.ptype NOT IN ('dom','byt','chata','chalupa') AND ls.price_eur >= 2000))"];
     const a: unknown[] = [];
     if (data.onlyPrivate !== false) w.push("ls.source = 'bazos'");
@@ -3275,7 +3277,22 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
        FROM landsearch_results ls LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
        LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
        WHERE ${upW.join(" AND ")} ORDER BY ls.quality DESC LIMIT 8`, upA).catch(() => [] as MorningUp[]);
-    return { today, summary: { newToday: c1, drops: c2, upDeals: c3, privateOpps: c4 }, listings, up, okresy, ptypes,
+    // ——— zmizli z trhu (re-verify 301 = vymazané) — zachovaný snapshot, posledná cena ≈ odhad predajnej ———
+    const gW: string[] = ["removed_at IS NOT NULL", "removed_at >= date((SELECT MAX(removed_at) FROM market_listings), '-30 day')"];
+    const gA: unknown[] = [];
+    if (data.onlyPrivate !== false) gW.push("source = 'bazos'");
+    if (effOkres) { gW.push("okres = ?"); gA.push(effOkres); }
+    if (effPtype) { gW.push("ptype = ?"); gA.push(effPtype); }
+    const gone = (await q<MorningGone>(
+      `SELECT url, title, ptype, okres, obec, area_m2, price_eur, first_price,
+              CAST(julianday(removed_at) - julianday(first_seen) AS INTEGER) AS days_listed,
+              removed_at,
+              CASE WHEN first_price IS NOT NULL AND first_price > price_eur
+                   THEN ROUND((first_price - price_eur) * 100.0 / first_price, 1) END AS drop_pct,
+              (source = 'bazos') AS privatny
+       FROM market_listings WHERE ${gW.join(" AND ")}
+       ORDER BY removed_at DESC LIMIT ?`, [...gA, limit]).catch(() => [] as MorningGone[])).map((g) => ({ ...g, privatny: !!g.privatny }));
+    return { today, summary: { newToday: c1, drops: c2, upDeals: c3, privateOpps: c4 }, listings, gone, up, okresy, ptypes,
       parsed: { ptype: effPtype ?? null, okres: effOkres ?? null, maxPrice: parsed.maxPrice ?? null, keywords: parsed.keywords } };
   });
 

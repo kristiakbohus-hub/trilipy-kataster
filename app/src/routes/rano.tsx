@@ -8,7 +8,7 @@ const eur = (n: number | null) => (n == null ? "—" : n.toLocaleString("sk-SK",
 
 export const Route = createFileRoute("/rano")({
   head: () => ({ meta: [{ title: "Dobré ráno — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getMorningBriefing({ data: { limit: 15 } }).catch((): Brief => ({ today: null, summary: { newToday: 0, drops: 0, upDeals: 0, privateOpps: 0 }, listings: [], up: [], okresy: [], ptypes: [], parsed: { ptype: null, okres: null, maxPrice: null, keywords: [] } })),
+  loader: async () => await getMorningBriefing({ data: { limit: 15 } }).catch((): Brief => ({ today: null, summary: { newToday: 0, drops: 0, upDeals: 0, privateOpps: 0 }, listings: [], gone: [], up: [], okresy: [], ptypes: [], parsed: { ptype: null, okres: null, maxPrice: null, keywords: [] } })),
   component: RanoPage,
 });
 
@@ -138,7 +138,34 @@ function RanoPage() {
         )}
       </Card>
 
-      <p className="text-[11px] text-muted">Orientačné — inzeráty z verejných portálov (bazos = súkromní, reality = agentúry), skóre = pokles ceny + pod trhom + čas v ponuke. ÚP príležitosti z nášho land-search enginu. Nie je to právne ani územnoplánovacie stanovisko.</p>
+      {/* Zmizli z trhu (predané/stiahnuté — odhad) — zachovaný snapshot, sold-comps + trhový pulz */}
+      {b.gone.length > 0 ? (
+        <Card>
+          <div className="mb-2 flex items-center gap-2">
+            <Icon name="target" />
+            <h2 className="text-sm font-bold text-fg">Zmizli z trhu · posledná cena = odhad predajnej</h2>
+          </div>
+          <div className="divide-y divide-line">
+            {b.gone.map((g, i) => (
+              <div key={`${g.url}-${i}`} className="py-2.5">
+                <div className="flex flex-wrap items-baseline gap-x-2 text-sm">
+                  <span className="font-medium text-fg">{g.title ?? "—"}</span>
+                  {g.privatny ? <Badge color="#1E7A3E">súkromný</Badge> : <Badge color="#6b7280">agentúra</Badge>}
+                  <Badge color="#8a6d3b">stiahnutý</Badge>
+                </div>
+                <div className="mt-0.5 text-[12px] text-muted">
+                  {g.obec ?? g.okres ?? ""}{g.area_m2 ? ` · ${g.area_m2.toLocaleString("sk-SK")} m²` : ""} · {eur(g.price_eur)}
+                  {g.drop_pct ? ` · ▼ ${Math.round(g.drop_pct)} % z ${eur(g.first_price)}` : ""}
+                  {g.days_listed ? ` · ${g.days_listed} dní v ponuke` : ""}
+                  {g.removed_at ? ` · zmizol ${new Date(g.removed_at).toLocaleDateString("sk-SK", { day: "numeric", month: "numeric" })}` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
+      <p className="text-[11px] text-muted">Orientačné — inzeráty z verejných portálov (bazos = súkromní, reality = agentúry), skóre = pokles ceny + pod trhom + čas v ponuke. „Zmizli z trhu" = inzerát bol stiahnutý (re-verify), posledná cena je len odhad. ÚP príležitosti z nášho land-search enginu. Nie je to právne ani územnoplánovacie stanovisko.</p>
     </div>
   );
 }
