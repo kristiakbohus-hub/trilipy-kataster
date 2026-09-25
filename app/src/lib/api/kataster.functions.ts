@@ -3195,8 +3195,8 @@ function parseMorningPrompt(s: string, okresy: string[]): { ptype?: string; okre
   const norm = (x: string) => x.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "");
   let ptype: string | undefined;
   const kwExtra: string[] = [];
-  // POZOR: scraper kategorizuje len dom/pozemok/byt (chata/chalupa NIE) → chatu hľadaj kľúčovým slovom v titulku.
-  if (/chat|chalup/.test(t)) kwExtra.push("chat");
+  // chata/chalupa je teraz samostatný ptype (scraper aj D1 preklasifikované).
+  if (/chat|chalup|zrub|drevenic/.test(t)) ptype = "chata";
   else if (/\bbyt/.test(t)) ptype = "byt";
   else if (/\bdom\b|rodinn/.test(t)) ptype = "dom";
   else if (/pozem|parcel|stavebn/.test(t)) ptype = "pozemok";
@@ -3218,36 +3218,50 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
     parsed: { ptype: string | null; okres: string | null; maxPrice: number | null; keywords: string[] };
   }> => {
     const limit = data.limit ?? 15;
+    // len AKTÍVNE inzeráty (mŕtve/vymazané z hromadného 08-30 backfillu vypadnú); prah ~21 dní od posledného skenu
+    const ACT = "last_seen >= date((SELECT MAX(last_seen) FROM market_listings), '-21 day')";
     const today = (await q<{ d: string }>("SELECT MAX(last_seen) d FROM market_listings").catch(() => []))[0]?.d ?? null;
-    // dnes dôležité (súhrn)
-    const c1 = (await q<{ n: number }>("SELECT COUNT(*) n FROM market_listings WHERE last_seen = ?", [today]).catch(() => []))[0]?.n ?? 0;
-    const c2 = (await q<{ n: number }>("SELECT COUNT(*) n FROM market_opportunities WHERE price_drop_pct > 0").catch(() => []))[0]?.n ?? 0;
+    // dnes dôležité (súhrn) — z aktívnych listings
+    const c1 = (await q<{ n: number }>(`SELECT COUNT(*) n FROM market_listings WHERE first_seen = ? AND ${ACT}`, [today]).catch(() => []))[0]?.n ?? 0;
+    const c2 = (await q<{ n: number }>(`SELECT COUNT(*) n FROM market_listings WHERE first_price IS NOT NULL AND first_price > price_eur AND ${ACT}`).catch(() => []))[0]?.n ?? 0;
     const c3 = (await q<{ n: number }>("SELECT COUNT(*) n FROM landsearch_results WHERE verdict = 'MATCH'").catch(() => []))[0]?.n ?? 0;
-    // číselníky pre filter (lokalita + typ)
-    const okresy = (await q<{ okres: string }>("SELECT DISTINCT okres FROM market_opportunities WHERE okres IS NOT NULL ORDER BY okres").catch(() => [])).map((r) => r.okres);
-    const ptypes = (await q<{ ptype: string }>("SELECT DISTINCT ptype FROM market_opportunities WHERE ptype IS NOT NULL ORDER BY ptype").catch(() => [])).map((r) => r.ptype);
-    // scorovaná inzercia (default LEN súkromná = bazos; agentúra = reality)
+    // číselníky pre filter (lokalita + typ) — z aktívnych inzerátov (obsahuje aj nový typ 'chata')
+    const okresy = (await q<{ okres: string }>(`SELECT DISTINCT okres FROM market_listings WHERE okres IS NOT NULL AND ${ACT} ORDER BY okres`).catch(() => [])).map((r) => r.okres);
+    const ptypes = (await q<{ ptype: string }>(`SELECT DISTINCT ptype FROM market_listings WHERE ptype IS NOT NULL AND ${ACT} ORDER BY ptype`).catch(() => [])).map((r) => r.ptype);
+    // celé aktívne listings; skóre za behu (pokles z first_price, dni z first/last_seen, pod trhom cez obec medián)
     const parsed = parseMorningPrompt(data.prompt ?? "", okresy);
     const effOkres = data.okres || parsed.okres;
     const effPtype = data.ptype || parsed.ptype;
-    const w: string[] = ["(below_market_pct IS NOT NULL OR price_drop_pct IS NOT NULL)", "(price_per_m2 IS NULL OR price_per_m2 >= 2)",
-      "((ptype IN ('dom','byt','chata','chalupa') AND price_eur >= 15000) OR (ptype NOT IN ('dom','byt','chata','chalupa') AND price_eur >= 2000))"];
+    const w: string[] = [ACT, "(ls.ppm2 IS NULL OR ls.ppm2 >= 2)",
+      "((ls.ptype IN ('dom','byt') AND ls.price_eur >= 15000) OR (ls.ptype IN ('chata','chalupa') AND ls.price_eur >= 5000) OR (ls.ptype NOT IN ('dom','byt','chata','chalupa') AND ls.price_eur >= 2000))"];
     const a: unknown[] = [];
-    if (data.onlyPrivate !== false) w.push("source = 'bazos'");
-    if (effOkres) { w.push("okres = ?"); a.push(effOkres); }
-    if (effPtype) { w.push("ptype = ?"); a.push(effPtype); }
-    if (parsed.maxPrice) { w.push("price_eur <= ?"); a.push(parsed.maxPrice); }
-    for (const kw of parsed.keywords) { w.push("lower(title) LIKE ?"); a.push(`%${kw}%`); }
+    if (data.onlyPrivate !== false) w.push("ls.source = 'bazos'");
+    if (effOkres) { w.push("ls.okres = ?"); a.push(effOkres); }
+    if (effPtype) { w.push("ls.ptype = ?"); a.push(effPtype); }
+    if (parsed.maxPrice) { w.push("ls.price_eur <= ?"); a.push(parsed.maxPrice); }
+    for (const kw of parsed.keywords) { w.push("lower(ls.title) LIKE ?"); a.push(`%${kw}%`); }
     const raw = await q<MarketOpp>(
-      `SELECT source,url,title,ptype,deal,okres,obec,area_m2,price_eur,price_per_m2,days_on_market,price_drop_pct,below_market_pct,flags
-       FROM market_opportunities WHERE ${w.join(" AND ")} GROUP BY url
-       ORDER BY (COALESCE(below_market_pct,0) + COALESCE(price_drop_pct,0) + (CASE WHEN days_on_market > 90 THEN 12 ELSE 0 END)) DESC LIMIT ?`, [...a, limit]).catch(() => [] as MarketOpp[]);
+      `SELECT ls.source, ls.url, ls.title, ls.ptype, ls.deal, ls.okres, ls.obec, ls.area_m2, ls.price_eur,
+              ls.ppm2 AS price_per_m2,
+              CAST(julianday(ls.last_seen) - julianday(ls.first_seen) AS INTEGER) AS days_on_market,
+              CASE WHEN ls.first_price IS NOT NULL AND ls.first_price > ls.price_eur
+                   THEN ROUND((ls.first_price - ls.price_eur) * 100.0 / ls.first_price, 1) END AS price_drop_pct,
+              CASE WHEN ls.ppm2 IS NOT NULL AND om.median_ppm2 IS NOT NULL AND om.median_ppm2 > 0 AND ls.ppm2 < om.median_ppm2
+                   THEN ROUND((om.median_ppm2 - ls.ppm2) * 100.0 / om.median_ppm2, 1) END AS below_market_pct,
+              ls.flags
+       FROM market_listings ls
+       LEFT JOIN obec_market_median om ON om.obec = ls.obec
+       WHERE ${w.join(" AND ")}
+       ORDER BY (COALESCE(below_market_pct, 0) * 0.6 + COALESCE(price_drop_pct, 0) * 0.9
+                 + (CASE WHEN days_on_market > 120 THEN 18 WHEN days_on_market > 60 THEN 10 ELSE 0 END)) DESC
+       LIMIT ?`, [...a, limit]).catch(() => [] as MarketOpp[]);
     const listings: MorningListing[] = raw.map((l) => {
       const below = l.below_market_pct ?? 0, drop = l.price_drop_pct ?? 0, dom = l.days_on_market ?? 0;
       const score = Math.round(Math.min(100, below * 0.6 + drop * 0.9 + (dom > 120 ? 18 : dom > 60 ? 10 : 0)));
       const step = drop > 0
         ? `Cena klesla o ${Math.round(drop)} % — zavolať predajcovi, priestor na vyjednávanie`
-        : dom > 90 ? `${dom} dní v ponuke — motivovaný predajca, osloviť` : "Osloviť predajcu / preveriť pozemok";
+        : dom > 90 ? `${dom} dní v ponuke — motivovaný predajca, osloviť`
+        : below > 0 ? `~${Math.round(below)} % pod trhom v obci — preveriť a osloviť` : "Osloviť predajcu / preveriť inzerát";
       return { ...l, score, step, privatny: l.source === "bazos" };
     });
     // naše ÚP-development príležitosti (genuine: bývanie/hromadné, MATCH) + obecný trhový kontext
