@@ -563,7 +563,7 @@ export const nlQuery = createServerFn({ method: "POST" })
     }
 
     // ——— 1c) POZEMKOVÉ PRÍLEŽITOSTI (land-search, predpočítané z Mac gold_li_engine → landsearch_results) ———
-    type LandHit = { kod_ku: string; ku_name: string | null; purpose: string | null; verdict: string | null; quality: number | null; area_m2: number | null; n_parcels: number | null; parcels: string | null; shape: string | null; zone: string | null; build: string | null; access: number | null; slope: number | null; frontage: number | null; ppf: number | null; existing_use: string | null; yard: string | null; access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null; market_ppm2: number | null; market_n: number | null };
+    type LandHit = { kod_ku: string; ku_name: string | null; purpose: string | null; verdict: string | null; quality: number | null; area_m2: number | null; n_parcels: number | null; parcels: string | null; shape: string | null; zone: string | null; build: string | null; access: number | null; slope: number | null; frontage: number | null; ppf: number | null; existing_use: string | null; yard: string | null; access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null; market_ppm2: number | null; market_n: number | null; avmPpm2: number | null; avmPotential: number | null; avmAsIs: number | null; avmMargin: number | null; avmBasis: string | null };
     let land: { count: number; results: LandHit[] } = { count: 0, results: [] };
     const landIntent = /pozemk|pozemok|stavebn|v[yý]stavb|lokalit|supermarket|pr[ií]le[žz]itost/.test(s);
     if (landIntent) {
@@ -571,14 +571,25 @@ export const nlQuery = createServerFn({ method: "POST" })
       if (capName) { lc.push("ku_name LIKE ?"); la.push(`%${capName[1]}%`); }
       if (/b[yý]van|rodinn|obytn|rezidenc/.test(s)) { lc.push("purpose = 'residential'"); }
       else if (/priemysel|sklad|logist|hala/.test(s)) { lc.push("purpose = 'industrial'"); }
-      const lrows = await q<LandHit>(
+      const lrows = await q<LandHit & { avm_ppm2: number | null; avm_basis: string | null }>(
         `SELECT ls.kod_ku, ls.ku_name, ls.purpose, ls.verdict, ls.quality, ls.area_m2, ls.n_parcels, ls.parcels, ls.shape, ls.zone, ls.build, ls.access, ls.slope, ls.frontage, ls.ppf, ls.existing_use, ls.yard, ls.access_times, ls.owners, ls.n_owners, ls.reason,
-            om.median_ppm2 AS market_ppm2, om.n AS market_n
+            om.median_ppm2 AS market_ppm2, om.n AS market_n, av.ppm2_stavebny AS avm_ppm2, av.basis AS avm_basis
          FROM landsearch_results ls
          LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
          LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
-         ${lc.length ? "WHERE " + lc.map((x) => x.replace(/^ku_name|^purpose/, (m) => "ls." + m)).join(" AND ") : ""} ORDER BY (ls.verdict = 'MATCH') DESC, ls.quality DESC LIMIT 200`, la).catch(() => [] as LandHit[]);
-      land = { count: lrows.length, results: lrows };
+         LEFT JOIN avm_index av ON av.okres = TRIM(REPLACE(SUBSTR(ds.region, 1, INSTR(ds.region || ' · ', ' · ') - 1), 'okres ', ''))
+         ${lc.length ? "WHERE " + lc.map((x) => x.replace(/^ku_name|^purpose/, (m) => "ls." + m)).join(" AND ") : ""} ORDER BY (ls.verdict = 'MATCH') DESC, ls.quality DESC LIMIT 200`, la).catch(() => []);
+      const lresults: LandHit[] = lrows.map((o) => {
+        const area = o.area_m2 ?? 0;
+        const stav = o.avm_ppm2 ?? AVM_DEFAULT.stavebny;
+        const cat = o.existing_use ? avmCategory(o.existing_use) : "polnohosp";
+        const asIsPpm2 = cat === "stavebny" ? stav : AVM_DEFAULT[cat];
+        const avmPotential = area > 0 ? Math.round(stav * area) : null;
+        const avmAsIs = area > 0 ? Math.round(asIsPpm2 * area) : null;
+        const avmMargin = avmPotential && avmAsIs ? Math.round((avmPotential - avmAsIs) / avmPotential * 100) : null;
+        return { ...o, avmPpm2: o.avm_ppm2, avmPotential, avmAsIs, avmMargin, avmBasis: o.avm_basis };
+      });
+      land = { count: lresults.length, results: lresults };
     }
 
     return {

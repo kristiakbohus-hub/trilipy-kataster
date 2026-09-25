@@ -216,6 +216,14 @@ function PrieskumPage() {
                         {o.area_m2 ? ` · odhad hodnoty ~${Math.round(o.area_m2 * o.market_ppm2).toLocaleString("sk-SK")} €` : ""}
                       </div>
                     ) : null}
+                    {o.avmPotential != null ? (
+                      <div className="text-[12px]">
+                        <span className="text-muted">AVM: ako-je ~{o.avmAsIs != null ? o.avmAsIs.toLocaleString("sk-SK") + " €" : "—"} → </span>
+                        <span className="font-medium text-fg">potenciál ~{o.avmPotential.toLocaleString("sk-SK")} €</span>
+                        {o.avmMargin ? <span className="font-medium" style={{ color: "#1E7A3E" }}> · +{o.avmMargin} % dev margin</span> : null}
+                        {o.avmPpm2 ? <span className="text-muted"> ({o.avmPpm2} €/m² stav.)</span> : null}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               );
