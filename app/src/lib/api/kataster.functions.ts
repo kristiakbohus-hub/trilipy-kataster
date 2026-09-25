@@ -2736,6 +2736,35 @@ export const refreshMarketPriceHistory = createServerFn({ method: "POST" })
     return { ok: true, count: stmts.length };
   });
 
+// Kompletný market ingest cez secret (pre GitHub Actions curl) — index+opps+listing chunky+pricehistory z verejného URL.
+// Auth: x-alert-secret === D1 market_meta.alert_secret. Zvnútra volá role-guarded fns ako 'admin' (secret už overil).
+export const ingestMarketAll = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; opps?: number; listings?: number; ph?: number; chunks?: number }> => {
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "DB nedostupná" };
+    const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
+    if (!expected || data.secret !== expected) return { ok: false, message: "Neplatný secret" };
+    const src = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
+    if (!src) return { ok: false, message: "Chýba source_url v market_meta" };
+    const adminRole = "admin" as Role;
+    const r1 = await refreshMarketData({ data: { role: adminRole } });
+    if (!r1.ok) return { ok: false, message: r1.message ?? "refreshMarketData zlyhal" };
+    let listings = 0;
+    for (let i = 0; i < (r1.chunks ?? 0); i++) {
+      const u = src.replace("market-data.json", `market-listings-${i}.json`);
+      const rl = await refreshMarketListings({ data: { url: u, role: adminRole } }).catch(() => ({ ok: false, count: 0 }));
+      listings += rl.count ?? 0;
+    }
+    let ph = 0;
+    for (let i = 0; i < (r1.phChunks ?? 0); i++) {
+      const u = src.replace("market-data.json", `market-pricehistory-${i}.json`);
+      const rp = await refreshMarketPriceHistory({ data: { url: u, role: adminRole } }).catch(() => ({ ok: false, count: 0 }));
+      ph += rp.count ?? 0;
+    }
+    return { ok: true, opps: r1.opps, listings, ph, chunks: r1.chunks };
+  });
+
 export type PricePoint = { day: string; price_eur: number | null; ppm2: number | null };
 export const getListingPriceHistory = createServerFn({ method: "POST" })
   .validator(z.object({ source: z.string(), ext_id: z.string() }))
