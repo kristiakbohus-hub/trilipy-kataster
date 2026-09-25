@@ -563,7 +563,7 @@ export const nlQuery = createServerFn({ method: "POST" })
     }
 
     // ——— 1c) POZEMKOVÉ PRÍLEŽITOSTI (land-search, predpočítané z Mac gold_li_engine → landsearch_results) ———
-    type LandHit = { kod_ku: string; ku_name: string | null; purpose: string | null; verdict: string | null; quality: number | null; area_m2: number | null; n_parcels: number | null; parcels: string | null; shape: string | null; zone: string | null; build: string | null; access: number | null; slope: number | null; frontage: number | null; ppf: number | null; existing_use: string | null; yard: string | null; access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null; market_ppm2: number | null; market_n: number | null; avmPpm2: number | null; avmPotential: number | null; avmAsIs: number | null; avmMargin: number | null; avmBasis: string | null };
+    type LandHit = { kod_ku: string; ku_name: string | null; purpose: string | null; verdict: string | null; quality: number | null; area_m2: number | null; n_parcels: number | null; parcels: string | null; shape: string | null; zone: string | null; build: string | null; access: number | null; slope: number | null; frontage: number | null; ppf: number | null; existing_use: string | null; yard: string | null; access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null; market_ppm2: number | null; market_n: number | null; druh: string | null; avmPpm2: number | null; avmPotential: number | null; avmAsIs: number | null; avmMargin: number | null; avmBasis: string | null };
     let land: { count: number; results: LandHit[] } = { count: 0, results: [] };
     const landIntent = /pozemk|pozemok|stavebn|v[yý]stavb|lokalit|supermarket|pr[ií]le[žz]itost/.test(s);
     if (landIntent) {
@@ -572,7 +572,7 @@ export const nlQuery = createServerFn({ method: "POST" })
       if (/b[yý]van|rodinn|obytn|rezidenc/.test(s)) { lc.push("purpose = 'residential'"); }
       else if (/priemysel|sklad|logist|hala/.test(s)) { lc.push("purpose = 'industrial'"); }
       const lrows = await q<LandHit & { avm_ppm2: number | null; avm_basis: string | null }>(
-        `SELECT ls.kod_ku, ls.ku_name, ls.purpose, ls.verdict, ls.quality, ls.area_m2, ls.n_parcels, ls.parcels, ls.shape, ls.zone, ls.build, ls.access, ls.slope, ls.frontage, ls.ppf, ls.existing_use, ls.yard, ls.access_times, ls.owners, ls.n_owners, ls.reason,
+        `SELECT ls.kod_ku, ls.ku_name, ls.purpose, ls.verdict, ls.quality, ls.area_m2, ls.n_parcels, ls.parcels, ls.shape, ls.zone, ls.build, ls.access, ls.slope, ls.frontage, ls.ppf, ls.existing_use, ls.yard, ls.access_times, ls.owners, ls.n_owners, ls.reason, ls.druh,
             om.median_ppm2 AS market_ppm2, om.n AS market_n, av.ppm2_stavebny AS avm_ppm2, av.basis AS avm_basis
          FROM landsearch_results ls
          LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
@@ -582,7 +582,7 @@ export const nlQuery = createServerFn({ method: "POST" })
       const lresults: LandHit[] = lrows.map((o) => {
         const area = o.area_m2 ?? 0;
         const stav = o.avm_ppm2 ?? AVM_DEFAULT.stavebny;
-        const cat = o.existing_use ? avmCategory(o.existing_use) : "polnohosp";
+        const cat = o.druh ? avmCategory(o.druh) : "polnohosp";
         const asIsPpm2 = cat === "stavebny" ? stav : AVM_DEFAULT[cat];
         const avmPotential = area > 0 ? Math.round(stav * area) : null;
         const avmAsIs = area > 0 ? Math.round(asIsPpm2 * area) : null;
@@ -1108,6 +1108,7 @@ export const ingestLandsearch = createServerFn({ method: "POST" })
       slope: z.number().optional(), frontage: z.number().optional(), ppf: z.number().optional(),
       existingUse: z.string().optional(), yard: z.string().optional(), accessTimes: z.string().optional(),
       owners: z.string().optional(), nOwners: z.number().optional(), reason: z.string().optional(),
+      druh: z.string().optional(),
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
@@ -1119,8 +1120,8 @@ export const ingestLandsearch = createServerFn({ method: "POST" })
       const ph = data.replaceKu.map(() => "?").join(",");
       await DB.prepare(`DELETE FROM landsearch_results WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
     }
-    const stmt = DB.prepare("INSERT INTO landsearch_results (kod_ku,ku_name,purpose,verdict,quality,area_m2,n_parcels,parcels,shape,zone,build,access,slope,frontage,ppf,existing_use,yard,access_times,owners,n_owners,reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.purpose ?? null, r.verdict ?? null, r.quality ?? null, r.areaM2 ?? null, r.nParcels ?? null, r.parcels ?? null, r.shape ?? null, r.zone ?? null, r.build ?? null, r.access ?? null, r.slope ?? null, r.frontage ?? null, r.ppf ?? 0, r.existingUse ?? null, r.yard ?? null, r.accessTimes ?? null, r.owners ?? null, r.nOwners ?? null, r.reason ?? null));
+    const stmt = DB.prepare("INSERT INTO landsearch_results (kod_ku,ku_name,purpose,verdict,quality,area_m2,n_parcels,parcels,shape,zone,build,access,slope,frontage,ppf,existing_use,yard,access_times,owners,n_owners,reason,druh) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.purpose ?? null, r.verdict ?? null, r.quality ?? null, r.areaM2 ?? null, r.nParcels ?? null, r.parcels ?? null, r.shape ?? null, r.zone ?? null, r.build ?? null, r.access ?? null, r.slope ?? null, r.frontage ?? null, r.ppf ?? 0, r.existingUse ?? null, r.yard ?? null, r.accessTimes ?? null, r.owners ?? null, r.nOwners ?? null, r.reason ?? null, r.druh ?? null));
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
     return { ok: true, inserted: data.rows.length };
   });
@@ -2784,6 +2785,25 @@ async function computeAvmIndex(): Promise<number> {
   return stmts.length;
 }
 
+// B5: denný refresh obec_market_median (medián stavebných €/m² per obec z inzerátov). Obce bez dát (seed dediny) sa NEprepíšu.
+async function computeObecMarket(): Promise<number> {
+  const { DB } = bindings();
+  if (!DB) return 0;
+  const rows = await q<{ obec: string; ppm2: number }>("SELECT obec, ppm2 FROM market_listings WHERE ptype='pozemok' AND removed_at IS NULL AND ppm2 BETWEEN 5 AND 300 AND lower(title) LIKE '%stavebn%' AND obec IS NOT NULL");
+  const G: Record<string, number[]> = {};
+  for (const r of rows) (G[r.obec] ??= []).push(r.ppm2);
+  const stmts: ReturnType<typeof DB.prepare>[] = [];
+  for (const obec of Object.keys(G)) {
+    const arr = G[obec];
+    if (arr.length < 3) continue;
+    const med = _avmMedian(arr);
+    if (med == null) continue;
+    stmts.push(DB.prepare("INSERT INTO obec_market_median (obec,median_ppm2,n,ptype,updated) VALUES (?,?,?,'pozemok',date('now')) ON CONFLICT(obec) DO UPDATE SET median_ppm2=excluded.median_ppm2,n=excluded.n,updated=excluded.updated").bind(obec, med, arr.length));
+  }
+  for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
+  return stmts.length;
+}
+
 export type AvmEstimate = { okres: string | null; category: string; ppm2AsIs: number; valueAsIs: number | null; ppm2Stavebny: number | null; valuePotential: number | null; marginPct: number | null; basis: string; nComps: number };
 // Odhad hodnoty parcely: ako-je (podľa druhu) vs potenciál (ak stavebné) → dev margin.
 export const getParcelAvm = createServerFn({ method: "POST" })
@@ -2827,7 +2847,7 @@ export const getLvAvm = createServerFn({ method: "POST" })
 // Auth: x-alert-secret === D1 market_meta.alert_secret. Zvnútra volá role-guarded fns ako 'admin' (secret už overil).
 export const ingestMarketAll = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string() }))
-  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; opps?: number; listings?: number; ph?: number; chunks?: number; avm?: number }> => {
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; opps?: number; listings?: number; ph?: number; chunks?: number; avm?: number; obm?: number }> => {
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "DB nedostupná" };
     const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
@@ -2850,7 +2870,8 @@ export const ingestMarketAll = createServerFn({ method: "POST" })
       ph += rp.count ?? 0;
     }
     const avm = await computeAvmIndex().catch(() => 0);
-    return { ok: true, opps: r1.opps, listings, ph, chunks: r1.chunks, avm };
+    const obm = await computeObecMarket().catch(() => 0);
+    return { ok: true, opps: r1.opps, listings, ph, chunks: r1.chunks, avm, obm };
   });
 
 export type PricePoint = { day: string; price_eur: number | null; ppm2: number | null };
@@ -3393,9 +3414,9 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
     const upW: string[] = ["ls.verdict = 'MATCH'", "ls.purpose = 'residential'", "ls.zone IN ('bývanie/rekreácia','hromadné bývanie')"];
     const upA: unknown[] = [];
     if (effOkres) { upW.push("ds.region LIKE ?"); upA.push(`%${effOkres}%`); }
-    const upRaw = await q<{ kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null; avm_ppm2: number | null; avm_basis: string | null }>(
+    const upRaw = await q<{ kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null; avm_ppm2: number | null; avm_basis: string | null; druh: string | null }>(
       `SELECT ls.kod_ku, COALESCE(ds.ku_name, ls.ku_name) ku_name, ls.quality, ls.area_m2, ls.parcels, ls.zone, ls.ppf, om.median_ppm2 market_ppm2,
-              av.ppm2_stavebny AS avm_ppm2, av.basis AS avm_basis
+              av.ppm2_stavebny AS avm_ppm2, av.basis AS avm_basis, ls.druh
        FROM landsearch_results ls LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
        LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
        LEFT JOIN avm_index av ON av.okres = TRIM(REPLACE(SUBSTR(ds.region, 1, INSTR(ds.region || ' · ', ' · ') - 1), 'okres ', ''))
@@ -3403,8 +3424,10 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
     const up: MorningUp[] = upRaw.map((o) => {
       const area = o.area_m2 ?? 0;
       const stav = o.avm_ppm2 ?? AVM_DEFAULT.stavebny;                  // €/m² ako stavebné
+      const cat = o.druh ? avmCategory(o.druh) : "polnohosp";           // reálny katastrálny druh (backfill), inak odhad
+      const asIsPpm2 = cat === "stavebny" ? stav : AVM_DEFAULT[cat];
       const avmPotential = area > 0 ? Math.round(stav * area) : null;   // hodnota ak zastavateľné
-      const avmAsIs = area > 0 ? Math.round(AVM_DEFAULT.polnohosp * area) : null; // MATCH parcely = zväčša poľnohosp druh
+      const avmAsIs = area > 0 ? Math.round(asIsPpm2 * area) : null;
       const avmMargin = avmPotential && avmAsIs ? Math.round((avmPotential - avmAsIs) / avmPotential * 100) : null;
       return { kod_ku: o.kod_ku, ku_name: o.ku_name, quality: o.quality, area_m2: o.area_m2, parcels: o.parcels, zone: o.zone, ppf: o.ppf, market_ppm2: o.market_ppm2, avmPpm2: o.avm_ppm2, avmBasis: o.avm_basis, avmPotential, avmAsIs, avmMargin };
     });
