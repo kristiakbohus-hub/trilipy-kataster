@@ -2843,6 +2843,45 @@ export const getLvAvm = createServerFn({ method: "POST" })
     return out;
   });
 
+// Ingest datasetu k.ú. (parcely/LV/vlastníci/BPEJ) cez secret — pre auto-publish z 41_IMPORT pipeline.
+// Chunkovaný: prvý call reset=true (DELETE staré + upsert datasets), ďalšie appendujú. Owner PII masking rieši server pri čítaní.
+export const ingestDataset = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), kodKu: z.string(), reset: z.boolean().optional(),
+    dataset: z.object({ kuName: z.string().optional(), region: z.string().optional(), knType: z.string().optional(), nParcels: z.number().optional(), nOwners: z.number().optional(), sumArea: z.number().optional() }).optional(),
+    parcels: z.array(z.object({ parcelNo: z.string(), knType: z.string().optional(), areaM2: z.number().nullable().optional(), useType: z.string().nullable().optional(), lvNo: z.string().nullable().optional(), centroidLat: z.number().nullable().optional(), centroidLng: z.number().nullable().optional(), geometryJson: z.string().nullable().optional(), bpej: z.string().nullable().optional(), bpejSkupina: z.number().nullable().optional() })).optional(),
+    lvs: z.array(z.object({ lvNo: z.string(), coOwners: z.number().nullable().optional(), note: z.string().nullable().optional() })).optional(),
+    owners: z.array(z.object({ lvNo: z.string(), name: z.string().nullable().optional(), share: z.string().nullable().optional(), isCompany: z.number().nullable().optional(), birthDate: z.string().nullable().optional(), title: z.string().nullable().optional(), bornName: z.string().nullable().optional(), ico: z.string().nullable().optional(), addrObec: z.string().nullable().optional(), addrCislo: z.string().nullable().optional(), addrPsc: z.string().nullable().optional() })).optional(),
+    bpej: z.array(z.object({ code: z.string(), skupina: z.number().nullable().optional(), geometryJson: z.string().nullable().optional() })).optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; parcels?: number; owners?: number }> => {
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "DB nedostupná" };
+    const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
+    if (!expected || data.secret !== expected) return { ok: false, message: "Neplatný secret" };
+    const did = `kn-${data.kodKu}`;
+    if (data.reset) {
+      await DB.batch([
+        DB.prepare("DELETE FROM parcels WHERE dataset_id=?").bind(did),
+        DB.prepare("DELETE FROM lvs WHERE dataset_id=?").bind(did),
+        DB.prepare("DELETE FROM lv_owners WHERE dataset_id=?").bind(did),
+        DB.prepare("DELETE FROM bpej_zones WHERE dataset_id=?").bind(did),
+      ]);
+      const d = data.dataset ?? {};
+      await DB.prepare("INSERT INTO datasets (id,ku_code,ku_name,region,kn_type,status,geometry_coverage,canonical_confidence,import_version,updated_at,note,n_parcels,n_owners,sum_area_m2) VALUES (?,?,?,?,?,?,?,?,?,date('now'),?,?,?,?) ON CONFLICT(id) DO UPDATE SET ku_name=excluded.ku_name,region=excluded.region,kn_type=excluded.kn_type,updated_at=excluded.updated_at,note=excluded.note,n_parcels=excluded.n_parcels,n_owners=excluded.n_owners,sum_area_m2=excluded.sum_area_m2")
+        .bind(did, data.kodKu, d.kuName ?? data.kodKu, d.region ?? null, d.knType ?? "C-KN", "ready_with_warnings", 100, 0.85, "import_auto", `Auto import ${data.kodKu} (41_IMPORT).`, d.nParcels ?? null, d.nOwners ?? null, d.sumArea ?? null).run();
+    }
+    const rid = () => (globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)).replace(/-/g, "").slice(0, 12);
+    const slug = (s: string) => s.replace(/\//g, "-");
+    const stmts: ReturnType<typeof DB.prepare>[] = [];
+    for (const p of data.parcels ?? []) stmts.push(DB.prepare("INSERT INTO parcels (id,dataset_id,parcel_no,kn_type,area_m2,use_type,lv_no,geometry_quality,centroid_lat,centroid_lng,geometry_json,bpej,bpej_skupina) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${did}-${slug(p.parcelNo)}`, did, p.parcelNo, p.knType ?? "C-KN", p.areaM2 ?? null, p.useType ?? null, p.lvNo ?? null, "derived", p.centroidLat ?? null, p.centroidLng ?? null, p.geometryJson ?? null, p.bpej ?? null, p.bpejSkupina ?? null));
+    for (const l of data.lvs ?? []) stmts.push(DB.prepare("INSERT INTO lvs (id,dataset_id,lv_no,co_owners,note) VALUES (?,?,?,?,?) ON CONFLICT(id) DO NOTHING").bind(`${did}-${l.lvNo}`, did, l.lvNo, l.coOwners ?? null, l.note ?? null));
+    for (const o of data.owners ?? []) stmts.push(DB.prepare("INSERT INTO lv_owners (id,dataset_id,lv_no,name,share,is_company,birth_date,title,born_name,ico,addr_obec,addr_cislo,addr_psc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${did}-${o.lvNo}-${rid()}`, did, o.lvNo, o.name ?? null, o.share ?? null, o.isCompany ?? 0, o.birthDate ?? null, o.title ?? null, o.bornName ?? null, o.ico ?? null, o.addrObec ?? null, o.addrCislo ?? null, o.addrPsc ?? null));
+    for (const b of data.bpej ?? []) stmts.push(DB.prepare("INSERT INTO bpej_zones (id,dataset_id,code,skupina,geometry_json) VALUES (?,?,?,?,?)").bind(`${did}-${slug(b.code)}-${rid()}`, did, b.code, b.skupina ?? null, b.geometryJson ?? null));
+    for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
+    return { ok: true, parcels: (data.parcels ?? []).length, owners: (data.owners ?? []).length };
+  });
+
 // Kompletný market ingest cez secret (pre GitHub Actions curl) — index+opps+listing chunky+pricehistory z verejného URL.
 // Auth: x-alert-secret === D1 market_meta.alert_secret. Zvnútra volá role-guarded fns ako 'admin' (secret už overil).
 export const ingestMarketAll = createServerFn({ method: "POST" })
