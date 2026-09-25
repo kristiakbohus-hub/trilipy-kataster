@@ -3225,6 +3225,8 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
     const c1 = (await q<{ n: number }>(`SELECT COUNT(*) n FROM market_listings WHERE first_seen = ? AND ${ACT}`, [today]).catch(() => []))[0]?.n ?? 0;
     const c2 = (await q<{ n: number }>(`SELECT COUNT(*) n FROM market_listings WHERE first_price IS NOT NULL AND first_price > price_eur AND ${ACT}`).catch(() => []))[0]?.n ?? 0;
     const c3 = (await q<{ n: number }>("SELECT COUNT(*) n FROM landsearch_results WHERE verdict = 'MATCH'").catch(() => []))[0]?.n ?? 0;
+    // súkromné príležitosti = aktívne bazos inzeráty s poklesom ceny (reálne „koho zavolať")
+    const c4 = (await q<{ n: number }>(`SELECT COUNT(*) n FROM market_listings WHERE source='bazos' AND first_price IS NOT NULL AND first_price > price_eur AND ${ACT}`).catch(() => []))[0]?.n ?? 0;
     // číselníky pre filter (lokalita + typ) — z aktívnych inzerátov (obsahuje aj nový typ 'chata')
     const okresy = (await q<{ okres: string }>(`SELECT DISTINCT okres FROM market_listings WHERE okres IS NOT NULL AND ${ACT} ORDER BY okres`).catch(() => [])).map((r) => r.okres);
     const ptypes = (await q<{ ptype: string }>(`SELECT DISTINCT ptype FROM market_listings WHERE ptype IS NOT NULL AND ${ACT} ORDER BY ptype`).catch(() => [])).map((r) => r.ptype);
@@ -3273,7 +3275,7 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
        FROM landsearch_results ls LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
        LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
        WHERE ${upW.join(" AND ")} ORDER BY ls.quality DESC LIMIT 8`, upA).catch(() => [] as MorningUp[]);
-    return { today, summary: { newToday: c1, drops: c2, upDeals: c3, privateOpps: listings.length }, listings, up, okresy, ptypes,
+    return { today, summary: { newToday: c1, drops: c2, upDeals: c3, privateOpps: c4 }, listings, up, okresy, ptypes,
       parsed: { ptype: effPtype ?? null, okres: effOkres ?? null, maxPrice: parsed.maxPrice ?? null, keywords: parsed.keywords } };
   });
 
