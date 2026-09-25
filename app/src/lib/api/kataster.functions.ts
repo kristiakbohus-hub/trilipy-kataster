@@ -3307,7 +3307,8 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
        LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
        WHERE ${upW.join(" AND ")} ORDER BY ls.quality DESC LIMIT 8`, upA).catch(() => [] as MorningUp[]);
     // ——— zmizli z trhu (re-verify 301 = vymazané) — zachovaný snapshot, posledná cena ≈ odhad predajnej ———
-    const gW: string[] = ["removed_at IS NOT NULL", "removed_at >= date((SELECT MAX(removed_at) FROM market_listings), '-30 day')"];
+    // len ČERSTVÉ transakcie: malý odstup last_seen→removed_at = spoľahlivá predajná cena (staré backlog-gone nezaťažia)
+    const gW: string[] = ["removed_at IS NOT NULL", "removed_at >= date((SELECT MAX(removed_at) FROM market_listings), '-30 day')", "(julianday(removed_at) - julianday(last_seen)) <= 14"];
     const gA: unknown[] = [];
     if (data.onlyPrivate !== false) gW.push("source = 'bazos'");
     if (effOkres) { gW.push("okres = ?"); gA.push(effOkres); }
