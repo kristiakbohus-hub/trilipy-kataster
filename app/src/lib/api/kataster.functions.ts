@@ -3271,8 +3271,8 @@ export const getDealRadar = createServerFn({ method: "POST" })
 
 // ——— „DOBRÉ RÁNO" denný brífing — jedna karta: dnes dôležité + scorovaná SÚKROMNÁ inzercia (koho zavolať)
 //     + naše ÚP-development príležitosti, nastaviteľné podľa lokality (okres) a typu (ptype). ———
-export type MorningListing = MarketOpp & { score: number; step: string; privatny: boolean };
-export type MorningUp = { kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null };
+export type MorningListing = MarketOpp & { score: number; step: string; privatny: boolean; belowAvm: number | null };
+export type MorningUp = { kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null; avmPpm2: number | null; avmBasis: string | null; avmPotential: number | null; avmAsIs: number | null; avmMargin: number | null };
 // Zmiznuté z trhu (re-verify 301 = vymazané): zachovaný snapshot; posledná cena ≈ odhad predajnej ceny.
 export type MorningGone = { url: string | null; title: string | null; ptype: string | null; okres: string | null; obec: string | null; area_m2: number | null; price_eur: number | null; first_price: number | null; days_listed: number | null; removed_at: string | null; drop_pct: number | null; privatny: boolean };
 // Parser free-text promptu „hľadám chatu do 30k v Kysuciach s výhľadom" → typ + okres + max cena + kľúčové slová.
@@ -3329,7 +3329,7 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
     if (effPtype) { w.push("ls.ptype = ?"); a.push(effPtype); }
     if (parsed.maxPrice) { w.push("ls.price_eur <= ?"); a.push(parsed.maxPrice); }
     for (const kw of parsed.keywords) { w.push("lower(ls.title) LIKE ?"); a.push(`%${kw}%`); }
-    const raw = await q<MarketOpp>(
+    const raw = await q<MarketOpp & { below_avm_pct: number | null }>(
       `SELECT ls.source, ls.url, ls.title, ls.ptype, ls.deal, ls.okres, ls.obec, ls.area_m2, ls.price_eur,
               ls.ppm2 AS price_per_m2,
               CAST(julianday(ls.last_seen) - julianday(ls.first_seen) AS INTEGER) AS days_on_market,
@@ -3337,31 +3337,45 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
                    THEN ROUND((ls.first_price - ls.price_eur) * 100.0 / ls.first_price, 1) END AS price_drop_pct,
               CASE WHEN ls.ppm2 IS NOT NULL AND om.median_ppm2 IS NOT NULL AND om.median_ppm2 > 0 AND ls.ppm2 < om.median_ppm2
                    THEN ROUND((om.median_ppm2 - ls.ppm2) * 100.0 / om.median_ppm2, 1) END AS below_market_pct,
+              CASE WHEN ls.ptype = 'pozemok' AND lower(ls.title) LIKE '%stavebn%' AND ls.ppm2 >= 10 AND av.ppm2_stavebny IS NOT NULL AND av.ppm2_stavebny > 0 AND ls.ppm2 < av.ppm2_stavebny
+                   THEN ROUND((av.ppm2_stavebny - ls.ppm2) * 100.0 / av.ppm2_stavebny, 1) END AS below_avm_pct,
               ls.flags
        FROM market_listings ls
        LEFT JOIN obec_market_median om ON om.obec = ls.obec
+       LEFT JOIN avm_index av ON av.okres = ls.okres
        WHERE ${w.join(" AND ")}
-       ORDER BY (COALESCE(below_market_pct, 0) * 0.6 + COALESCE(price_drop_pct, 0) * 0.9
+       ORDER BY (COALESCE(below_market_pct, 0) * 0.6 + COALESCE(below_avm_pct, 0) * 0.5 + COALESCE(price_drop_pct, 0) * 0.9
                  + (CASE WHEN days_on_market > 120 THEN 18 WHEN days_on_market > 60 THEN 10 ELSE 0 END)) DESC
-       LIMIT ?`, [...a, limit]).catch(() => [] as MarketOpp[]);
+       LIMIT ?`, [...a, limit]).catch(() => [] as (MarketOpp & { below_avm_pct: number | null })[]);
     const listings: MorningListing[] = raw.map((l) => {
-      const below = l.below_market_pct ?? 0, drop = l.price_drop_pct ?? 0, dom = l.days_on_market ?? 0;
-      const score = Math.round(Math.min(100, below * 0.6 + drop * 0.9 + (dom > 120 ? 18 : dom > 60 ? 10 : 0)));
+      const below = l.below_market_pct ?? 0, drop = l.price_drop_pct ?? 0, dom = l.days_on_market ?? 0, bavm = l.below_avm_pct ?? 0;
+      const score = Math.round(Math.min(100, below * 0.6 + bavm * 0.5 + drop * 0.9 + (dom > 120 ? 18 : dom > 60 ? 10 : 0)));
       const step = drop > 0
         ? `Cena klesla o ${Math.round(drop)} % — zavolať predajcovi, priestor na vyjednávanie`
+        : bavm >= 20 ? `~${Math.round(bavm)} % pod AVM (stavebné) — podcenený pozemok, osloviť`
         : dom > 90 ? `${dom} dní v ponuke — motivovaný predajca, osloviť`
         : below > 0 ? `~${Math.round(below)} % pod trhom v obci — preveriť a osloviť` : "Osloviť predajcu / preveriť inzerát";
-      return { ...l, score, step, privatny: l.source === "bazos" };
+      return { ...l, score, step, privatny: l.source === "bazos", belowAvm: l.below_avm_pct };
     });
     // naše ÚP-development príležitosti (genuine: bývanie/hromadné, MATCH) + obecný trhový kontext
     const upW: string[] = ["ls.verdict = 'MATCH'", "ls.purpose = 'residential'", "ls.zone IN ('bývanie/rekreácia','hromadné bývanie')"];
     const upA: unknown[] = [];
     if (effOkres) { upW.push("ds.region LIKE ?"); upA.push(`%${effOkres}%`); }
-    const up = await q<MorningUp>(
-      `SELECT ls.kod_ku, COALESCE(ds.ku_name, ls.ku_name) ku_name, ls.quality, ls.area_m2, ls.parcels, ls.zone, ls.ppf, om.median_ppm2 market_ppm2
+    const upRaw = await q<{ kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null; avm_ppm2: number | null; avm_basis: string | null }>(
+      `SELECT ls.kod_ku, COALESCE(ds.ku_name, ls.ku_name) ku_name, ls.quality, ls.area_m2, ls.parcels, ls.zone, ls.ppf, om.median_ppm2 market_ppm2,
+              av.ppm2_stavebny AS avm_ppm2, av.basis AS avm_basis
        FROM landsearch_results ls LEFT JOIN datasets ds ON ds.ku_code = ls.kod_ku
        LEFT JOIN obec_market_median om ON om.obec = TRIM(REPLACE(REPLACE(COALESCE(ds.ku_name, ls.ku_name), 'k.ú.', ''), 'k.ú', ''))
-       WHERE ${upW.join(" AND ")} ORDER BY ls.quality DESC LIMIT 8`, upA).catch(() => [] as MorningUp[]);
+       LEFT JOIN avm_index av ON av.okres = TRIM(REPLACE(SUBSTR(ds.region, 1, INSTR(ds.region || ' · ', ' · ') - 1), 'okres ', ''))
+       WHERE ${upW.join(" AND ")} ORDER BY ls.quality DESC LIMIT 8`, upA).catch(() => []);
+    const up: MorningUp[] = upRaw.map((o) => {
+      const area = o.area_m2 ?? 0;
+      const stav = o.avm_ppm2 ?? AVM_DEFAULT.stavebny;                  // €/m² ako stavebné
+      const avmPotential = area > 0 ? Math.round(stav * area) : null;   // hodnota ak zastavateľné
+      const avmAsIs = area > 0 ? Math.round(AVM_DEFAULT.polnohosp * area) : null; // MATCH parcely = zväčša poľnohosp druh
+      const avmMargin = avmPotential && avmAsIs ? Math.round((avmPotential - avmAsIs) / avmPotential * 100) : null;
+      return { kod_ku: o.kod_ku, ku_name: o.ku_name, quality: o.quality, area_m2: o.area_m2, parcels: o.parcels, zone: o.zone, ppf: o.ppf, market_ppm2: o.market_ppm2, avmPpm2: o.avm_ppm2, avmBasis: o.avm_basis, avmPotential, avmAsIs, avmMargin };
+    });
     // ——— zmizli z trhu (re-verify 301 = vymazané) — zachovaný snapshot, posledná cena ≈ odhad predajnej ———
     // len ČERSTVÉ transakcie: malý odstup last_seen→removed_at = spoľahlivá predajná cena (staré backlog-gone nezaťažia)
     const gW: string[] = ["removed_at IS NOT NULL", "removed_at >= date((SELECT MAX(removed_at) FROM market_listings), '-30 day')", "(julianday(removed_at) - julianday(last_seen)) <= 14"];

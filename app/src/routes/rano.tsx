@@ -104,7 +104,7 @@ function RanoPage() {
                   </div>
                   <div className="mt-0.5 text-[12px] text-muted">
                     {l.obec ?? l.okres ?? ""}{l.area_m2 ? ` · ${l.area_m2.toLocaleString("sk-SK")} m²` : ""} · {eur(l.price_eur)}{l.price_per_m2 ? ` (${Math.round(l.price_per_m2)} €/m²)` : ""}
-                    {l.price_drop_pct ? ` · ▼ ${Math.round(l.price_drop_pct)} %` : ""}{l.below_market_pct ? ` · pod trhom ${Math.round(l.below_market_pct)} %` : ""}{l.days_on_market ? ` · ${l.days_on_market} dní` : ""}
+                    {l.price_drop_pct ? ` · ▼ ${Math.round(l.price_drop_pct)} %` : ""}{l.below_market_pct ? ` · pod trhom ${Math.round(l.below_market_pct)} %` : ""}{l.belowAvm ? ` · pod AVM ${Math.round(l.belowAvm)} %` : ""}{l.days_on_market ? ` · ${l.days_on_market} dní` : ""}
                   </div>
                   <div className="mt-0.5 text-[12px] font-medium text-fg/80">→ {l.step}</div>
                 </div>
@@ -126,11 +126,19 @@ function RanoPage() {
         ) : (
           <div className="divide-y divide-line">
             {b.up.map((o, i) => (
-              <div key={`${o.kod_ku}-${o.parcels}-${i}`} className="flex items-center gap-3 py-2">
+              <div key={`${o.kod_ku}-${o.parcels}-${i}`} className="flex items-start gap-3 py-2">
                 <div className="text-sm font-bold tabular-nums text-fg">{o.quality ?? "—"}</div>
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium text-fg">{o.area_m2 ? `${o.area_m2.toLocaleString("sk-SK")} m²` : ""} · {o.parcels ?? ""} · {o.ku_name ?? o.kod_ku}</div>
-                  <div className="text-[12px] text-muted">{o.zone ?? ""}{o.ppf ? " · ⚠ PPF" : ""}{o.market_ppm2 ? ` · trh v obci ~${o.market_ppm2} €/m²${o.area_m2 ? ` (odhad ~${Math.round(o.area_m2 * o.market_ppm2).toLocaleString("sk-SK")} €)` : ""}` : ""}</div>
+                  <div className="text-[12px] text-muted">{o.zone ?? ""}{o.ppf ? " · ⚠ PPF" : ""}</div>
+                  {o.avmPotential ? (
+                    <div className="mt-0.5 text-[12px]">
+                      <span className="text-muted">AVM: ako-je ~{eur(o.avmAsIs)} → </span>
+                      <span className="font-medium text-fg">potenciál ~{eur(o.avmPotential)}</span>
+                      {o.avmMargin ? <span className="font-medium" style={{ color: "#1E7A3E" }}> · +{o.avmMargin} % dev margin</span> : null}
+                      {o.avmPpm2 ? <span className="text-muted"> ({o.avmPpm2} €/m² stav.{o.avmBasis === "realized" ? ", realiz." : o.avmBasis === "blend" ? ", blend" : ""})</span> : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             ))}
