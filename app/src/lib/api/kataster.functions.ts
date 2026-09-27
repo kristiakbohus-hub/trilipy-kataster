@@ -1126,6 +1126,62 @@ export const ingestLandsearch = createServerFn({ method: "POST" })
     return { ok: true, inserted: data.rows.length };
   });
 
+// ——— GOLD 04: VYSPORIADANIE POZEMKOV (settlement candidates z Mac enginu → settlement_cases) ———
+// Bulk zápis kandidátov (stavba má vlastný LV, ale podložná C/E parcela má iných vlastníkov).
+// Auth = alert_secret. Per kod_ku replace (replaceKu). Vlastníci sú anonymizovaní — žiadne PII.
+export const ingestSettlement = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    replaceKu: z.array(z.string()).max(64).optional(),
+    rows: z.array(z.object({
+      kodKu: z.string(), kuName: z.string().optional(),
+      buildingId: z.string().optional(), buildingDesc: z.string().optional(),
+      parcelNo: z.string().optional(), register: z.string().optional(),
+      landLvNo: z.number().optional(), classification: z.string(),
+      score: z.number().optional(), nLandOwners: z.number().optional(),
+      hasSpf: z.number().optional(), hasUnknown: z.number().optional(),
+      viaE: z.number().optional(), reason: z.string().optional(),
+    })).max(1000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    if (data.replaceKu && data.replaceKu.length) {
+      const ph = data.replaceKu.map(() => "?").join(",");
+      await DB.prepare(`DELETE FROM settlement_cases WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
+    }
+    const stmt = DB.prepare("INSERT INTO settlement_cases (kod_ku,ku_name,building_id,building_desc,parcel_no,register,land_lv_no,classification,score,n_land_owners,has_spf,has_unknown,via_e,reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.buildingId ?? null, r.buildingDesc ?? null, r.parcelNo ?? null, r.register ?? null, r.landLvNo ?? null, r.classification, r.score ?? null, r.nLandOwners ?? null, r.hasSpf ?? 0, r.hasUnknown ?? 0, r.viaE ?? 0, r.reason ?? null));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
+  });
+
+// Čítanie kandidátov vysporiadania (join na datasets pre deep-link do LV výpisu). Malá tabuľka → plný select.
+export type SettlementRow = {
+  kod_ku: string; ku_name: string | null; dataset_id: string | null;
+  building_id: string | null; building_desc: string | null; parcel_no: string | null;
+  register: string | null; land_lv_no: number | null; classification: string;
+  score: number | null; n_land_owners: number | null; has_spf: number; has_unknown: number;
+  via_e: number; reason: string | null;
+};
+export const getSettlementCases = createServerFn({ method: "POST" })
+  .validator(z.object({ kodKu: z.string().optional() }))
+  .handler(async ({ data }): Promise<SettlementRow[]> => {
+    const where = data.kodKu ? "AND sc.kod_ku = ?" : "";
+    const args = data.kodKu ? [data.kodKu] : [];
+    return await q<SettlementRow>(
+      `SELECT sc.kod_ku, sc.ku_name, ds.id AS dataset_id, sc.building_id, sc.building_desc,
+              sc.parcel_no, sc.register, sc.land_lv_no, sc.classification, sc.score,
+              sc.n_land_owners, sc.has_spf, sc.has_unknown, sc.via_e, sc.reason
+       FROM settlement_cases sc LEFT JOIN datasets ds ON ds.ku_code = sc.kod_ku
+       WHERE sc.classification IN ('MATCH','PROVISIONAL') ${where}
+       ORDER BY sc.classification, sc.n_land_owners DESC, sc.parcel_no`,
+      args,
+    ).catch(() => []);
+  });
+
 // ——— PER-PARCELA funkčné využitie z ÚP (georef výkres / GISPLAN WMS) — plní Mac, zobrazí LV výpis ———
 // replaceKu: pred vložením zmaže dané k.ú. (idempotentný re-push). Batch ≤1000 riadkov/volanie.
 export const ingestParcelZoning = createServerFn({ method: "POST" })

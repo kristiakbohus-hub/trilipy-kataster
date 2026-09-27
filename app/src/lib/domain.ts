@@ -13,6 +13,7 @@ export type AppPath =
   | "/vlastnici"
   | "/zoning"
   | "/cases"
+  | "/vysporiadanie"
   | "/import"
   | "/reporty"
   | "/prilezitosti"
