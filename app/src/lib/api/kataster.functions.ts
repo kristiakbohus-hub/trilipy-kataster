@@ -1134,13 +1134,14 @@ export const ingestSettlement = createServerFn({ method: "POST" })
     secret: z.string(),
     replaceKu: z.array(z.string()).max(64).optional(),
     rows: z.array(z.object({
-      kodKu: z.string(), kuName: z.string().optional(),
-      buildingId: z.string().optional(), buildingDesc: z.string().optional(),
-      parcelNo: z.string().optional(), register: z.string().optional(),
-      landLvNo: z.number().optional(), classification: z.string(),
-      score: z.number().optional(), nLandOwners: z.number().optional(),
-      hasSpf: z.number().optional(), hasUnknown: z.number().optional(),
-      viaE: z.number().optional(), reason: z.string().optional(),
+      // .nullable() aj .optional(): klient smie poslať chýbajúci kľúč AJ explicitný null (handler ich zjednotí na null)
+      kodKu: z.string(), kuName: z.string().nullable().optional(),
+      buildingId: z.string().nullable().optional(), buildingDesc: z.string().nullable().optional(),
+      parcelNo: z.string().nullable().optional(), register: z.string().nullable().optional(),
+      landLvNo: z.number().nullable().optional(), classification: z.string(),
+      score: z.number().nullable().optional(), nLandOwners: z.number().nullable().optional(),
+      hasSpf: z.number().nullable().optional(), hasUnknown: z.number().nullable().optional(),
+      viaE: z.number().nullable().optional(), reason: z.string().nullable().optional(),
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
