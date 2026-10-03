@@ -1,7 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { getSettlementCases } from "../lib/api/kataster.functions";
+import { createDeal, getSettlementCases, type SettlementRow } from "../lib/api/kataster.functions";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
+import { useRole } from "../lib/role-context";
 
 export const Route = createFileRoute("/vysporiadanie")({
   head: () => ({ meta: [{ title: "Vysporiadanie pozemkov — TRI LIPY KATASTER CORE" }] }),
@@ -11,9 +12,23 @@ export const Route = createFileRoute("/vysporiadanie")({
 
 function SettlementPage() {
   const rows = Route.useLoaderData();
+  const { role } = useRole();
+  const router = useRouter();
   const [kuFilter, setKuFilter] = useState<string>("");
   const [cls, setCls] = useState<"MATCH" | "PROVISIONAL">("MATCH");
   const [limit, setLimit] = useState(40);
+  const [created, setCreated] = useState<Record<string, string>>({});
+  const [dealBusy, setDealBusy] = useState<string | null>(null);
+
+  async function makeDeal(r: SettlementRow) {
+    if (!r.dataset_id || !r.land_lv_no) return;
+    const key = `${r.dataset_id}-${r.land_lv_no}`;
+    setDealBusy(key);
+    try {
+      const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.land_lv_no, role } });
+      if (res.ok && res.id) { setCreated((m) => ({ ...m, [key]: res.id! })); router.invalidate(); }
+    } finally { setDealBusy(null); }
+  }
 
   const katastre = useMemo(() => {
     const m = new Map<string, string>();
@@ -125,6 +140,24 @@ function SettlementPage() {
                   <span className="text-muted">LV pozemku {r.land_lv_no ?? "—"}</span>
                 )}
               </div>
+
+              {cls === "MATCH" && r.dataset_id && r.land_lv_no ? (
+                <div className="mt-2">
+                  {created[`${r.dataset_id}-${r.land_lv_no}`] ? (
+                    <Link to="/deals" className="block rounded-md border border-line px-3 py-1.5 text-center text-xs font-medium text-green hover:bg-surface-2">
+                      Deal založený → pipeline
+                    </Link>
+                  ) : (
+                    <button
+                      onClick={() => void makeDeal(r)}
+                      disabled={dealBusy === `${r.dataset_id}-${r.land_lv_no}`}
+                      className="w-full rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-cream disabled:opacity-50"
+                    >
+                      {dealBusy === `${r.dataset_id}-${r.land_lv_no}` ? "Zakladám…" : "Založiť deal (odkup pozemku)"}
+                    </button>
+                  )}
+                </div>
+              ) : null}
             </Card>
           ))}
         </div>
