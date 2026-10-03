@@ -2,6 +2,7 @@ import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { createDeal, getSettlementCases, type SettlementRow } from "../lib/api/kataster.functions";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
+import { eur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 
 export const Route = createFileRoute("/vysporiadanie")({
@@ -16,6 +17,7 @@ function SettlementPage() {
   const router = useRouter();
   const [kuFilter, setKuFilter] = useState<string>("");
   const [cls, setCls] = useState<"MATCH" | "PROVISIONAL">("MATCH");
+  const [flavor, setFlavor] = useState<"all" | "disjoint" | "minority">("all");
   const [limit, setLimit] = useState(40);
   const [created, setCreated] = useState<Record<string, string>>({});
   const [dealBusy, setDealBusy] = useState<string | null>(null);
@@ -41,10 +43,18 @@ function SettlementPage() {
   const nSpf = rows.filter((r) => r.classification === "MATCH" && r.has_spf).length;
 
   const shownAll = useMemo(
-    () => rows.filter((r) => r.classification === cls && (!kuFilter || r.kod_ku === kuFilter)),
-    [rows, cls, kuFilter],
+    () => rows.filter((r) =>
+      r.classification === cls
+      && (!kuFilter || r.kod_ku === kuFilter)
+      && (cls !== "MATCH" || flavor === "all"
+          || (flavor === "minority" ? r.minority_share === 1 : r.minority_share !== 1))),
+    [rows, cls, kuFilter, flavor],
   );
   const shown = shownAll.slice(0, limit);
+  const buyoutSum = useMemo(
+    () => shownAll.reduce((a, r) => a + (r.buyout_eur ?? 0), 0),
+    [shownAll],
+  );
 
   return (
     <div className="space-y-6">
@@ -77,6 +87,17 @@ function SettlementPage() {
               className={`px-3 py-1 ${cls === "PROVISIONAL" ? "bg-ink text-cream" : "bg-paper text-muted hover:text-fg"}`}
             >Na preskúmanie ({nProv})</button>
           </div>
+          {cls === "MATCH" ? (
+            <div className="flex overflow-hidden rounded-md border border-line text-xs">
+              {([["all", "Všetky"], ["disjoint", "Cudzí pozemok"], ["minority", "Menšinový podiel"]] as const).map(([v, lbl]) => (
+                <button
+                  key={v}
+                  onClick={() => { setFlavor(v); setLimit(40); }}
+                  className={`px-3 py-1 ${flavor === v ? "bg-ink text-cream" : "bg-paper text-muted hover:text-fg"}`}
+                >{lbl}</button>
+              ))}
+            </div>
+          ) : null}
           <select
             value={kuFilter}
             onChange={(e) => { setKuFilter(e.target.value); setLimit(40); }}
@@ -87,6 +108,13 @@ function SettlementPage() {
           </select>
         </div>
       </div>
+
+      {cls === "MATCH" && buyoutSum > 0 ? (
+        <p className="-mt-3 text-xs text-muted">
+          Orientačný odhad hodnoty pozemkov vo výbere: <b className="text-fg">{eur(buyoutSum)}</b> (horná hranica odkupu,
+          výmera × €/m² podľa druhu — hrubý screening, nie znalecký posudok).
+        </p>
+      ) : null}
 
       {shown.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted">
@@ -107,6 +135,12 @@ function SettlementPage() {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
+                {r.classification === "MATCH" ? (
+                  <span className="rounded-full border px-2 py-0.5 text-[11px]"
+                    style={r.minority_share ? { color: "#9a7b3e", borderColor: "#9a7b3e55" } : { color: "#5b7a58", borderColor: "#5b7a5855" }}>
+                    {r.minority_share ? "menšinový podiel" : "cudzí pozemok"}
+                  </span>
+                ) : null}
                 {r.n_land_owners ? (
                   <span className="rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] text-fg">
                     {r.n_land_owners} {r.n_land_owners === 1 ? "vlastník pozemku" : "vlastníkov pozemku"}
@@ -122,6 +156,18 @@ function SettlementPage() {
                   <span className="rounded-full border border-line px-2 py-0.5 text-[11px]" style={{ color: "#6b6f86" }}>neznámy vlastník</span>
                 ) : null}
               </div>
+
+              {r.buyout_eur != null ? (
+                <div className="mt-3 rounded-md border border-line bg-surface-2/30 px-3 py-2 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted">Orientačný odhad pozemku</span>
+                    <span className="font-semibold tabular-nums text-fg">{eur(r.buyout_eur)}</span>
+                  </div>
+                  <div className="mt-0.5 text-[11px] text-muted">
+                    {r.land_area_m2 != null ? `${r.land_area_m2} m²` : ""}{r.land_druh ? ` · ${r.land_druh}` : ""} · horná hranica odkupu
+                  </div>
+                </div>
+              ) : null}
 
               {r.reason ? <p className="mt-3 text-xs leading-relaxed text-muted">{r.reason}</p> : null}
 
