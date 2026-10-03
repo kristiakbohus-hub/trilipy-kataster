@@ -11,6 +11,30 @@ export const Route = createFileRoute("/vysporiadanie")({
   component: SettlementPage,
 });
 
+type OItem = { share: string; pct: number; kind: string; absent: boolean };
+function OutreachList({ json }: { json: string | null }) {
+  if (!json) return null;
+  let items: OItem[] = [];
+  try { items = JSON.parse(json) as OItem[]; } catch { return null; }
+  if (!items.length) return null;
+  return (
+    <div className="mt-3 border-t border-line pt-2">
+      <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted">Koho osloviť (podľa podielu)</div>
+      <ol className="space-y-0.5">
+        {items.map((o, i) => (
+          <li key={i} className="flex items-center justify-between gap-2 text-xs">
+            <span className="text-fg">{i + 1}. podiel {o.share} <span className="tabular-nums text-muted">({o.pct} %)</span></span>
+            <span className="flex shrink-0 gap-1">
+              <span className="rounded border border-line px-1.5 py-0.5 text-[10px] text-muted">{o.kind}</span>
+              {o.absent ? <span className="rounded border border-line px-1.5 py-0.5 text-[10px]" style={{ color: "#9a7b3e" }}>absentér</span> : null}
+            </span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 function SettlementPage() {
   const rows = Route.useLoaderData();
   const { role } = useRole();
@@ -168,6 +192,8 @@ function SettlementPage() {
                   </div>
                 </div>
               ) : null}
+
+              <OutreachList json={r.outreach_json} />
 
               {r.reason ? <p className="mt-3 text-xs leading-relaxed text-muted">{r.reason}</p> : null}
 

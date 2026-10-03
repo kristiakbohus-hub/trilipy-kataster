@@ -1144,6 +1144,7 @@ export const ingestSettlement = createServerFn({ method: "POST" })
       viaE: z.number().nullable().optional(), reason: z.string().nullable().optional(),
       minorityShare: z.number().nullable().optional(), landAreaM2: z.number().nullable().optional(),
       landDruh: z.string().nullable().optional(), buyoutEur: z.number().nullable().optional(),
+      outreachJson: z.string().nullable().optional(),
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
@@ -1155,8 +1156,8 @@ export const ingestSettlement = createServerFn({ method: "POST" })
       const ph = data.replaceKu.map(() => "?").join(",");
       await DB.prepare(`DELETE FROM settlement_cases WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
     }
-    const stmt = DB.prepare("INSERT INTO settlement_cases (kod_ku,ku_name,building_id,building_desc,parcel_no,register,land_lv_no,classification,score,n_land_owners,has_spf,has_unknown,via_e,reason,minority_share,land_area_m2,land_druh,buyout_eur) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.buildingId ?? null, r.buildingDesc ?? null, r.parcelNo ?? null, r.register ?? null, r.landLvNo ?? null, r.classification, r.score ?? null, r.nLandOwners ?? null, r.hasSpf ?? 0, r.hasUnknown ?? 0, r.viaE ?? 0, r.reason ?? null, r.minorityShare ?? 0, r.landAreaM2 ?? null, r.landDruh ?? null, r.buyoutEur ?? null));
+    const stmt = DB.prepare("INSERT INTO settlement_cases (kod_ku,ku_name,building_id,building_desc,parcel_no,register,land_lv_no,classification,score,n_land_owners,has_spf,has_unknown,via_e,reason,minority_share,land_area_m2,land_druh,buyout_eur,outreach_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.buildingId ?? null, r.buildingDesc ?? null, r.parcelNo ?? null, r.register ?? null, r.landLvNo ?? null, r.classification, r.score ?? null, r.nLandOwners ?? null, r.hasSpf ?? 0, r.hasUnknown ?? 0, r.viaE ?? 0, r.reason ?? null, r.minorityShare ?? 0, r.landAreaM2 ?? null, r.landDruh ?? null, r.buyoutEur ?? null, r.outreachJson ?? null));
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
     return { ok: true, inserted: data.rows.length };
   });
@@ -1169,6 +1170,7 @@ export type SettlementRow = {
   score: number | null; n_land_owners: number | null; has_spf: number; has_unknown: number;
   via_e: number; reason: string | null;
   minority_share: number; land_area_m2: number | null; land_druh: string | null; buyout_eur: number | null;
+  outreach_json: string | null;
 };
 export const getSettlementCases = createServerFn({ method: "POST" })
   .validator(z.object({ kodKu: z.string().optional() }))
@@ -1179,7 +1181,7 @@ export const getSettlementCases = createServerFn({ method: "POST" })
       `SELECT sc.kod_ku, COALESCE(sc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
               sc.building_id, sc.building_desc, sc.parcel_no, sc.register, sc.land_lv_no,
               sc.classification, sc.score, sc.n_land_owners, sc.has_spf, sc.has_unknown, sc.via_e, sc.reason,
-              sc.minority_share, sc.land_area_m2, sc.land_druh, sc.buyout_eur
+              sc.minority_share, sc.land_area_m2, sc.land_druh, sc.buyout_eur, sc.outreach_json
        FROM settlement_cases sc LEFT JOIN datasets ds ON ds.ku_code = sc.kod_ku
        WHERE sc.classification IN ('MATCH','PROVISIONAL') ${where}
        ORDER BY sc.classification, sc.buyout_eur DESC, sc.n_land_owners DESC, sc.parcel_no`,
