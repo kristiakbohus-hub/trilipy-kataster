@@ -155,13 +155,21 @@ export function Disclaimer({ children }: { children: ReactNode }) {
   );
 }
 
-// Property-360 kontrakt (42_NL docs/16) „Výsledok dopytu": PASS/FAIL/UNKNOWN po MUST kritériách
-// + evidencia, nie len jeden súhrnný reason. json = Candidate.to_dict()["criteria"] (candidate.py).
-type CriterionItem = { key: string; effect: string; outcome: string; evidence?: { fact: string }[]; note?: string | null };
+// Property-360 kontrakt (42_NL docs/16) „Výsledok dopytu" + „Zdroje": PASS/FAIL/UNKNOWN po MUST
+// kritériách s evidenciou (citácia na KONKRÉTNY zdroj + stupeň overenia, nie len text faktu) +
+// chýbajúce/neoverené polia (uncertainties). json = {criteria, uncertainties} z candidate.py
+// Candidate.to_dict() (staré nasadenia mohli poslať holý zoznam criteria — akceptované oboje).
+type EvidenceItem = { fact: string; source?: string | null; source_type?: string | null; record_id?: string | null; verification?: string | null };
+type CriterionItem = { key: string; effect: string; outcome: string; evidence?: EvidenceItem[]; note?: string | null };
+type CriteriaBlob = { criteria: CriterionItem[]; uncertainties?: string[] } | CriterionItem[];
+const VERIF_LABEL: Record<string, string> = { FACT: "fakt", DERIVED: "odvodené", INFERENCE: "inferencia", ASSUMPTION: "predpoklad", NOT_VERIFIED: "neoverené" };
+
 export function CriteriaMatrix({ json }: { json: string | null | undefined }) {
   if (!json) return null;
-  let items: CriterionItem[] = [];
-  try { items = JSON.parse(json) as CriterionItem[]; } catch { return null; }
+  let parsed: CriteriaBlob;
+  try { parsed = JSON.parse(json) as CriteriaBlob; } catch { return null; }
+  const items: CriterionItem[] = Array.isArray(parsed) ? parsed : (parsed.criteria ?? []);
+  const uncertainties: string[] = Array.isArray(parsed) ? [] : (parsed.uncertainties ?? []);
   const must = items.filter((c) => c.effect === "MUST" || c.effect === "MUST_NOT");
   if (!must.length) return null;
   const palette: Record<string, string> = { PASS: "#5b7a58", FAIL: "#9c4a40", UNKNOWN: "#9a7b3e" };
@@ -171,17 +179,33 @@ export function CriteriaMatrix({ json }: { json: string | null | undefined }) {
       <ul className="space-y-1.5">
         {must.map((c, i) => {
           const col = palette[c.outcome] ?? "#8a8a8a";
+          const ev = c.evidence?.[0];
           return (
             <li key={i} className="text-xs">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-fg">{c.key}</span>
                 <span className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: col, borderColor: col + "55" }}>{c.outcome}</span>
               </div>
-              {c.evidence?.[0]?.fact ? <div className="mt-0.5 text-[11px] text-muted">{c.evidence[0].fact}</div> : null}
+              {ev?.fact ? (
+                <div className="mt-0.5 text-[11px] text-muted">
+                  {ev.fact}
+                  {ev.source ? (
+                    <span className="italic">
+                      {" — "}{ev.source}{ev.record_id ? ` (${ev.record_id})` : ""}
+                      {ev.verification ? `, ${VERIF_LABEL[ev.verification] ?? ev.verification.toLowerCase()}` : ""}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
             </li>
           );
         })}
       </ul>
+      {uncertainties.length ? (
+        <div className="mt-2 rounded border border-line bg-surface-2/40 px-2 py-1.5 text-[11px] text-muted">
+          <b className="text-fg">Chýbajúce/neoverené:</b> {uncertainties.join("; ")}
+        </div>
+      ) : null}
     </div>
   );
 }
