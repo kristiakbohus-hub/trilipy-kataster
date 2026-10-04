@@ -1,7 +1,7 @@
 // PDF dossier parcely — jedno-klik podklad (kataster + ESKN/AVM + ÚP + limity + trh + siete).
 // Tlač: window.print() (@media print skryje app chrome). Beží na CF (client-side print-to-PDF, bez server PDF).
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
   getDatasets, getParcelByNo, getLvDetail, getParcelAccessibility, getParcelLimits,
@@ -10,6 +10,7 @@ import {
 } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
 import { CriteriaMatrix } from "../components/kit";
+import { QUALITY_META } from "../lib/domain";
 import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "../lib/development";
 import { useCalibDev } from "../lib/calib";
 import { DocumentsPanel } from "../components/documents-panel";
@@ -60,6 +61,7 @@ function ReportPage() {
   const [market, setMarket] = useState<Awaited<ReturnType<typeof getMarketListingsNear>>>([]);
   const [signals, setSignals] = useState<Awaited<ReturnType<typeof getProperty360>> | null>(null);
   const [ready, setReady] = useState(false);
+  const [resultHash, setResultHash] = useState<string | null>(null);
 
   useEffect(() => {
     if (!parcel) { setReady(true); return; }
@@ -82,12 +84,41 @@ function ReportPage() {
 
   const calibDev = useCalibDev(); // Fáza 5: kalibrované dev sadzby
 
+  // reg/dev/odhadCeny/siete sú null-safe (parcel môže byť null) — POZOR: musia byť PRED prípadným
+  // early returnom nižšie, lebo bundle/hash hooky pod nimi musia byť volané nepodmienečne (Rules of Hooks).
+  const reg = parcel ? (regulativFromZone(zone) ?? regulativByCode(proxyZone(parcel.use_type, null))) : null;
+  const dev = parcel?.area_m2 && reg ? developmentCalc(parcel.area_m2, reg, { ...calibDev.normal, predajEurM2: medPoz ?? calibDev.normal.predajEurM2 }) : null;
+  const odhadCeny = parcel?.area_m2 && medPoz ? parcel.area_m2 * medPoz : null;
+  const siete = parcel?.centroid_lat != null && parcel?.centroid_lng != null ? sieteLinks(parcel.centroid_lat, parcel.centroid_lng) : [];
+
+  // Property-360 kontrakt (42_NL docs/16 §6): strojovo čitateľný JSON export + result_hash —
+  // rovnaké fakty/počty/hodnoty musia sedieť medzi web zobrazením a exportom (jeden ResultBundle).
+  const bundle = useMemo(() => ({
+    dataset: ds, parcel, lv, access, limits, upDocs, zone, avm, market, signals,
+    development: dev, odhadCenyEur: odhadCeny, medianEurM2: medPoz,
+    as_of: ds?.updated_at ?? null,
+  }), [ds, parcel, lv, access, limits, upDocs, zone, avm, market, signals, dev, odhadCeny, medPoz]);
+
+  useEffect(() => {
+    if (!ready || !parcel) return;
+    const data = new TextEncoder().encode(JSON.stringify(bundle));
+    crypto.subtle.digest("SHA-256", data).then((buf) => {
+      const hex = Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+      setResultHash(hex.slice(0, 16));
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, parcel, bundle]);
+
   if (!parcel) return <div className="mx-auto max-w-3xl px-4 py-8 text-sm text-muted">Parcela {parcelNo} sa v datasete nenašla. <Link to="/mapa" className="text-brand underline">Späť na mapu</Link></div>;
 
-  const reg = regulativFromZone(zone) ?? regulativByCode(proxyZone(parcel.use_type, null));
-  const dev = parcel.area_m2 && reg ? developmentCalc(parcel.area_m2, reg, { ...calibDev.normal, predajEurM2: medPoz ?? calibDev.normal.predajEurM2 }) : null;
-  const odhadCeny = parcel.area_m2 && medPoz ? parcel.area_m2 * medPoz : null;
-  const siete = parcel.centroid_lat != null && parcel.centroid_lng != null ? sieteLinks(parcel.centroid_lat, parcel.centroid_lng) : [];
+  function downloadJson() {
+    const blob = new Blob([JSON.stringify({ result_hash: resultHash, ...bundle }, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `dossier_${datasetId}_${parcelNo}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div className="report-root mx-auto max-w-3xl px-6 py-6 text-fg">
@@ -113,6 +144,19 @@ function ReportPage() {
           ["Vysporiadanosť", parcel.settled === 1 ? "vysporiadaná (C-KN)" : parcel.settled === 0 ? `nevysporiadaná${parcel.ekn_ref ? ` — E-KN ${parcel.ekn_ref}` : ""}` : "—"],
           ["Evidenčný celok", parcel.celok != null ? String(parcel.celok) : "—"],
         ]} />
+      </Section>
+
+      <Section title="Mapa / Geometria">
+        <Grid rows={[
+          ["Kvalita geometrie", parcel.geometry_quality ? `${QUALITY_META[parcel.geometry_quality]?.label ?? parcel.geometry_quality}` : "—"],
+          ["Geometria k dispozícii", parcel.geometry_json ? "áno (polygón)" : "nie (len centroid/bez geometrie)"],
+          ["Súradnice (CRS WGS84, EPSG:4326)", parcel.centroid_lat != null && parcel.centroid_lng != null ? `${parcel.centroid_lat.toFixed(5)}, ${parcel.centroid_lng.toFixed(5)}` : "—"],
+          ["Zdrojový CRS", "S-JTSK (EPSG:5514) — transformované na WGS84 pre zobrazenie"],
+          ["Prístupové body", access ? "doložené — pozri sekciu Dostupnosť" : "—"],
+        ]} />
+        <div className="no-print mt-1">
+          <Link to="/mapa" className="text-xs text-brand underline">Otvoriť na mape →</Link>
+        </div>
       </Section>
 
       <Section title="Vlastníctvo (LV)">
@@ -262,6 +306,21 @@ function ReportPage() {
       </div>
 
       {!ready ? <div className="no-print mt-4 text-center text-xs text-muted">Načítavam dáta dossieru…</div> : null}
+
+      <Section title="Zdroje a export">
+        <Grid rows={[
+          ["Snapshot dát (as_of)", ds?.updated_at ?? "—"],
+          ["result_hash", resultHash ?? "počíta sa…"],
+          ["Pokrytie", `${[lv, access, limits, zone, avm].filter((x) => x != null).length}/5 sekcií s dátami${market.length ? ` · ${market.length} inzerátov` : ""}`],
+        ]} />
+        <div className="no-print mt-1">
+          <button onClick={downloadJson} disabled={!ready} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2 disabled:opacity-50">
+            Stiahnuť JSON (strojovo čitateľný export)
+          </button>
+        </div>
+        <Muted>result_hash je odtlačok zobrazeného obsahu (SHA-256, prvých 16 hex znakov) — rovnaký hash vo web zobrazení a v JSON exporte potvrdzuje, že ide o identické fakty. Časová platnosť = snapshot dát (as_of), nie čas renderovania.</Muted>
+      </Section>
+
       <div className="mt-6 border-t border-line pt-2 text-[10px] leading-snug text-muted">
         Dossier je orientačný pracovný podklad z verejných a katastrálnych dát — nie znalecký posudok ani právny/geodetický záver.
         Vlastnícke údaje sú rolovo maskované. Vygenerované: {new Date().toLocaleString("sk-SK")}.
