@@ -1223,6 +1223,61 @@ export const getProperty360 = createServerFn({ method: "POST" })
     return { settlement, landsearch, deal };
   });
 
+// ——— GOLD-ZA: ZDEDENÉ BYTY (dedenie 2025-26, nie 1./posledné podlažie, iná adresa vlastníka) ———
+// Bulk zápis kandidátov z Mac enginu (gold_za_find/gold_za_live, candidate.py model). Auth = alert_secret.
+// Per kod_ku replace. Anonymizované — owner_obec je hrubá (mesto), nie ulica/meno.
+export const ingestZA = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    replaceKu: z.array(z.string()).max(64).optional(),
+    rows: z.array(z.object({
+      kodKu: z.string(), kuName: z.string().nullable().optional(),
+      flatId: z.string().nullable().optional(), lvNo: z.number().nullable().optional(),
+      floor: z.number().nullable().optional(), buildingMinFloor: z.number().nullable().optional(),
+      buildingMaxFloor: z.number().nullable().optional(), classification: z.string(),
+      score: z.number().nullable().optional(), instrumentYear: z.number().nullable().optional(),
+      registrationYear: z.number().nullable().optional(), ownerObec: z.string().nullable().optional(),
+      reason: z.string().nullable().optional(),
+    })).max(1000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    if (data.replaceKu && data.replaceKu.length) {
+      const ph = data.replaceKu.map(() => "?").join(",");
+      await DB.prepare(`DELETE FROM za_cases WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
+    }
+    const stmt = DB.prepare("INSERT INTO za_cases (kod_ku,ku_name,flat_id,lv_no,floor,building_min_floor,building_max_floor,classification,score,instrument_year,registration_year,owner_obec,reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.flatId ?? null, r.lvNo ?? null, r.floor ?? null, r.buildingMinFloor ?? null, r.buildingMaxFloor ?? null, r.classification, r.score ?? null, r.instrumentYear ?? null, r.registrationYear ?? null, r.ownerObec ?? null, r.reason ?? null));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
+  });
+
+export type ZARow = {
+  kod_ku: string; ku_name: string | null; dataset_id: string | null;
+  flat_id: string | null; lv_no: number | null; floor: number | null;
+  building_min_floor: number | null; building_max_floor: number | null;
+  classification: string; score: number | null; instrument_year: number | null;
+  registration_year: number | null; owner_obec: string | null; reason: string | null;
+};
+export const getZACases = createServerFn({ method: "POST" })
+  .validator(z.object({ kodKu: z.string().optional() }))
+  .handler(async ({ data }): Promise<ZARow[]> => {
+    const where = data.kodKu ? "AND zc.kod_ku = ?" : "";
+    const args = data.kodKu ? [data.kodKu] : [];
+    return await q<ZARow>(
+      `SELECT zc.kod_ku, COALESCE(zc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
+              zc.flat_id, zc.lv_no, zc.floor, zc.building_min_floor, zc.building_max_floor,
+              zc.classification, zc.score, zc.instrument_year, zc.registration_year, zc.owner_obec, zc.reason
+       FROM za_cases zc LEFT JOIN datasets ds ON ds.ku_code = zc.kod_ku
+       WHERE zc.classification IN ('MATCH','PROVISIONAL') ${where}
+       ORDER BY zc.classification, zc.instrument_year DESC, zc.lv_no`,
+      args,
+    ).catch(() => []);
+  });
+
 // ——— STAVEBNÉ POZEMKY (GOLD-LI/GOLD-BU browse): landsearch_results s filtrom účel/k.ú./verdikt ———
 // purpose: retail (GOLD-LI) | residential (GOLD-BU, škola≤600s/obchod≤300s) | industrial.
 // owners sa vracia LEN pri plnom prístupe (rola) — landsearch_results nesie reálne mená (na rozdiel

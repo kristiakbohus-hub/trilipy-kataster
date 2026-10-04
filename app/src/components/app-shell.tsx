@@ -16,6 +16,7 @@ const NAV_GROUPS: NavGroup[] = [
     { to: "/prilezitosti", label: "ÚP príležitosti", icon: "zone" },
     { to: "/vysporiadanie", label: "Vysporiadanie", icon: "folder" },
     { to: "/stavebne-pozemky", label: "Stavebné pozemky", icon: "zone" },
+    { to: "/zdedene-byty", label: "Zdedené byty", icon: "folder" },
     { to: "/deal-radar", label: "Deal radar", icon: "target" },
     { to: "/watchlist", label: "Watchlist", icon: "target" },
     { to: "/deals", label: "Pipeline", icon: "folder" },

@@ -15,6 +15,7 @@ export type AppPath =
   | "/cases"
   | "/vysporiadanie"
   | "/stavebne-pozemky"
+  | "/zdedene-byty"
   | "/import"
   | "/reporty"
   | "/prilezitosti"
