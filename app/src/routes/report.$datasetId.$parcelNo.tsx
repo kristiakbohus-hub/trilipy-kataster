@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import {
   getDatasets, getParcelByNo, getLvDetail, getParcelAccessibility, getParcelLimits,
   getUpDocs, getLocalityMedian, getParcelZone, getMarketListingsNear, esknIdentify,
+  getProperty360,
 } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
 import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "../lib/development";
@@ -56,6 +57,7 @@ function ReportPage() {
   const [zone, setZone] = useState<Awaited<ReturnType<typeof getParcelZone>> | null>(null);
   const [avm, setAvm] = useState<Awaited<ReturnType<typeof esknIdentify>>["avm"] | null>(null);
   const [market, setMarket] = useState<Awaited<ReturnType<typeof getMarketListingsNear>>>([]);
+  const [signals, setSignals] = useState<Awaited<ReturnType<typeof getProperty360>> | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -70,6 +72,7 @@ function ReportPage() {
       jobs.push(esknIdentify({ data: { lat, lng } }).then((r) => setAvm(r.avm ?? null)).catch(() => {}));
       jobs.push(getMarketListingsNear({ data: { lat, lng, radiusKm: 10 } }).then(setMarket).catch(() => {}));
     }
+    jobs.push(getProperty360({ data: { datasetId, parcelNo, lvNo: parcel.lv_no ?? null } }).then(setSignals).catch(() => {}));
     jobs.push(getUpDocs({ data: { datasetId } }).then(setUpDocs).catch(() => {}));
     if (locality) jobs.push(getLocalityMedian({ data: { okres: locality, ptype: "pozemok", deal: "predaj" } }).then((r) => setMedPoz(r.median)).catch(() => {}));
     Promise.allSettled(jobs).finally(() => setReady(true));
@@ -123,6 +126,38 @@ function ReportPage() {
           </tbody></table>
         ) : <Muted>{lv.count} vlastníkov (mená chránené — rola bez plného prístupu).</Muted>}
       </Section>
+
+      {signals && (signals.settlement.length > 0 || signals.landsearch.length > 0 || signals.deal) ? (
+        <Section title="Prepojené signály (360°)">
+          <div className="space-y-1 text-sm">
+            {signals.settlement.map((s, i) => (
+              <div key={`st${i}`} className="flex items-center justify-between gap-2 border-b border-line/50 py-1">
+                <span>
+                  <b>Vysporiadanie</b> — {s.classification === "MATCH" ? "kandidát" : "na preskúmanie"}
+                  {s.classification === "MATCH" ? (s.minority_share ? " · menšinový podiel" : " · cudzí pozemok") : ""}
+                  {s.register ? ` · ${s.register}-KN` : ""}{s.n_land_owners ? ` · ${s.n_land_owners} vlastníkov` : ""}
+                </span>
+                <span className="flex items-center gap-2">
+                  {s.buyout_eur != null ? <span className="tabular-nums text-muted">{eur(s.buyout_eur)}</span> : null}
+                  <Link to="/vysporiadanie" className="no-print text-brand underline">detail</Link>
+                </span>
+              </div>
+            ))}
+            {signals.landsearch.map((l, i) => (
+              <div key={`ls${i}`} className="flex items-center justify-between gap-2 border-b border-line/50 py-1">
+                <span><b>Príležitosť</b> — {l.purpose ?? "?"} · {l.verdict ?? "?"}{l.quality != null ? ` · skóre ${Math.round(l.quality)}` : ""}</span>
+                <Link to="/prilezitosti" className="no-print text-brand underline">detail</Link>
+              </div>
+            ))}
+            {signals.deal ? (
+              <div className="flex items-center justify-between gap-2 py-1">
+                <span><b>Deal v pipeline</b> — stav {signals.deal.status}</span>
+                <Link to="/deals" className="no-print text-brand underline">pipeline</Link>
+              </div>
+            ) : null}
+          </div>
+        </Section>
+      ) : null}
 
       <Section title="Ocenenie (AVM + medián lokality)">
         <Grid rows={[

@@ -1189,6 +1189,40 @@ export const getSettlementCases = createServerFn({ method: "POST" })
     ).catch(() => []);
   });
 
+// ——— PROPERTY-360: prepojené signály pre JEDNU parcelu (zjednotenie goldenov na karte Dossier) ———
+// Vysporiadanie (GOLD 04) + land-search príležitosť (GOLD-LI) + deal v pipeline — pre dossier parcely.
+export type Property360 = {
+  settlement: { parcel_no: string | null; register: string | null; classification: string; buyout_eur: number | null; n_land_owners: number | null; minority_share: number; land_lv_no: number | null; via_e: number }[];
+  landsearch: { purpose: string | null; verdict: string | null; quality: number | null; parcels: string | null }[];
+  deal: { id: string; status: string; lv_no: number } | null;
+};
+export const getProperty360 = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string(), parcelNo: z.string(), lvNo: z.number().nullable().optional() }))
+  .handler(async ({ data }): Promise<Property360> => {
+    const empty: Property360 = { settlement: [], landsearch: [], deal: null };
+    const ku = (await q<{ ku_code: string }>("SELECT ku_code FROM datasets WHERE id=?", [data.datasetId]).catch(() => []))[0]?.ku_code;
+    if (!ku) return empty;
+    let lvNo = data.lvNo ?? null;
+    if (lvNo == null) {
+      lvNo = (await q<{ lv_no: number }>("SELECT lv_no FROM parcels WHERE dataset_id=? AND parcel_no=? AND lv_no IS NOT NULL LIMIT 1", [data.datasetId, data.parcelNo]).catch(() => []))[0]?.lv_no ?? null;
+    }
+    const settlement = await q<Property360["settlement"][number]>(
+      `SELECT parcel_no, register, classification, buyout_eur, n_land_owners, minority_share, land_lv_no, via_e
+       FROM settlement_cases WHERE kod_ku=? AND (parcel_no=? OR (land_lv_no IS NOT NULL AND land_lv_no=?))
+       ORDER BY classification, buyout_eur DESC LIMIT 10`,
+      [ku, data.parcelNo, lvNo],
+    ).catch(() => []);
+    const landsearch = await q<Property360["landsearch"][number]>(
+      `SELECT purpose, verdict, quality, parcels FROM landsearch_results
+       WHERE kod_ku=? AND (', '||parcels||', ') LIKE ? ORDER BY quality DESC LIMIT 5`,
+      [ku, `%, ${data.parcelNo}, %`],
+    ).catch(() => []);
+    const deal = lvNo != null
+      ? ((await q<{ id: string; status: string; lv_no: number }>("SELECT id, status, lv_no FROM deals WHERE dataset_id=? AND lv_no=? LIMIT 1", [data.datasetId, lvNo]).catch(() => []))[0] ?? null)
+      : null;
+    return { settlement, landsearch, deal };
+  });
+
 // ——— PER-PARCELA funkčné využitie z ÚP (georef výkres / GISPLAN WMS) — plní Mac, zobrazí LV výpis ———
 // replaceKu: pred vložením zmaže dané k.ú. (idempotentný re-push). Batch ≤1000 riadkov/volanie.
 export const ingestParcelZoning = createServerFn({ method: "POST" })
