@@ -1223,6 +1223,34 @@ export const getProperty360 = createServerFn({ method: "POST" })
     return { settlement, landsearch, deal };
   });
 
+// ——— STAVEBNÉ POZEMKY (GOLD-LI/GOLD-BU browse): landsearch_results s filtrom účel/k.ú./verdikt ———
+// purpose: retail (GOLD-LI) | residential (GOLD-BU, škola≤600s/obchod≤300s) | industrial.
+// owners sa vracia LEN pri plnom prístupe (rola) — landsearch_results nesie reálne mená (na rozdiel
+// od settlement_cases, ktoré sú anonymizované), preto gatujeme rovnako ako LV vlastníkov.
+export type LandsearchRow = {
+  kod_ku: string; ku_name: string | null; purpose: string | null; verdict: string | null;
+  quality: number | null; area_m2: number | null; n_parcels: number | null; parcels: string | null;
+  shape: string | null; zone: string | null; build: string | null; slope: number | null;
+  frontage: number | null; ppf: number; existing_use: string | null; druh: string | null;
+  access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null;
+};
+export const getLandsearchBrowse = createServerFn({ method: "POST" })
+  .validator(z.object({ purpose: z.string().optional(), kodKu: z.string().optional(), role: roleSchema }))
+  .handler(async ({ data }): Promise<LandsearchRow[]> => {
+    const where: string[] = ["verdict IN ('MATCH','PROVISIONAL')"];
+    const args: unknown[] = [];
+    if (data.purpose) { where.push("purpose = ?"); args.push(data.purpose); }
+    if (data.kodKu) { where.push("kod_ku = ?"); args.push(data.kodKu); }
+    const rows = await q<LandsearchRow>(
+      `SELECT kod_ku, ku_name, purpose, verdict, quality, area_m2, n_parcels, parcels, shape, zone,
+              build, slope, frontage, ppf, existing_use, druh, access_times, owners, n_owners, reason
+       FROM landsearch_results WHERE ${where.join(" AND ")}
+       ORDER BY (verdict='MATCH') DESC, quality DESC LIMIT 300`, args,
+    ).catch(() => []);
+    const full = ownerAccess(data.role as Role) === "full";
+    return full ? rows : rows.map((r) => ({ ...r, owners: null }));
+  });
+
 // ——— PER-PARCELA funkčné využitie z ÚP (georef výkres / GISPLAN WMS) — plní Mac, zobrazí LV výpis ———
 // replaceKu: pred vložením zmaže dané k.ú. (idempotentný re-push). Batch ≤1000 riadkov/volanie.
 export const ingestParcelZoning = createServerFn({ method: "POST" })

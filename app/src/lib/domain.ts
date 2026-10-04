@@ -14,6 +14,7 @@ export type AppPath =
   | "/zoning"
   | "/cases"
   | "/vysporiadanie"
+  | "/stavebne-pozemky"
   | "/import"
   | "/reporty"
   | "/prilezitosti"

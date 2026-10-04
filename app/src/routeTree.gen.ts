@@ -15,6 +15,7 @@ import { Route as SystemRouteImport } from './routes/system'
 import { Route as GdprRouteImport } from './routes/gdpr'
 import { Route as PrilezitostiRouteImport } from './routes/prilezitosti'
 import { Route as VysporiadanieRouteImport } from './routes/vysporiadanie'
+import { Route as StavebnePozemkyRouteImport } from './routes/stavebne-pozemky'
 import { Route as PrieskumRouteImport } from './routes/prieskum'
 import { Route as DealRadarRouteImport } from './routes/deal-radar'
 import { Route as AktivitaRouteImport } from './routes/aktivita'
@@ -81,6 +82,11 @@ const PrilezitostiRoute = PrilezitostiRouteImport.update({
 const VysporiadanieRoute = VysporiadanieRouteImport.update({
   id: '/vysporiadanie',
   path: '/vysporiadanie',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StavebnePozemkyRoute = StavebnePozemkyRouteImport.update({
+  id: '/stavebne-pozemky',
+  path: '/stavebne-pozemky',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrieskumRoute = PrieskumRouteImport.update({
@@ -271,6 +277,7 @@ const DealsRoute = DealsRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/vysporiadanie': typeof VysporiadanieRoute
+  '/stavebne-pozemky': typeof StavebnePozemkyRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -316,6 +323,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/vysporiadanie': typeof VysporiadanieRoute
+  '/stavebne-pozemky': typeof StavebnePozemkyRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -362,6 +370,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/vysporiadanie': typeof VysporiadanieRoute
+  '/stavebne-pozemky': typeof StavebnePozemkyRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -409,6 +418,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/vysporiadanie'
+    | '/stavebne-pozemky'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -454,6 +464,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/vysporiadanie'
+    | '/stavebne-pozemky'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -499,6 +510,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/vysporiadanie'
+    | '/stavebne-pozemky'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -542,6 +554,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   VysporiadanieRoute: typeof VysporiadanieRoute
+  StavebnePozemkyRoute: typeof StavebnePozemkyRoute
   ApiIngestSettlementRoute: typeof ApiIngestSettlementRoute
   IndexRoute: typeof IndexRoute
   MapaRoute: typeof MapaRoute
@@ -691,6 +704,13 @@ declare module '@tanstack/react-router' {
       path: '/vysporiadanie'
       fullPath: '/vysporiadanie'
       preLoaderRoute: typeof VysporiadanieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/stavebne-pozemky': {
+      id: '/stavebne-pozemky'
+      path: '/stavebne-pozemky'
+      fullPath: '/stavebne-pozemky'
+      preLoaderRoute: typeof StavebnePozemkyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-settlement': {
@@ -894,6 +914,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   VysporiadanieRoute: VysporiadanieRoute,
+  StavebnePozemkyRoute: StavebnePozemkyRoute,
   ApiIngestSettlementRoute: ApiIngestSettlementRoute,
   IndexRoute: IndexRoute,
   MapaRoute: MapaRoute,
