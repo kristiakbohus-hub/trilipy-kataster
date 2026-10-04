@@ -540,18 +540,46 @@ export const nlQuery = createServerFn({ method: "POST" })
       market = { count: mrows.length, results: mrows };
     }
 
-    // ——— 1b) Nehnuteľnosti podľa AKTUÁLNEJ akvizície (asset_acquisitions) — presné byt/parcela hity ———
-    // Jadro NL prieskumu pre „byty prededené v roku 2026", „exekúcia zapísaná od 2025" na úrovni
-    // konkrétnej nehnuteľnosti (nie len LV). Riadi sa rovnakými signálmi (typ udalosti + rok + druh).
-    type FlatHit = { kod_ku: string; ku_name: string | null; lv_number: string | null; asset_type: string | null; unit_number: string | null; area_m2: number | null; acquisition_kind: string | null; registration_year: number | null; instrument_year: number | null; owner_addr_differs: number; has_person: number };
-    let flats: { count: number; results: FlatHit[] } = { count: 0, results: [] };
+    // ——— 1b) Nehnuteľnosti podľa AKTUÁLNEJ akvizície — presné byt/parcela hity ———
+    // GOLD-ZA (dedičstvo + byt) ide cez za_cases — candidate-model klasifikátor s FLOOR kritériom
+    // (nie 1./posledné podlažie) + SAME_QUALIFYING_HOLDING, presnejší než staré ad-hoc počítanie
+    // (nahradené 2026-10-04). Iné právne udalosti (exekúcia/záložné/predaj/dar) a iné typy aktív
+    // (parcela/stavba) zostávajú na asset_acquisitions (GOLD-ZA ich nepokrýva).
+    type FlatHit = {
+      kod_ku: string; ku_name: string | null; lv_number: string | null; asset_type: string | null;
+      unit_number: string | null; area_m2: number | null; acquisition_kind: string | null;
+      registration_year: number | null; instrument_year: number | null; owner_addr_differs: number; has_person: number | null;
+      floor?: number | null; building_min_floor?: number | null; building_max_floor?: number | null;
+      classification?: string | null; owner_obec?: string | null;
+    };
+    let flats: { count: number; results: FlatHit[]; source?: "gold-za" | "legacy" } = { count: 0, results: [] };
     const acqKind = legalEv ? ({ inh: "inheritance", exek: "execution", lien: "lien", sale: "sale", gift: "gift" } as const)[legalEv] : null;
-    if (acqKind) {
+    const at = /\bbyt/.test(s) ? "flat" : /pozem|parcel/.test(s) ? "parcel" : /\bdom|stavb|budov/.test(s) ? "building" : null;
+    if (acqKind === "inheritance" && at !== "parcel" && at !== "building") {
+      // GOLD-ZA: dedičstvo (inštrument) + byt — za_cases má floor kritérium, asset_acquisitions nemá
+      const zcond: string[] = ["classification IN ('MATCH','PROVISIONAL')"]; const zargs: unknown[] = [];
+      if (yr && yr.op === ">=") { zcond.push("instrument_year >= ?"); zargs.push(yr.y); }
+      else if (yr && yr.op === "<=") { zcond.push("instrument_year <= ?"); zargs.push(yr.y); }
+      else if (yr) { zcond.push("instrument_year = ?"); zargs.push(yr.y); }
+      // „vlastník býva inde" je presne MATCH (PROVISIONAL = adresa NOT VERIFIED, nie potvrdená odlišná)
+      if (/mimo\s*mest|neb[yý]v|absent|vlastník\s*inde|cudzin/.test(s)) zcond.push("classification = 'MATCH'");
+      const zrows = await q<{ kod_ku: string; ku_name: string | null; lv_no: number | null; floor: number | null; building_min_floor: number | null; building_max_floor: number | null; classification: string; instrument_year: number | null; registration_year: number | null; owner_obec: string | null }>(
+        `SELECT kod_ku, ku_name, lv_no, floor, building_min_floor, building_max_floor, classification, instrument_year, registration_year, owner_obec
+         FROM za_cases WHERE ${zcond.join(" AND ")} ORDER BY classification, instrument_year DESC, kod_ku LIMIT 300`, zargs).catch(() => []);
+      const zresults: FlatHit[] = zrows.map((z) => ({
+        kod_ku: z.kod_ku, ku_name: z.ku_name, lv_number: z.lv_no != null ? String(z.lv_no) : null,
+        asset_type: "flat", unit_number: null, area_m2: null, acquisition_kind: "inheritance",
+        registration_year: z.registration_year, instrument_year: z.instrument_year,
+        owner_addr_differs: z.classification === "MATCH" ? 1 : 0, has_person: null,
+        floor: z.floor, building_min_floor: z.building_min_floor, building_max_floor: z.building_max_floor,
+        classification: z.classification, owner_obec: z.owner_obec,
+      }));
+      flats = { count: zresults.length, results: zresults, source: "gold-za" };
+    } else if (acqKind) {
       const fcond: string[] = ["acquisition_kind = ?"]; const fargs: unknown[] = [acqKind];
       if (yr && yr.op === ">=") { fcond.push("registration_year >= ?"); fargs.push(yr.y); }
       else if (yr && yr.op === "<=") { fcond.push("registration_year <= ?"); fargs.push(yr.y); }
       else if (yr) { fcond.push("registration_year = ?"); fargs.push(yr.y); }
-      const at = /\bbyt/.test(s) ? "flat" : /pozem|parcel/.test(s) ? "parcel" : /\bdom|stavb|budov/.test(s) ? "building" : null;
       if (at === "flat") fcond.push("asset_type = 'flat'");
       else if (at === "parcel") fcond.push("asset_type IN ('parcel_c','parcel_e')");
       else if (at === "building") fcond.push("asset_type = 'building'");
@@ -559,7 +587,7 @@ export const nlQuery = createServerFn({ method: "POST" })
       const frows = await q<FlatHit>(
         `SELECT kod_ku, ku_name, lv_number, asset_type, unit_number, area_m2, acquisition_kind, registration_year, instrument_year, owner_addr_differs, has_person
          FROM asset_acquisitions WHERE ${fcond.join(" AND ")} ORDER BY registration_year DESC, kod_ku, lv_number LIMIT 300`, fargs).catch(() => [] as FlatHit[]);
-      flats = { count: frows.length, results: frows };
+      flats = { count: frows.length, results: frows, source: "legacy" };
     }
 
     // ——— 1c) POZEMKOVÉ PRÍLEŽITOSTI (land-search, predpočítané z Mac gold_li_engine → landsearch_results) ———

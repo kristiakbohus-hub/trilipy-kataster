@@ -63,9 +63,15 @@ function PrieskumPage() {
     if (res.flats.results.length) {
       const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "predaj", gift: "darovanie", execution: "exekúcia", lien: "záložné" };
       const typSk: Record<string, string> = { flat: "byt", parcel_c: "parcela C", parcel_e: "parcela E", building: "stavba" };
-      body += `<h3 style="font-family:Georgia,serif">Nehnuteľnosti podľa právnej udalosti (${res.flats.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["k.ú.", "LV", "Typ", "Udalosť", "Rok", "Výmera", "Vlastník inde"]);
-      body += res.flats.results.map((f) => `<tr><td>${he(f.ku_name ?? f.kod_ku)}</td><td>${he(f.lv_number ?? "")}</td><td>${he(typSk[f.asset_type ?? ""] ?? f.asset_type ?? "")}</td><td>${he(kindSk[f.acquisition_kind ?? ""] ?? f.acquisition_kind ?? "")}</td><td>${f.registration_year ?? ""}</td><td>${f.area_m2 ? Math.round(f.area_m2).toLocaleString("sk-SK") + " m²" : ""}</td><td>${f.owner_addr_differs ? "áno" : ""}</td></tr>`).join("");
-      body += `</table>`;
+      if (res.flats.source === "gold-za") {
+        body += `<h3 style="font-family:Georgia,serif">Zdedené byty — GOLD-ZA (${res.flats.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["k.ú.", "LV", "Podlažie", "Dedičstvo", "Zápis", "Stav", "Vlastník"]);
+        body += res.flats.results.map((f) => `<tr><td>${he(f.ku_name ?? f.kod_ku)}</td><td>${he(f.lv_number ?? "")}</td><td>${f.floor ?? ""} (${f.building_min_floor ?? "?"}..${f.building_max_floor ?? "?"})</td><td>${f.instrument_year ?? ""}</td><td>${f.registration_year ?? ""}</td><td>${f.classification === "MATCH" ? "kandidát" : "preskúmať"}</td><td>${he(f.owner_obec ?? "")}</td></tr>`).join("");
+        body += `</table>`;
+      } else {
+        body += `<h3 style="font-family:Georgia,serif">Nehnuteľnosti podľa právnej udalosti (${res.flats.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["k.ú.", "LV", "Typ", "Udalosť", "Rok", "Výmera", "Vlastník inde"]);
+        body += res.flats.results.map((f) => `<tr><td>${he(f.ku_name ?? f.kod_ku)}</td><td>${he(f.lv_number ?? "")}</td><td>${he(typSk[f.asset_type ?? ""] ?? f.asset_type ?? "")}</td><td>${he(kindSk[f.acquisition_kind ?? ""] ?? f.acquisition_kind ?? "")}</td><td>${f.registration_year ?? ""}</td><td>${f.area_m2 ? Math.round(f.area_m2).toLocaleString("sk-SK") + " m²" : ""}</td><td>${f.owner_addr_differs ? "áno" : ""}</td></tr>`).join("");
+        body += `</table>`;
+      }
     }
     if (res.owners.results.length) {
       body += `<h3 style="font-family:Georgia,serif">Vlastníci (${res.owners.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["Meno", "Typ", "Výskyt"]);
@@ -166,8 +172,36 @@ function PrieskumPage() {
         </Card>
       ) : null}
 
+      {/* ——— Zdedené byty (GOLD-ZA, za_cases) ——— */}
+      {res && res.flats.count > 0 && res.flats.source === "gold-za" ? (
+        <Card className="p-4">
+          <SectionHeader title={`Zdedené byty — GOLD-ZA (${res.flats.count})`} hint={res.flats.count >= 300 ? "top 300" : "dedičstvo v cieľovom roku, nie 1./posledné podlažie, iná adresa vlastníka"} />
+          <div className="mt-2 divide-y divide-line">
+            {res.flats.results.map((f, i) => (
+              <div key={`${f.kod_ku}-${f.lv_number}-${i}`} className="flex items-center gap-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-fg">
+                    Byt · LV {f.lv_number ?? "—"} · {f.ku_name ?? f.kod_ku}
+                    {f.classification === "MATCH" ? (
+                      <span className="ml-2 rounded-full border border-line px-1.5 py-0.5 text-[10px]" style={{ color: "#5b7a58" }}>kandidát</span>
+                    ) : (
+                      <span className="ml-2 rounded-full border border-line px-1.5 py-0.5 text-[10px] text-muted">preskúmať</span>
+                    )}
+                  </div>
+                  <div className="truncate text-[12px] text-muted">
+                    podlažie {f.floor ?? "?"} (budova {f.building_min_floor ?? "?"}..{f.building_max_floor ?? "?"})
+                    {f.instrument_year ? ` · dedičstvo ${f.instrument_year}` : ""}
+                    {f.owner_obec ? ` · vlastník: ${f.owner_obec}` : ""}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       {/* ——— Nehnuteľnosti podľa právnej udalosti (asset_acquisitions) ——— */}
-      {res && res.flats.count > 0 ? (
+      {res && res.flats.count > 0 && res.flats.source !== "gold-za" ? (
         <Card className="p-4">
           <SectionHeader title={`Nehnuteľnosti podľa právnej udalosti (${res.flats.count})`} hint={res.flats.count >= 300 ? "top 300" : "konkrétne byty/parcely podľa aktuálneho nadobúdacieho titulu"} />
           <div className="mt-2 divide-y divide-line">
