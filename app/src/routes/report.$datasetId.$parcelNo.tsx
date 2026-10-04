@@ -87,9 +87,9 @@ function ReportPage() {
   // reg/dev/odhadCeny/siete sú null-safe (parcel môže byť null) — POZOR: musia byť PRED prípadným
   // early returnom nižšie, lebo bundle/hash hooky pod nimi musia byť volané nepodmienečne (Rules of Hooks).
   const reg = parcel ? (regulativFromZone(zone) ?? regulativByCode(proxyZone(parcel.use_type, null))) : null;
-  const dev = parcel?.area_m2 && reg ? developmentCalc(parcel.area_m2, reg, { ...calibDev.normal, predajEurM2: medPoz ?? calibDev.normal.predajEurM2 }) : null;
-  const odhadCeny = parcel?.area_m2 && medPoz ? parcel.area_m2 * medPoz : null;
-  const siete = parcel?.centroid_lat != null && parcel?.centroid_lng != null ? sieteLinks(parcel.centroid_lat, parcel.centroid_lng) : [];
+  const dev = (parcel && parcel.area_m2 && reg) ? developmentCalc(parcel.area_m2, reg, { ...calibDev.normal, predajEurM2: medPoz ?? calibDev.normal.predajEurM2 }) : null;
+  const odhadCeny = (parcel && parcel.area_m2 && medPoz) ? parcel.area_m2 * medPoz : null;
+  const siete = (parcel && parcel.centroid_lat != null && parcel.centroid_lng != null) ? sieteLinks(parcel.centroid_lat, parcel.centroid_lng) : [];
 
   // Property-360 kontrakt (42_NL docs/16 §6): strojovo čitateľný JSON export + result_hash —
   // rovnaké fakty/počty/hodnoty musia sedieť medzi web zobrazením a exportom (jeden ResultBundle).
