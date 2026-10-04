@@ -6,6 +6,7 @@ import type {
   Case,
   CaseNote,
   Dataset,
+  GeometryQuality,
   ImportJob,
   Lv,
   LvOwner,
@@ -3365,12 +3366,13 @@ export type ReportParcel = {
   lv_no: number | null; celok: number | null; settled: number | null; ekn_ref: string | null;
   bpej: string | null; bpej_skupina: number | null; odnatie_eur: number | null;
   centroid_lat: number | null; centroid_lng: number | null;
+  geometry_quality: GeometryQuality | null; geometry_json: string | null;
 };
 export const getParcelByNo = createServerFn({ method: "POST" })
   .validator(z.object({ datasetId: z.string(), parcelNo: z.string() }))
   .handler(async ({ data }): Promise<ReportParcel | null> => {
     const r = await q<ReportParcel>(
-      "SELECT parcel_no,kn_type,area_m2,use_type,lv_no,celok,settled,ekn_ref,bpej,bpej_skupina,odnatie_eur,centroid_lat,centroid_lng FROM parcels WHERE dataset_id=? AND parcel_no=? LIMIT 1",
+      "SELECT parcel_no,kn_type,area_m2,use_type,lv_no,celok,settled,ekn_ref,bpej,bpej_skupina,odnatie_eur,centroid_lat,centroid_lng,geometry_quality,geometry_json FROM parcels WHERE dataset_id=? AND parcel_no=? LIMIT 1",
       [data.datasetId, data.parcelNo]);
     return r[0] ?? null;
   });
