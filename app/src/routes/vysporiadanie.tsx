@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { createDeal, getSettlementCases, type SettlementRow } from "../lib/api/kataster.functions";
-import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
+import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { eur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 
@@ -194,6 +194,7 @@ function SettlementPage() {
               ) : null}
 
               <OutreachList json={r.outreach_json} />
+              <CriteriaMatrix json={r.criteria_json} />
 
               {r.reason ? <p className="mt-3 text-xs leading-relaxed text-muted">{r.reason}</p> : null}
 

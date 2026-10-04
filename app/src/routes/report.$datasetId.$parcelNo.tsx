@@ -9,6 +9,7 @@ import {
   getProperty360,
 } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
+import { CriteriaMatrix } from "../components/kit";
 import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "../lib/development";
 import { useCalibDev } from "../lib/calib";
 import { DocumentsPanel } from "../components/documents-panel";
@@ -131,16 +132,19 @@ function ReportPage() {
         <Section title="Prepojené signály (360°)">
           <div className="space-y-1 text-sm">
             {signals.settlement.map((s, i) => (
-              <div key={`st${i}`} className="flex items-center justify-between gap-2 border-b border-line/50 py-1">
-                <span>
-                  <b>Vysporiadanie</b> — {s.classification === "MATCH" ? "kandidát" : "na preskúmanie"}
-                  {s.classification === "MATCH" ? (s.minority_share ? " · menšinový podiel" : " · cudzí pozemok") : ""}
-                  {s.register ? ` · ${s.register}-KN` : ""}{s.n_land_owners ? ` · ${s.n_land_owners} vlastníkov` : ""}
-                </span>
-                <span className="flex items-center gap-2">
-                  {s.buyout_eur != null ? <span className="tabular-nums text-muted">{eur(s.buyout_eur)}</span> : null}
-                  <Link to="/vysporiadanie" className="no-print text-brand underline">detail</Link>
-                </span>
+              <div key={`st${i}`} className="border-b border-line/50 py-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span>
+                    <b>Vysporiadanie</b> — {s.classification === "MATCH" ? "kandidát" : "na preskúmanie"}
+                    {s.classification === "MATCH" ? (s.minority_share ? " · menšinový podiel" : " · cudzí pozemok") : ""}
+                    {s.register ? ` · ${s.register}-KN` : ""}{s.n_land_owners ? ` · ${s.n_land_owners} vlastníkov` : ""}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    {s.buyout_eur != null ? <span className="tabular-nums text-muted">{eur(s.buyout_eur)}</span> : null}
+                    <Link to="/vysporiadanie" className="no-print text-brand underline">detail</Link>
+                  </span>
+                </div>
+                <CriteriaMatrix json={s.criteria_json} />
               </div>
             ))}
             {signals.landsearch.map((l, i) => (

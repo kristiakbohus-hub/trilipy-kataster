@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { createDeal, getZACases, type ZARow } from "../lib/api/kataster.functions";
-import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
+import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
 export const Route = createFileRoute("/zdedene-byty")({
@@ -125,6 +125,7 @@ function InheritedFlatsPage() {
               </div>
 
               {r.reason ? <p className="mt-3 text-xs leading-relaxed text-muted">{r.reason}</p> : null}
+              <CriteriaMatrix json={r.criteria_json} />
 
               <div className="mt-3 flex items-center justify-between border-t border-line pt-2 text-xs">
                 <span className="text-muted">{cls === "MATCH" ? "Potenciálny kandidát" : "Na preskúmanie"}</span>

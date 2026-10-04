@@ -1172,7 +1172,7 @@ export const ingestSettlement = createServerFn({ method: "POST" })
       viaE: z.number().nullable().optional(), reason: z.string().nullable().optional(),
       minorityShare: z.number().nullable().optional(), landAreaM2: z.number().nullable().optional(),
       landDruh: z.string().nullable().optional(), buyoutEur: z.number().nullable().optional(),
-      outreachJson: z.string().nullable().optional(),
+      outreachJson: z.string().nullable().optional(), criteriaJson: z.string().nullable().optional(),
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
@@ -1184,8 +1184,8 @@ export const ingestSettlement = createServerFn({ method: "POST" })
       const ph = data.replaceKu.map(() => "?").join(",");
       await DB.prepare(`DELETE FROM settlement_cases WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
     }
-    const stmt = DB.prepare("INSERT INTO settlement_cases (kod_ku,ku_name,building_id,building_desc,parcel_no,register,land_lv_no,classification,score,n_land_owners,has_spf,has_unknown,via_e,reason,minority_share,land_area_m2,land_druh,buyout_eur,outreach_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
-    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.buildingId ?? null, r.buildingDesc ?? null, r.parcelNo ?? null, r.register ?? null, r.landLvNo ?? null, r.classification, r.score ?? null, r.nLandOwners ?? null, r.hasSpf ?? 0, r.hasUnknown ?? 0, r.viaE ?? 0, r.reason ?? null, r.minorityShare ?? 0, r.landAreaM2 ?? null, r.landDruh ?? null, r.buyoutEur ?? null, r.outreachJson ?? null));
+    const stmt = DB.prepare("INSERT INTO settlement_cases (kod_ku,ku_name,building_id,building_desc,parcel_no,register,land_lv_no,classification,score,n_land_owners,has_spf,has_unknown,via_e,reason,minority_share,land_area_m2,land_druh,buyout_eur,outreach_json,criteria_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.buildingId ?? null, r.buildingDesc ?? null, r.parcelNo ?? null, r.register ?? null, r.landLvNo ?? null, r.classification, r.score ?? null, r.nLandOwners ?? null, r.hasSpf ?? 0, r.hasUnknown ?? 0, r.viaE ?? 0, r.reason ?? null, r.minorityShare ?? 0, r.landAreaM2 ?? null, r.landDruh ?? null, r.buyoutEur ?? null, r.outreachJson ?? null, r.criteriaJson ?? null));
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
     return { ok: true, inserted: data.rows.length };
   });
@@ -1198,7 +1198,7 @@ export type SettlementRow = {
   score: number | null; n_land_owners: number | null; has_spf: number; has_unknown: number;
   via_e: number; reason: string | null;
   minority_share: number; land_area_m2: number | null; land_druh: string | null; buyout_eur: number | null;
-  outreach_json: string | null;
+  outreach_json: string | null; criteria_json: string | null;
 };
 export const getSettlementCases = createServerFn({ method: "POST" })
   .validator(z.object({ kodKu: z.string().optional() }))
@@ -1209,7 +1209,7 @@ export const getSettlementCases = createServerFn({ method: "POST" })
       `SELECT sc.kod_ku, COALESCE(sc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
               sc.building_id, sc.building_desc, sc.parcel_no, sc.register, sc.land_lv_no,
               sc.classification, sc.score, sc.n_land_owners, sc.has_spf, sc.has_unknown, sc.via_e, sc.reason,
-              sc.minority_share, sc.land_area_m2, sc.land_druh, sc.buyout_eur, sc.outreach_json
+              sc.minority_share, sc.land_area_m2, sc.land_druh, sc.buyout_eur, sc.outreach_json, sc.criteria_json
        FROM settlement_cases sc LEFT JOIN datasets ds ON ds.ku_code = sc.kod_ku
        WHERE sc.classification IN ('MATCH','PROVISIONAL') ${where}
        ORDER BY sc.classification, sc.buyout_eur DESC, sc.n_land_owners DESC, sc.parcel_no`,
@@ -1220,7 +1220,7 @@ export const getSettlementCases = createServerFn({ method: "POST" })
 // ——— PROPERTY-360: prepojené signály pre JEDNU parcelu (zjednotenie goldenov na karte Dossier) ———
 // Vysporiadanie (GOLD 04) + land-search príležitosť (GOLD-LI) + deal v pipeline — pre dossier parcely.
 export type Property360 = {
-  settlement: { parcel_no: string | null; register: string | null; classification: string; buyout_eur: number | null; n_land_owners: number | null; minority_share: number; land_lv_no: number | null; via_e: number }[];
+  settlement: { parcel_no: string | null; register: string | null; classification: string; buyout_eur: number | null; n_land_owners: number | null; minority_share: number; land_lv_no: number | null; via_e: number; criteria_json: string | null }[];
   landsearch: { purpose: string | null; verdict: string | null; quality: number | null; parcels: string | null }[];
   deal: { id: string; status: string; lv_no: number } | null;
 };
@@ -1235,7 +1235,7 @@ export const getProperty360 = createServerFn({ method: "POST" })
       lvNo = (await q<{ lv_no: number }>("SELECT lv_no FROM parcels WHERE dataset_id=? AND parcel_no=? AND lv_no IS NOT NULL LIMIT 1", [data.datasetId, data.parcelNo]).catch(() => []))[0]?.lv_no ?? null;
     }
     const settlement = await q<Property360["settlement"][number]>(
-      `SELECT parcel_no, register, classification, buyout_eur, n_land_owners, minority_share, land_lv_no, via_e
+      `SELECT parcel_no, register, classification, buyout_eur, n_land_owners, minority_share, land_lv_no, via_e, criteria_json
        FROM settlement_cases WHERE kod_ku=? AND (parcel_no=? OR (land_lv_no IS NOT NULL AND land_lv_no=?))
        ORDER BY classification, buyout_eur DESC LIMIT 10`,
       [ku, data.parcelNo, lvNo],
@@ -1265,7 +1265,7 @@ export const ingestZA = createServerFn({ method: "POST" })
       buildingMaxFloor: z.number().nullable().optional(), classification: z.string(),
       score: z.number().nullable().optional(), instrumentYear: z.number().nullable().optional(),
       registrationYear: z.number().nullable().optional(), ownerObec: z.string().nullable().optional(),
-      reason: z.string().nullable().optional(),
+      reason: z.string().nullable().optional(), criteriaJson: z.string().nullable().optional(),
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
@@ -1277,8 +1277,8 @@ export const ingestZA = createServerFn({ method: "POST" })
       const ph = data.replaceKu.map(() => "?").join(",");
       await DB.prepare(`DELETE FROM za_cases WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
     }
-    const stmt = DB.prepare("INSERT INTO za_cases (kod_ku,ku_name,flat_id,lv_no,floor,building_min_floor,building_max_floor,classification,score,instrument_year,registration_year,owner_obec,reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
-    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.flatId ?? null, r.lvNo ?? null, r.floor ?? null, r.buildingMinFloor ?? null, r.buildingMaxFloor ?? null, r.classification, r.score ?? null, r.instrumentYear ?? null, r.registrationYear ?? null, r.ownerObec ?? null, r.reason ?? null));
+    const stmt = DB.prepare("INSERT INTO za_cases (kod_ku,ku_name,flat_id,lv_no,floor,building_min_floor,building_max_floor,classification,score,instrument_year,registration_year,owner_obec,reason,criteria_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.flatId ?? null, r.lvNo ?? null, r.floor ?? null, r.buildingMinFloor ?? null, r.buildingMaxFloor ?? null, r.classification, r.score ?? null, r.instrumentYear ?? null, r.registrationYear ?? null, r.ownerObec ?? null, r.reason ?? null, r.criteriaJson ?? null));
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
     return { ok: true, inserted: data.rows.length };
   });
@@ -1289,6 +1289,7 @@ export type ZARow = {
   building_min_floor: number | null; building_max_floor: number | null;
   classification: string; score: number | null; instrument_year: number | null;
   registration_year: number | null; owner_obec: string | null; reason: string | null;
+  criteria_json: string | null;
 };
 export const getZACases = createServerFn({ method: "POST" })
   .validator(z.object({ kodKu: z.string().optional() }))
@@ -1298,7 +1299,8 @@ export const getZACases = createServerFn({ method: "POST" })
     return await q<ZARow>(
       `SELECT zc.kod_ku, COALESCE(zc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
               zc.flat_id, zc.lv_no, zc.floor, zc.building_min_floor, zc.building_max_floor,
-              zc.classification, zc.score, zc.instrument_year, zc.registration_year, zc.owner_obec, zc.reason
+              zc.classification, zc.score, zc.instrument_year, zc.registration_year, zc.owner_obec, zc.reason,
+              zc.criteria_json
        FROM za_cases zc LEFT JOIN datasets ds ON ds.ku_code = zc.kod_ku
        WHERE zc.classification IN ('MATCH','PROVISIONAL') ${where}
        ORDER BY zc.classification, zc.instrument_year DESC, zc.lv_no`,
