@@ -1,25 +1,26 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getDealRadar, getMarketTree, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { Card, SectionHeader, Disclaimer } from "../components/kit";
 
+// ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
+// by vložil dáta do HTML pre KOHOKOĽVEK, kto pozná URL. Ťaháme ich až v efekte.
 export const Route = createFileRoute("/deal-radar")({
   head: () => ({ meta: [{ title: "Deal radar — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => {
-    const tree = await getMarketTree({ data: { deal: "predaj" } }).catch((): MarketTreeRow[] => []);
-    const init = await getDealRadar({ data: { limit: 40 } }).catch((): Awaited<ReturnType<typeof getDealRadar>> => ({ lv: [], market: [] }));
-    return { tree, init };
-  },
   component: DealRadarPage,
 });
 
 const eur = (n: number | null | undefined) => (n == null ? "—" : Math.round(n).toLocaleString("sk-SK"));
 
 function DealRadarPage() {
-  const { tree, init } = Route.useLoaderData();
+  const [tree, setTree] = useState<MarketTreeRow[]>([]);
   const [okres, setOkres] = useState("");
   const [minScore, setMinScore] = useState(0);
-  const [res, setRes] = useState(init);
+  const [res, setRes] = useState<Awaited<ReturnType<typeof getDealRadar>>>({ lv: [], market: [] });
+  useEffect(() => {
+    getMarketTree({ data: { deal: "predaj" } }).then(setTree).catch(() => {});
+    getDealRadar({ data: { limit: 40 } }).then(setRes).catch(() => {});
+  }, []);
   const [busy, setBusy] = useState(false);
   const [lvSort, setLvSort] = useState<"score" | "eur">("score");
 

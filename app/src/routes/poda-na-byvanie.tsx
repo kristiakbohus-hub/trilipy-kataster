@@ -1,21 +1,27 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getUPCases, type UPRow } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
+// ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
+// by vložil celý dataset do HTML pre KOHOKOĽVEK, kto pozná URL. Dáta sa preto ťahajú až v efekte —
+// komponent sa namountuje až po prihlásení. Rovnako to robí /stavebne-pozemky.
 export const Route = createFileRoute("/poda-na-byvanie")({
   head: () => ({ meta: [{ title: "Pôda na bývanie — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getUPCases({ data: {} }),
   component: UpzonedFarmlandPage,
 });
 
 const eur = (n: number | null) => (n === null ? "—" : `${n.toLocaleString("sk-SK")} €`);
 
 function UpzonedFarmlandPage() {
-  const rows = Route.useLoaderData();
   const { role } = useRole();
-  const router = useRouter();
+  const [rows, setRows] = useState<UPRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const reload = useCallback(() => {
+    getUPCases({ data: {} }).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
   const [kuFilter, setKuFilter] = useState("");
   const [cls, setCls] = useState<"MATCH" | "PROVISIONAL">("MATCH");
   const [limit, setLimit] = useState(40);
@@ -28,7 +34,7 @@ function UpzonedFarmlandPage() {
     setDealBusy(key);
     try {
       const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.lv_no, role } });
-      if (res.ok && res.id) { setCreated((m) => ({ ...m, [key]: res.id! })); router.invalidate(); }
+      if (res.ok && res.id) { setCreated((m) => ({ ...m, [key]: res.id! })); reload(); }
     } finally { setDealBusy(null); }
   }
 
@@ -91,7 +97,9 @@ function UpzonedFarmlandPage() {
         </div>
       </div>
 
-      {shown.length === 0 ? (
+      {loading ? (
+        <Card className="p-6 text-center text-sm text-muted">Načítavam kandidátov…</Card>
+      ) : shown.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted">
           Žiadni kandidáti v tejto kategórii. Dáta plní Mac engine cez <code>/api/ingest-up</code>.
           Katastre bez zdroja územného plánu sa tu nemôžu objaviť — nie je ich s čím porovnať.

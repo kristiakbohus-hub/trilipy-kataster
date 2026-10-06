@@ -1,13 +1,14 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getDeals, type LvSignal } from "../lib/api/kataster.functions";
 import { m2 } from "../lib/domain";
 import { Badge, Card, Disclaimer, Meter, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
+// ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
+// by vložil dáta do HTML pre KOHOKOĽVEK, kto pozná URL. Ťaháme ich až v efekte.
 export const Route = createFileRoute("/prilezitosti")({
   head: () => ({ meta: [{ title: "Príležitosti — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getDeals({ data: {} }),
   component: OpportunitiesPage,
 });
 
@@ -45,9 +46,10 @@ function reasonsOf(s: LvSignal): string[] {
 }
 
 function OpportunitiesPage() {
-  const signals = Route.useLoaderData();
   const { role } = useRole();
-  const router = useRouter();
+  const [signals, setSignals] = useState<Awaited<ReturnType<typeof getDeals>>>([]);
+  const reload = useCallback(() => { getDeals({ data: {} }).then(setSignals).catch(() => setSignals([])); }, []);
+  useEffect(() => { reload(); }, [reload]);
   const [w, setW] = useState<Weights>(W0);
   const [dsFilter, setDsFilter] = useState<string>("");
   const [limit, setLimit] = useState(40);
@@ -59,7 +61,7 @@ function OpportunitiesPage() {
     setDealBusy(key);
     try {
       const r = await createDeal({ data: { datasetId: s.dataset_id, lvNo: s.lv_no, role } });
-      if (r.ok && r.id) { setCreated((m) => ({ ...m, [key]: r.id! })); router.invalidate(); }
+      if (r.ok && r.id) { setCreated((m) => ({ ...m, [key]: r.id! })); reload(); }
     } finally { setDealBusy(null); }
   }
 

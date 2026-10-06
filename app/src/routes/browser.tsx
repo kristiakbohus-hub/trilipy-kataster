@@ -5,16 +5,10 @@ import { ownerAccess, type Dataset, type Lv, type LvOwner } from "../lib/domain"
 import { Badge, Card, Disclaimer, Icon, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
+// ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
+// by vložil dáta do HTML pre KOHOKOĽVEK, kto pozná URL. Ťaháme ich až v efekte.
 export const Route = createFileRoute("/browser")({
   head: () => ({ meta: [{ title: "Kataster Browser — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => {
-    const datasets = await getDatasets();
-    const first = datasets.find((d) => d.status !== "blocked") ?? datasets[0];
-    const reg = first
-      ? await getLvRegistry({ data: { datasetId: first.id, role: "viewer" } })
-      : null;
-    return { datasets, firstId: first?.id ?? null, initialLvs: reg?.lvs ?? [], total: reg?.total ?? 0 };
-  },
   component: BrowserPage,
 });
 
@@ -27,14 +21,21 @@ type Detail = {
 };
 
 function BrowserPage() {
-  const { datasets, firstId, initialLvs, total } = Route.useLoaderData();
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
   const { role } = useRole();
   const access = ownerAccess(role);
 
-  const [datasetId, setDatasetId] = useState<string | null>(firstId);
+  const [datasetId, setDatasetId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [lvs, setLvs] = useState<Lv[]>(initialLvs);
-  const [count, setCount] = useState(total);
+  const [lvs, setLvs] = useState<Lv[]>([]);
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    getDatasets().then((ds) => {
+      setDatasets(ds);
+      const first = ds.find((d) => d.status !== "blocked") ?? ds[0];
+      if (first) setDatasetId((cur) => cur ?? first.id);
+    }).catch(() => {});
+  }, []);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -55,11 +56,12 @@ function BrowserPage() {
     [role],
   );
 
-  // Pri zmene roly znova načítať (mení sa name-search access).
+  // Pri zmene roly znova načítať (mení sa name-search access) a pri prvom zvolení datasetu —
+  // ten sa teraz nastavuje až v efekte (predtým prišiel zo SSR loadera), takže musí byť v deps.
   useEffect(() => {
     if (datasetId) void loadRegistry(datasetId, query);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role]);
+  }, [role, datasetId]);
 
   async function openLv(lvNo: number) {
     if (!datasetId) return;

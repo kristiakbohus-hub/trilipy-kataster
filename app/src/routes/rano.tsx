@@ -6,15 +6,18 @@ import { Badge, Card, Icon, Stat } from "../components/kit";
 type Brief = Awaited<ReturnType<typeof getMorningBriefing>>;
 const eur = (n: number | null) => (n == null ? "—" : n.toLocaleString("sk-SK", { maximumFractionDigits: 0 }) + " €");
 
+// ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
+// by vložil dáta do HTML pre KOHOKOĽVEK, kto pozná URL. Ťaháme ich až v efekte.
 export const Route = createFileRoute("/rano")({
   head: () => ({ meta: [{ title: "Dobré ráno — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getMorningBriefing({ data: { limit: 15 } }).catch((): Brief => ({ today: null, summary: { newToday: 0, drops: 0, upDeals: 0, privateOpps: 0 }, listings: [], gone: [], up: [], okresy: [], ptypes: [], parsed: { ptype: null, okres: null, maxPrice: null, keywords: [] } })),
   component: RanoPage,
 });
 
+const EMPTY_BRIEF: Brief = { today: null, summary: { newToday: 0, drops: 0, upDeals: 0, privateOpps: 0 }, listings: [], gone: [], up: [], okresy: [], ptypes: [], parsed: { ptype: null, okres: null, maxPrice: null, keywords: [] } };
+
 function RanoPage() {
-  const initial = Route.useLoaderData();
-  const [b, setB] = useState<Brief>(initial);
+  const [b, setB] = useState<Brief>(EMPTY_BRIEF);
+  useEffect(() => { getMorningBriefing({ data: { limit: 15 } }).then(setB).catch(() => {}); }, []);
   const [okres, setOkres] = useState("");
   const [ptype, setPtype] = useState("");
   const [onlyPrivate, setOnlyPrivate] = useState(true);

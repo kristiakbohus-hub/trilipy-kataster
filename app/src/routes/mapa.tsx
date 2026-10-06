@@ -13,29 +13,31 @@ const toWmsDef = (rows: WmsRow[]): WmsDef[] =>
 // ESKN-first: mapa sa otvára na národnom pohľade na celé SR (ESKN default podklad); k.ú. sú vrstvy navrchu.
 const SR_VIEW = { lat: 48.72, lng: 19.5, zoom: 7.4 };
 
+// ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
+// by vložil parcely/príležitosti do HTML pre KOHOKOĽVEK, kto pozná URL. Ťaháme ich až v efekte.
 export const Route = createFileRoute("/mapa")({
   head: () => ({ meta: [{ title: "Mapa / GIS — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => {
-    const datasets = await getDatasets();
-    const withGeom = datasets.find((d) => d.status !== "blocked") ?? datasets[0];
-    const id = withGeom?.id ?? null;
-    const initial = id ? await getMapData({ data: { datasetId: id } }) : null;
-    const texts = id ? await getMapTexts({ data: { datasetId: id } }) : [];
-    const wms = id ? await listWmsSources({ data: { datasetId: id } }) : [];
-    const opps = id ? await getMapOpportunities({ data: { datasetId: id } }) : [];
-    return { datasets, initialId: id, initialParcels: initial?.parcels ?? [], initialTexts: texts, initialWms: wms, initialOpps: opps };
-  },
   component: MapPage,
 });
 
 function MapPage() {
-  const { datasets, initialId, initialParcels, initialTexts, initialWms, initialOpps } = Route.useLoaderData();
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
   const { role } = useRole();
-  const [datasetId, setDatasetId] = useState<string | null>(initialId);
-  const [parcels, setParcels] = useState<Parcel[]>(initialParcels);
-  const [texts, setTexts] = useState<MapText[]>(initialTexts);
-  const [wms, setWms] = useState<WmsRow[]>(initialWms);
-  const [opps, setOpps] = useState(initialOpps);
+  const [datasetId, setDatasetId] = useState<string | null>(null);
+  const [parcels, setParcels] = useState<Parcel[]>([]);
+  const [texts, setTexts] = useState<MapText[]>([]);
+  const [wms, setWms] = useState<WmsRow[]>([]);
+  const [opps, setOpps] = useState<Awaited<ReturnType<typeof getMapOpportunities>>>([]);
+  // Zoznam datasetov + voľba prvého použiteľného; samotné vrstvy k.ú. doťahuje efekt nižšie
+  // podľa datasetId (rovnaká cesta, akou sa prepína dataset v UI).
+  useEffect(() => {
+    getDatasets().then((ds) => {
+      setDatasets(ds);
+      const first = ds.find((d) => d.status !== "blocked") ?? ds[0];
+      if (first) { setDatasetId(first.id); void loadLayers(first.id); }
+    }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [loading, setLoading] = useState(false);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [fs, setFs] = useState(false);
@@ -74,10 +76,9 @@ function MapPage() {
     return () => window.removeEventListener("keydown", onKey);
   }, [fs]);
 
-  async function switchDataset(id: string) {
-    setDatasetId(id);
-    setUserNavigated(true);   // skok na konkrétne k.ú. → fitni naň (nie národný pohľad)
-    setFocusId(null);
+  // Len načítanie vrstiev k.ú. — BEZ zmeny pohľadu. Prvé načítanie po prihlásení ho volá priamo,
+  // aby mapa ostala na národnom pohľade (predtým to robil SSR loader).
+  async function loadLayers(id: string) {
     setLoading(true);
     try {
       const [r, t, w, o] = await Promise.all([
@@ -93,6 +94,13 @@ function MapPage() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function switchDataset(id: string) {
+    setDatasetId(id);
+    setUserNavigated(true);   // skok na konkrétne k.ú. → fitni naň (nie národný pohľad)
+    setFocusId(null);
+    await loadLayers(id);
   }
 
   async function addWms() {

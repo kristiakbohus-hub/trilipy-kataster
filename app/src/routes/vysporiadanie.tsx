@@ -1,13 +1,14 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getSettlementCases, type SettlementRow } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { eur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 
+// ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
+// by vložil celý dataset do HTML pre KOHOKOĽVEK, kto pozná URL. Dáta sa ťahajú až v efekte.
 export const Route = createFileRoute("/vysporiadanie")({
   head: () => ({ meta: [{ title: "Vysporiadanie pozemkov — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getSettlementCases({ data: {} }),
   component: SettlementPage,
 });
 
@@ -36,9 +37,13 @@ function OutreachList({ json }: { json: string | null }) {
 }
 
 function SettlementPage() {
-  const rows = Route.useLoaderData();
   const { role } = useRole();
-  const router = useRouter();
+  const [rows, setRows] = useState<SettlementRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const reload = useCallback(() => {
+    getSettlementCases({ data: {} }).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
   const [kuFilter, setKuFilter] = useState<string>("");
   const [cls, setCls] = useState<"MATCH" | "PROVISIONAL">("MATCH");
   const [flavor, setFlavor] = useState<"all" | "disjoint" | "minority">("all");
@@ -52,7 +57,7 @@ function SettlementPage() {
     setDealBusy(key);
     try {
       const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.land_lv_no, role } });
-      if (res.ok && res.id) { setCreated((m) => ({ ...m, [key]: res.id! })); router.invalidate(); }
+      if (res.ok && res.id) { setCreated((m) => ({ ...m, [key]: res.id! })); reload(); }
     } finally { setDealBusy(null); }
   }
 
@@ -140,7 +145,9 @@ function SettlementPage() {
         </p>
       ) : null}
 
-      {shown.length === 0 ? (
+      {loading ? (
+        <Card className="p-6 text-center text-sm text-muted">Načítavam kandidátov…</Card>
+      ) : shown.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted">
           Žiadni kandidáti v tejto kategórii. Dáta plní Mac engine (GOLD 04) cez <code>/api/ingest-settlement</code>.
         </Card>
