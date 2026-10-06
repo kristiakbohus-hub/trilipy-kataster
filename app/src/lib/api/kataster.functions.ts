@@ -1312,6 +1312,9 @@ export const getZACases = createServerFn({ method: "POST" })
 // ——— GOLD-UP: ÚP určil na bývanie, kataster stále vedie ornú/TTP, nestojí na tom nič ———
 // Radenie podľa NÁKLADU VYŇATIA z pôdneho fondu (lacné hore, chránená pôda dole) — to je ten
 // peňažný rozdiel, pre ktorý scenár existuje. zoning_src rozlišuje presné WMS od orientačného rastra.
+// POZOR: classification zámerne NIE je v ORDER BY — karta si filtruje záložky MATCH/PROVISIONAL
+// sama, takže radenie podľa nej by v kombinácii s LIMIT vyčerpalo limit na samých MATCH a záložka
+// „Na preskúmanie" by ostala navždy prázdna (reálne sa to stalo pri LIMIT 400).
 export const ingestUP = createServerFn({ method: "POST" })
   .validator(z.object({
     secret: z.string(),
@@ -1365,12 +1368,11 @@ export const getUPCases = createServerFn({ method: "POST" })
               uc.naklad_vynatie_eur, uc.chranena, uc.lv_no, uc.n_owners, uc.reason, uc.criteria_json
        FROM up_cases uc LEFT JOIN datasets ds ON ds.ku_code = uc.kod_ku
        WHERE uc.classification IN ('MATCH','PROVISIONAL') ${where}
-       ORDER BY uc.classification,
-                COALESCE(uc.chranena,0),
+       ORDER BY COALESCE(uc.chranena,0),
                 CASE WHEN uc.naklad_vynatie_eur IS NULL THEN 1 ELSE 0 END,
                 uc.naklad_vynatie_eur,
                 uc.area_m2 DESC
-       LIMIT 400`,
+       LIMIT 2000`,
       args,
     ).catch(() => []);
   });

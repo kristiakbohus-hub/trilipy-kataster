@@ -25,7 +25,8 @@ export function applySecurityHeaders(response: Response): Response {
   headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
   headers.set('X-Content-Type-Options', 'nosniff');
   headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
-  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // geolocation=(self): mapa ju reálne používa (map-view.tsx „kde som"); úplný zákaz by ju vypol.
+  headers.set('Permissions-Policy', 'camera=(), microphone=(), geolocation=(self)');
   headers.set('X-XSS-Protection', '0');
   return new Response(response.body, {
     status: response.status,
