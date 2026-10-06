@@ -17,6 +17,7 @@ import { Route as PrilezitostiRouteImport } from './routes/prilezitosti'
 import { Route as VysporiadanieRouteImport } from './routes/vysporiadanie'
 import { Route as StavebnePozemkyRouteImport } from './routes/stavebne-pozemky'
 import { Route as ZdedeneBytyRouteImport } from './routes/zdedene-byty'
+import { Route as PodaNaByvanieRouteImport } from './routes/poda-na-byvanie'
 import { Route as PrieskumRouteImport } from './routes/prieskum'
 import { Route as DealRadarRouteImport } from './routes/deal-radar'
 import { Route as AktivitaRouteImport } from './routes/aktivita'
@@ -47,6 +48,7 @@ import { Route as ApiIngestChangesRouteImport } from './routes/api.ingest-change
 import { Route as ApiIngestAcquisitionsRouteImport } from './routes/api.ingest-acquisitions'
 import { Route as ApiIngestLandsearchRouteImport } from './routes/api.ingest-landsearch'
 import { Route as ApiIngestZaRouteImport } from './routes/api.ingest-za'
+import { Route as ApiIngestUpRouteImport } from './routes/api.ingest-up'
 import { Route as ApiIngestSettlementRouteImport } from './routes/api.ingest-settlement'
 import { Route as ApiIngestParcelZoningRouteImport } from './routes/api.ingest-parcel-zoning'
 import { Route as ApiIngestMarketRouteImport } from './routes/api.ingest-market'
@@ -94,6 +96,11 @@ const StavebnePozemkyRoute = StavebnePozemkyRouteImport.update({
 const ZdedeneBytyRoute = ZdedeneBytyRouteImport.update({
   id: '/zdedene-byty',
   path: '/zdedene-byty',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PodaNaByvanieRoute = PodaNaByvanieRouteImport.update({
+  id: '/poda-na-byvanie',
+  path: '/poda-na-byvanie',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrieskumRoute = PrieskumRouteImport.update({
@@ -246,6 +253,11 @@ const ApiIngestZaRoute = ApiIngestZaRouteImport.update({
   path: '/api/ingest-za',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestUpRoute = ApiIngestUpRouteImport.update({
+  id: '/api/ingest-up',
+  path: '/api/ingest-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIngestSettlementRoute = ApiIngestSettlementRouteImport.update({
   id: '/api/ingest-settlement',
   path: '/api/ingest-settlement',
@@ -291,7 +303,9 @@ export interface FileRoutesByFullPath {
   '/vysporiadanie': typeof VysporiadanieRoute
   '/stavebne-pozemky': typeof StavebnePozemkyRoute
   '/zdedene-byty': typeof ZdedeneBytyRoute
+  '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -339,7 +353,9 @@ export interface FileRoutesByTo {
   '/vysporiadanie': typeof VysporiadanieRoute
   '/stavebne-pozemky': typeof StavebnePozemkyRoute
   '/zdedene-byty': typeof ZdedeneBytyRoute
+  '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -388,7 +404,9 @@ export interface FileRoutesById {
   '/vysporiadanie': typeof VysporiadanieRoute
   '/stavebne-pozemky': typeof StavebnePozemkyRoute
   '/zdedene-byty': typeof ZdedeneBytyRoute
+  '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -438,7 +456,9 @@ export interface FileRouteTypes {
     | '/vysporiadanie'
     | '/stavebne-pozemky'
     | '/zdedene-byty'
+    | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/ingest-up'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -486,7 +506,9 @@ export interface FileRouteTypes {
     | '/vysporiadanie'
     | '/stavebne-pozemky'
     | '/zdedene-byty'
+    | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/ingest-up'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -534,7 +556,9 @@ export interface FileRouteTypes {
     | '/vysporiadanie'
     | '/stavebne-pozemky'
     | '/zdedene-byty'
+    | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/ingest-up'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -580,7 +604,9 @@ export interface RootRouteChildren {
   VysporiadanieRoute: typeof VysporiadanieRoute
   StavebnePozemkyRoute: typeof StavebnePozemkyRoute
   ZdedeneBytyRoute: typeof ZdedeneBytyRoute
+  PodaNaByvanieRoute: typeof PodaNaByvanieRoute
   ApiIngestZaRoute: typeof ApiIngestZaRoute
+  ApiIngestUpRoute: typeof ApiIngestUpRoute
   ApiIngestSettlementRoute: typeof ApiIngestSettlementRoute
   IndexRoute: typeof IndexRoute
   MapaRoute: typeof MapaRoute
@@ -746,11 +772,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZdedeneBytyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/poda-na-byvanie': {
+      id: '/poda-na-byvanie'
+      path: '/poda-na-byvanie'
+      fullPath: '/poda-na-byvanie'
+      preLoaderRoute: typeof PodaNaByvanieRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ingest-za': {
       id: '/api/ingest-za'
       path: '/api/ingest-za'
       fullPath: '/api/ingest-za'
       preLoaderRoute: typeof ApiIngestZaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-up': {
+      id: '/api/ingest-up'
+      path: '/api/ingest-up'
+      fullPath: '/api/ingest-up'
+      preLoaderRoute: typeof ApiIngestUpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-settlement': {
@@ -956,7 +996,9 @@ const rootRouteChildren: RootRouteChildren = {
   VysporiadanieRoute: VysporiadanieRoute,
   StavebnePozemkyRoute: StavebnePozemkyRoute,
   ZdedeneBytyRoute: ZdedeneBytyRoute,
+  PodaNaByvanieRoute: PodaNaByvanieRoute,
   ApiIngestZaRoute: ApiIngestZaRoute,
+  ApiIngestUpRoute: ApiIngestUpRoute,
   ApiIngestSettlementRoute: ApiIngestSettlementRoute,
   IndexRoute: IndexRoute,
   MapaRoute: MapaRoute,

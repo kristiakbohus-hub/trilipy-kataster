@@ -1309,6 +1309,72 @@ export const getZACases = createServerFn({ method: "POST" })
     ).catch(() => []);
   });
 
+// ——— GOLD-UP: ÚP určil na bývanie, kataster stále vedie ornú/TTP, nestojí na tom nič ———
+// Radenie podľa NÁKLADU VYŇATIA z pôdneho fondu (lacné hore, chránená pôda dole) — to je ten
+// peňažný rozdiel, pre ktorý scenár existuje. zoning_src rozlišuje presné WMS od orientačného rastra.
+export const ingestUP = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    replaceKu: z.array(z.string()).max(64).optional(),
+    rows: z.array(z.object({
+      kodKu: z.string(), kuName: z.string().nullable().optional(),
+      parcels: z.string().nullable().optional(), nParcels: z.number().nullable().optional(),
+      areaM2: z.number().nullable().optional(), zone: z.string().nullable().optional(),
+      zoningSrc: z.string().nullable().optional(), druh: z.string().nullable().optional(),
+      build: z.string().nullable().optional(), classification: z.string(),
+      score: z.number().nullable().optional(), baseVerdict: z.string().nullable().optional(),
+      bpejSkupina: z.number().nullable().optional(), odvodEurM2: z.number().nullable().optional(),
+      nakladVynatieEur: z.number().nullable().optional(), chranena: z.number().nullable().optional(),
+      lvNo: z.number().nullable().optional(), nOwners: z.number().nullable().optional(),
+      reason: z.string().nullable().optional(), criteriaJson: z.string().nullable().optional(),
+    })).max(1000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    if (data.replaceKu && data.replaceKu.length) {
+      const ph = data.replaceKu.map(() => "?").join(",");
+      await DB.prepare(`DELETE FROM up_cases WHERE kod_ku IN (${ph})`).bind(...data.replaceKu).run();
+    }
+    const stmt = DB.prepare("INSERT INTO up_cases (kod_ku,ku_name,parcels,n_parcels,area_m2,zone,zoning_src,druh,build,classification,score,base_verdict,bpej_skupina,odvod_eur_m2,naklad_vynatie_eur,chranena,lv_no,n_owners,reason,criteria_json) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const batch = data.rows.map((r) => stmt.bind(r.kodKu, r.kuName ?? null, r.parcels ?? null, r.nParcels ?? null, r.areaM2 ?? null, r.zone ?? null, r.zoningSrc ?? null, r.druh ?? null, r.build ?? null, r.classification, r.score ?? null, r.baseVerdict ?? null, r.bpejSkupina ?? null, r.odvodEurM2 ?? null, r.nakladVynatieEur ?? null, r.chranena ?? null, r.lvNo ?? null, r.nOwners ?? null, r.reason ?? null, r.criteriaJson ?? null));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
+  });
+
+export type UPRow = {
+  kod_ku: string; ku_name: string | null; dataset_id: string | null;
+  parcels: string | null; n_parcels: number | null; area_m2: number | null;
+  zone: string | null; zoning_src: string | null; druh: string | null; build: string | null;
+  classification: string; score: number | null; base_verdict: string | null;
+  bpej_skupina: number | null; odvod_eur_m2: number | null; naklad_vynatie_eur: number | null;
+  chranena: number | null; lv_no: number | null; n_owners: number | null;
+  reason: string | null; criteria_json: string | null;
+};
+export const getUPCases = createServerFn({ method: "POST" })
+  .validator(z.object({ kodKu: z.string().optional() }))
+  .handler(async ({ data }): Promise<UPRow[]> => {
+    const where = data.kodKu ? "AND uc.kod_ku = ?" : "";
+    const args = data.kodKu ? [data.kodKu] : [];
+    return await q<UPRow>(
+      `SELECT uc.kod_ku, COALESCE(uc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
+              uc.parcels, uc.n_parcels, uc.area_m2, uc.zone, uc.zoning_src, uc.druh, uc.build,
+              uc.classification, uc.score, uc.base_verdict, uc.bpej_skupina, uc.odvod_eur_m2,
+              uc.naklad_vynatie_eur, uc.chranena, uc.lv_no, uc.n_owners, uc.reason, uc.criteria_json
+       FROM up_cases uc LEFT JOIN datasets ds ON ds.ku_code = uc.kod_ku
+       WHERE uc.classification IN ('MATCH','PROVISIONAL') ${where}
+       ORDER BY uc.classification,
+                COALESCE(uc.chranena,0),
+                CASE WHEN uc.naklad_vynatie_eur IS NULL THEN 1 ELSE 0 END,
+                uc.naklad_vynatie_eur,
+                uc.area_m2 DESC
+       LIMIT 400`,
+      args,
+    ).catch(() => []);
+  });
+
 // ——— STAVEBNÉ POZEMKY (GOLD-LI/GOLD-BU browse): landsearch_results s filtrom účel/k.ú./verdikt ———
 // purpose: retail (GOLD-LI) | residential (GOLD-BU, škola≤600s/obchod≤300s) | industrial.
 // owners sa vracia LEN pri plnom prístupe (rola) — landsearch_results nesie reálne mená (na rozdiel
