@@ -27,7 +27,8 @@ function ElPage() {
   }, [datasetId, celok, role]);
 
   if (!c) return <div className="p-8 text-center text-sm text-muted">Načítavam evidenčný list…</div>;
-  const d = c.dataset;
+  const cc = c;   // nenulový alias — narrowing z if(!c) neplatí vnútri funkcií nižšie
+  const d = cc.dataset;
   const he = (v: string | number) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   function download(content: string, mime: string, filename: string) {
     const blob = new Blob([content], { type: mime });
@@ -36,11 +37,11 @@ function ElPage() {
     a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
   }
   function exportDoc() {
-    const rows = c.parcels.map((p) => `<tr><td>${he(p.parcel_no)}</td><td>${m2(p.area_m2)}</td><td>${he(p.use_type ?? "—")}</td></tr>`).join("");
+    const rows = cc.parcels.map((p) => `<tr><td>${he(p.parcel_no)}</td><td>${m2(p.area_m2)}</td><td>${he(p.use_type ?? "—")}</td></tr>`).join("");
     const body = `<div style="border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:12px"><div style="font-size:20px;font-weight:bold;letter-spacing:3px">TRI LIPY</div><div style="font-size:9px;color:#777;letter-spacing:2px">KATASTER CORE · EVIDENČNÝ LIST</div></div>`
       + `<h2 style="font-family:Georgia,serif;text-transform:uppercase">Evidenčný list — celok č. ${he(celok)}</h2>`
       + `<p style="color:#555">Katastrálne územie: <b>${he(d?.ku_name ?? "")}</b> (kód ${he(d?.ku_code ?? "")}) · ${he(d?.region ?? "")}</p>`
-      + `<p><b>Užívateľ:</b> ${c.access === "full" ? he(c.uzivatel ?? "—") : "(rola nemá plný prístup)"}${c.ico ? ` · IČO ${he(c.ico)}` : ""}</p>`
+      + `<p><b>Užívateľ:</b> ${cc.access === "full" ? he(cc.uzivatel ?? "—") : "(rola nemá plný prístup)"}${cc.ico ? ` · IČO ${he(cc.ico)}` : ""}</p>`
       + `<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px"><tr><th>Parcelné číslo</th><th>Výmera</th><th>Druh pozemku</th></tr>${rows}</table>`
       + `<p style="font-size:11px;color:#666;border:1px solid #ccc;padding:6px;margin-top:10px">Evidenčný list zobrazuje historického UŽÍVATEĽA C-KN parciel (nie vlastníka). Interný pracovný podklad, nie úradný výstup.</p>`;
     download("﻿" + `<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;color:#333}</style></head><body>${body}</body></html>`, "application/msword;charset=utf-8", `evidencny_list_${celok}.doc`);
@@ -50,7 +51,7 @@ function ElPage() {
     const rows = [
       ["Evidenčný list — celok", String(celok)],
       ["Katastrálne územie", `${d?.ku_name ?? ""} (${d?.ku_code ?? ""})`],
-      ["Užívateľ", c.access === "full" ? (c.uzivatel ?? "") : "(skryté)"],
+      ["Užívateľ", cc.access === "full" ? (cc.uzivatel ?? "") : "(skryté)"],
       [""],
       ["Parcelné číslo", "Výmera (m²)", "Druh"],
       ...c.parcels.map((p) => [p.parcel_no, String(p.area_m2), p.use_type ?? ""]),
@@ -88,13 +89,13 @@ function ElPage() {
 
         <div className="mt-3 rounded-md border px-3 py-2 text-[11px] leading-relaxed" style={{ borderColor: "#9a7b3e55", background: "#33333312", color: "#5b5b5b" }}>
           <b>Interný pracovný podklad</b> — evidenčný list zobrazuje historického <b>užívateľa</b> C-KN parciel (nie vlastníka).
-          Meno užívateľa je owner-sensitive (rola: {role}, prístup: {c.access}). Nie je to úradný výstup.
+          Meno užívateľa je owner-sensitive (rola: {role}, prístup: {cc.access}). Nie je to úradný výstup.
         </div>
 
         <div className="mt-5">
           <div className="mb-1 border-b border-line pb-1 font-display text-sm font-bold uppercase tracking-wide text-fg">Užívateľ</div>
-          {c.access === "full" ? (
-            <div className="py-2 text-sm text-fg">{c.uzivatel ?? "—"}{c.ico ? <span className="text-muted"> · IČO {c.ico}</span> : null}{c.isCompany ? <span className="text-muted"> (PO)</span> : null}</div>
+          {cc.access === "full" ? (
+            <div className="py-2 text-sm text-fg">{cc.uzivatel ?? "—"}{cc.ico ? <span className="text-muted"> · IČO {cc.ico}</span> : null}{cc.isCompany ? <span className="text-muted"> (PO)</span> : null}</div>
           ) : (
             <div className="rounded-md border border-line bg-surface-2/40 px-3 py-2 text-sm text-muted">Meno užívateľa rola <b className="text-fg">{role}</b> nevidí (owner-masking).</div>
           )}
@@ -112,14 +113,14 @@ function ElPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
-                {c.parcels.map((p, i) => (
+                {cc.parcels.map((p, i) => (
                   <tr key={i}>
                     <td className="px-2 py-1.5 font-mono tabular-nums text-fg">{p.parcel_no}</td>
                     <td className="px-2 py-1.5 tabular-nums text-fg">{m2(p.area_m2)}</td>
                     <td className="px-2 py-1.5 text-fg">{p.use_type ?? "—"}</td>
                   </tr>
                 ))}
-                {c.parcels.length === 0 ? <tr><td colSpan={3} className="px-2 py-2 text-muted">Bez parciel.</td></tr> : null}
+                {cc.parcels.length === 0 ? <tr><td colSpan={3} className="px-2 py-2 text-muted">Bez parciel.</td></tr> : null}
               </tbody>
             </table>
           </div>

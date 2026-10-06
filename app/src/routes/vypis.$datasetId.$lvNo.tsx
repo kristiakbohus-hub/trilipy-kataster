@@ -63,7 +63,8 @@ function VypisPage() {
 
   // Stráž je až tu, pod všetkými hookmi komponentu (posledný je efekt vyššie).
   if (!c) return <div className="p-8 text-center text-sm text-muted">Načítavam výpis…</div>;
-  const d = c.dataset;
+  const cc = c;   // nenulový alias — narrowing z if(!c) neplatí vnútri funkcií nižšie
+  const d = cc.dataset;
   const isEl = docType === "el";
   const partial = !isEl && !(parts.A && parts.B && parts.C);
   const togglePart = (k: "A" | "B" | "C") => setParts((p) => ({ ...p, [k]: !p[k] }));
@@ -74,34 +75,34 @@ function VypisPage() {
     rows.push([isEl ? "Register E" : "Výpis z LV", `č. ${lvNo}`].map(esc).join(";"));
     rows.push(["Katastrálne územie", `${d?.ku_name ?? ""} (${d?.ku_code ?? ""})`].map(esc).join(";"));
     rows.push("");
-    const parcels = isEl ? c.parcelsE : c.parcelsC;
+    const parcels = isEl ? cc.parcelsE : cc.parcelsC;
     rows.push(["Register", "Parcelné číslo", "Výmera (m2)", "Druh pozemku", "Umiestnenie"].map(esc).join(";"));
     for (const p of parcels) rows.push([p.register === "E" ? "E-KN" : "C-KN", p.parcel_no, p.area_m2, p.drp_text ?? "", p.placement ?? ""].map(esc).join(";"));
-    if (!isEl) for (const p of c.parcelsE) rows.push(["E-KN", p.parcel_no, p.area_m2, p.drp_text ?? "", p.placement ?? ""].map(esc).join(";"));
-    if (!isEl && c.buildings.length) {
+    if (!isEl) for (const p of cc.parcelsE) rows.push(["E-KN", p.parcel_no, p.area_m2, p.drp_text ?? "", p.placement ?? ""].map(esc).join(";"));
+    if (!isEl && cc.buildings.length) {
       rows.push(""); rows.push(["Stavby", "Na parcele"].map(esc).join(";"));
-      for (const b of c.buildings) rows.push([b.descr, b.on_parcel ?? ""].map(esc).join(";"));
+      for (const b of cc.buildings) rows.push([b.descr, b.on_parcel ?? ""].map(esc).join(";"));
     }
     if (!isEl) {
-      const odn = c.parcelsC.filter((p) => p.sadzba != null);
+      const odn = cc.parcelsC.filter((p) => p.sadzba != null);
       if (odn.length) {
         rows.push(""); rows.push(["Odňatie pôdy — parcela", "BPEJ skupina", "Sadzba €/m2", "Trvalé €", "Dočasné €/rok"].map(esc).join(";"));
         for (const p of odn) rows.push([p.parcel_no, p.skupina ?? "", p.sadzba ?? "", (p.odnatie_trvale ?? 0).toFixed(2), (p.odnatie_docasne ?? 0).toFixed(2)].map(esc).join(";"));
-        rows.push(["Spolu", "", "", c.odnatie.trvale.toFixed(2), c.odnatie.docasne.toFixed(2)].map(esc).join(";"));
+        rows.push(["Spolu", "", "", cc.odnatie.trvale.toFixed(2), cc.odnatie.docasne.toFixed(2)].map(esc).join(";"));
       }
-      if (c.evidencne.length) {
+      if (cc.evidencne.length) {
         rows.push(""); rows.push(["Evidenčný list — celok", "Užívateľ", "IČO", "Parcely C-KN"].map(esc).join(";"));
-        for (const e of c.evidencne) rows.push([e.celok, c.access === "full" ? (e.uzivatel ?? "") : "(skryté)", e.ico ?? "", e.parcels.join(" ")].map(esc).join(";"));
+        for (const e of cc.evidencne) rows.push([e.celok, cc.access === "full" ? (e.uzivatel ?? "") : "(skryté)", e.ico ?? "", e.parcels.join(" ")].map(esc).join(";"));
       }
     }
     rows.push("");
-    if (c.access === "full") {
-      rows.push([`Kat. územie ${d?.ku_name ?? ""}`, `LV ${lvNo}`, `Celková výmera C (m2): ${c.totalAreaC}`].map(esc).join(";"));
+    if (cc.access === "full") {
+      rows.push([`Kat. územie ${d?.ku_name ?? ""}`, `LV ${lvNo}`, `Celková výmera C (m2): ${cc.totalAreaC}`].map(esc).join(";"));
       rows.push(["P.č.", "Vlastník", "Titul", "Rodné priezvisko", "Dátum narodenia", "Adresa", "IČO", "Podiel", "Výmera podľa podielu (m2)"].map(esc).join(";"));
-      c.owners.forEach((o, i) => { const f = shareFrac(o.share); rows.push([i + 1, o.name, o.title ?? "", o.born_name ?? "", o.birth_date ?? "", ownerAddr(o), o.ico ?? "", o.share ?? "", f != null ? Math.round(c.totalAreaC * f) : ""].map(esc).join(";")); });
-      if (c.tarchy.length) { rows.push(""); rows.push(esc("Ťarchy")); for (const t of c.tarchy) rows.push(esc(t)); }
+      cc.owners.forEach((o, i) => { const f = shareFrac(o.share); rows.push([i + 1, o.name, o.title ?? "", o.born_name ?? "", o.birth_date ?? "", ownerAddr(o), o.ico ?? "", o.share ?? "", f != null ? Math.round(cc.totalAreaC * f) : ""].map(esc).join(";")); });
+      if (cc.tarchy.length) { rows.push(""); rows.push(esc("Ťarchy")); for (const t of cc.tarchy) rows.push(esc(t)); }
     } else {
-      rows.push(["Vlastníci", `${c.count} (mená skryté — rola nemá plný prístup)`].map(esc).join(";"));
+      rows.push(["Vlastníci", `${cc.count} (mená skryté — rola nemá plný prístup)`].map(esc).join(";"));
     }
     const csv = "﻿" + rows.join("\r\n");
     download(csv, "text/csv;charset=utf-8", `${isEl ? "evidencny_list" : "vypis_lv"}_${lvNo}.csv`);
@@ -118,8 +119,8 @@ function VypisPage() {
   const he = (v: string | number) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
   function docModel() {
-    const parcelsA = isEl ? c.parcelsE : c.parcelsC;
-    return { parcelsA, buildings: isEl ? [] : c.buildings };
+    const parcelsA = isEl ? cc.parcelsE : cc.parcelsC;
+    return { parcelsA, buildings: isEl ? [] : cc.buildings };
   }
 
   // Excel (HTML-table .xls, dep-free — Excel ho otvorí natívne)
@@ -128,28 +129,28 @@ function VypisPage() {
     let t = `<table border="1"><tr><th colspan="5">${he(isEl ? "Register E" : "Výpis z LV")} č. ${lvNo} — ${he(d?.ku_name ?? "")} (${he(d?.ku_code ?? "")})</th></tr>`;
     t += `<tr><th>Register</th><th>Parcelné číslo</th><th>Výmera (m²)</th><th>Druh pozemku</th><th>Umiestnenie</th></tr>`;
     for (const p of parcelsA) t += `<tr><td>${p.register === "E" ? "E-KN" : "C-KN"}</td><td>${he(p.parcel_no)}</td><td>${p.area_m2}</td><td>${he(p.drp_text ?? "")}</td><td>${he(p.placement ?? "")}</td></tr>`;
-    if (!isEl && c.parcelsE.length) {
+    if (!isEl && cc.parcelsE.length) {
       t += `<tr><th colspan="5">Parcely registra „E" (pozemkovoknižný stav)</th></tr>`;
-      for (const p of c.parcelsE) t += `<tr><td>E-KN</td><td>${he(p.parcel_no)}</td><td>${p.area_m2}</td><td>${he(p.drp_text ?? "")}</td><td>${he(p.placement ?? "")}</td></tr>`;
+      for (const p of cc.parcelsE) t += `<tr><td>E-KN</td><td>${he(p.parcel_no)}</td><td>${p.area_m2}</td><td>${he(p.drp_text ?? "")}</td><td>${he(p.placement ?? "")}</td></tr>`;
     }
     if (buildings.length) { t += `<tr><th colspan="5">Stavby</th></tr>`; for (const b of buildings) t += `<tr><td colspan="4">${he(b.descr)}</td><td>${he(b.on_parcel ?? "")}</td></tr>`; }
     if (!isEl) {
-      const odn = c.parcelsC.filter((p) => p.sadzba != null);
+      const odn = cc.parcelsC.filter((p) => p.sadzba != null);
       if (odn.length) {
         t += `<tr><th colspan="5">Odňatie poľnohospodárskej pôdy (NV 58/2013)</th></tr><tr><th>Parcela</th><th>BPEJ skupina</th><th>Sadzba €/m²</th><th>Trvalé €</th><th>Dočasné €/rok</th></tr>`;
         for (const p of odn) t += `<tr><td>${he(p.parcel_no)}</td><td>${p.skupina ?? ""}</td><td>${p.sadzba ?? ""}</td><td>${(p.odnatie_trvale ?? 0).toFixed(2)}</td><td>${(p.odnatie_docasne ?? 0).toFixed(2)}</td></tr>`;
-        t += `<tr><td><b>Spolu</b></td><td></td><td></td><td><b>${c.odnatie.trvale.toFixed(2)}</b></td><td><b>${c.odnatie.docasne.toFixed(2)}</b></td></tr>`;
+        t += `<tr><td><b>Spolu</b></td><td></td><td></td><td><b>${cc.odnatie.trvale.toFixed(2)}</b></td><td><b>${cc.odnatie.docasne.toFixed(2)}</b></td></tr>`;
       }
-      if (c.evidencne.length) {
+      if (cc.evidencne.length) {
         t += `<tr><th colspan="5">Evidenčný list / užívateľ</th></tr><tr><th>Celok</th><th colspan="2">Užívateľ</th><th>IČO</th><th>Parcely</th></tr>`;
-        for (const e of c.evidencne) t += `<tr><td>${e.celok}</td><td colspan="2">${he(c.access === "full" ? (e.uzivatel ?? "—") : "(skryté)")}</td><td>${he(e.ico ?? "")}</td><td>${he(e.parcels.join(", "))}</td></tr>`;
+        for (const e of cc.evidencne) t += `<tr><td>${e.celok}</td><td colspan="2">${he(cc.access === "full" ? (e.uzivatel ?? "—") : "(skryté)")}</td><td>${he(e.ico ?? "")}</td><td>${he(e.parcels.join(", "))}</td></tr>`;
       }
     }
-    if (c.access === "full") {
-      t += `<tr><th colspan="8">Vlastníci — kat. územie ${he(d?.ku_name ?? "")}, LV ${lvNo}, celková výmera C ${c.totalAreaC} m²</th></tr><tr><th>P.č.</th><th>Vlastník</th><th>Titul</th><th>Dátum nar.</th><th>Adresa</th><th>IČO</th><th>Podiel</th><th>Výmera podľa podielu (m²)</th></tr>`;
-      c.owners.forEach((o, i) => { const f = shareFrac(o.share); t += `<tr><td>${i + 1}</td><td>${he(o.name)}${o.born_name && !o.name.startsWith(o.born_name) ? he(` (rod. ${o.born_name})`) : ""}</td><td>${he(o.title ?? "")}</td><td>${he(o.birth_date ?? "")}</td><td>${he(ownerAddr(o))}</td><td>${he(o.ico ?? "")}</td><td>${he(o.share ?? "")}</td><td>${f != null ? Math.round(c.totalAreaC * f) : ""}</td></tr>`; });
+    if (cc.access === "full") {
+      t += `<tr><th colspan="8">Vlastníci — kat. územie ${he(d?.ku_name ?? "")}, LV ${lvNo}, celková výmera C ${cc.totalAreaC} m²</th></tr><tr><th>P.č.</th><th>Vlastník</th><th>Titul</th><th>Dátum nar.</th><th>Adresa</th><th>IČO</th><th>Podiel</th><th>Výmera podľa podielu (m²)</th></tr>`;
+      cc.owners.forEach((o, i) => { const f = shareFrac(o.share); t += `<tr><td>${i + 1}</td><td>${he(o.name)}${o.born_name && !o.name.startsWith(o.born_name) ? he(` (rod. ${o.born_name})`) : ""}</td><td>${he(o.title ?? "")}</td><td>${he(o.birth_date ?? "")}</td><td>${he(ownerAddr(o))}</td><td>${he(o.ico ?? "")}</td><td>${he(o.share ?? "")}</td><td>${f != null ? Math.round(cc.totalAreaC * f) : ""}</td></tr>`; });
     } else {
-      t += `<tr><td colspan="5">Vlastníci: ${c.count} (mená skryté — rola nemá plný prístup)</td></tr>`;
+      t += `<tr><td colspan="5">Vlastníci: ${cc.count} (mená skryté — rola nemá plný prístup)</td></tr>`;
     }
     t += `</table>`;
     const html = `<html xmlns:x="urn:schemas-microsoft-com:office:excel"><head><meta charset="utf-8"></head><body>${t}</body></html>`;
@@ -216,16 +217,16 @@ function VypisPage() {
     let body = `<div style="border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:12px"><div style="font-size:20px;font-weight:bold;letter-spacing:3px">TRI LIPY</div><div style="font-size:9px;color:#777;letter-spacing:2px">KATASTER CORE · PRACOVNÝ ${isEl ? "EVIDENČNÝ LIST" : "VÝPIS"}</div></div>`;
     body += `<h2 style="font-family:Georgia,serif;text-transform:uppercase">${isEl ? `Register E k LV č. ${lvNo}` : `List vlastníctva č. ${lvNo}`}</h2>`;
     body += `<p style="color:#555">Katastrálne územie: <b>${he(d?.ku_name ?? "")}</b> (kód ${he(d?.ku_code ?? "")}) · ${he(d?.region ?? "")} · register ${isEl ? "E-KN" : he(d?.kn_type ?? "")}</p>`;
-    body += `<p style="font-size:11px;color:#666;border:1px solid #ccc;padding:6px">Interný pracovný podklad — nie je to úradný výpis z katastra. Owner-sensitive údaje sú rolovo maskované (prístup: ${he(c.access)}).</p>`;
+    body += `<p style="font-size:11px;color:#666;border:1px solid #ccc;padding:6px">Interný pracovný podklad — nie je to úradný výpis z katastra. Owner-sensitive údaje sú rolovo maskované (prístup: ${he(cc.access)}).</p>`;
     body += `<h3 style="font-family:Georgia,serif">${isEl ? "Pozemky registra E" : "Časť A — Majetková podstata"}</h3>`;
     body += `<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">`;
     body += row(["Register", "Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie"], "th");
     for (const p of parcelsA) body += row([p.register === "E" ? "E-KN" : "C-KN", he(p.parcel_no), String(p.area_m2), he(p.drp_text ?? "—"), he(p.placement ?? "—")]);
     body += `</table>`;
-    if (!isEl && c.parcelsE.length) {
+    if (!isEl && cc.parcelsE.length) {
       body += `<p style="font-size:11px;color:#666;margin-top:6px"><b>Parcely registra „E" (pozemkovoknižný stav):</b></p><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">`;
       body += row(["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie"], "th");
-      for (const p of c.parcelsE) body += row([he(p.parcel_no), String(p.area_m2), he(p.drp_text ?? "—"), he(p.placement ?? "—")]);
+      for (const p of cc.parcelsE) body += row([he(p.parcel_no), String(p.area_m2), he(p.drp_text ?? "—"), he(p.placement ?? "—")]);
       body += `</table>`;
     }
     if (buildings.length) {
@@ -235,31 +236,31 @@ function VypisPage() {
       body += `</table>`;
     }
     if (!isEl) {
-      const odn = c.parcelsC.filter((p) => p.sadzba != null);
+      const odn = cc.parcelsC.filter((p) => p.sadzba != null);
       if (odn.length) {
         body += `<p style="font-size:11px;color:#666;margin-top:6px"><b>Odňatie poľnohospodárskej pôdy (informatívne, NV 58/2013):</b></p><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">`;
         body += row(["Parcela", "BPEJ skupina", "Sadzba €/m²", "Trvalé €", "Dočasné €/rok"], "th");
         for (const p of odn) body += row([he(p.parcel_no), String(p.skupina ?? "—"), String(p.sadzba ?? "—"), (p.odnatie_trvale ?? 0).toFixed(2), (p.odnatie_docasne ?? 0).toFixed(2)]);
-        body += row(["Spolu", "", "", c.odnatie.trvale.toFixed(2), c.odnatie.docasne.toFixed(2)]);
+        body += row(["Spolu", "", "", cc.odnatie.trvale.toFixed(2), cc.odnatie.docasne.toFixed(2)]);
         body += `</table>`;
       }
-      if (c.evidencne.length) {
+      if (cc.evidencne.length) {
         body += `<h3 style="font-family:Georgia,serif">Evidenčný list / užívateľ</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">`;
         body += row(["Celok (EL)", "Užívateľ", "IČO", "Parcely C-KN"], "th");
-        for (const e of c.evidencne) body += row([String(e.celok), he(c.access === "full" ? (e.uzivatel ?? "—") : "(skryté)"), he(e.ico ?? "—"), he(e.parcels.join(", "))]);
+        for (const e of cc.evidencne) body += row([String(e.celok), he(cc.access === "full" ? (e.uzivatel ?? "—") : "(skryté)"), he(e.ico ?? "—"), he(e.parcels.join(", "))]);
         body += `</table>`;
       }
     }
     body += `<h3 style="font-family:Georgia,serif">${isEl ? "Vlastníci / oprávnení" : "Časť B — Vlastníci"}</h3>`;
-    if (c.access === "full") {
+    if (cc.access === "full") {
       body += `<table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + row(["P.č.", "Vlastník", "Adresa", "Kat. územie", "LV", "Podiel", "Výmera podľa podielu (m²)"], "th");
-      c.owners.forEach((o, i) => { const f = shareFrac(o.share); body += row([String(i + 1), he(ownerLabel(o)), he(ownerAddr(o)), he(d?.ku_name ?? "—"), String(lvNo), he(o.share ?? "—"), f != null ? String(Math.round(c.totalAreaC * f)) : "—"]); });
-      body += `</table><p style="font-size:11px;color:#666">Celková výmera parciel registra C na LV: <b>${c.totalAreaC}</b> m².</p>`;
-      if (!isEl && c.tarchy.length) {
-        body += `<h3 style="font-family:Georgia,serif">Časť C — Ťarchy</h3><ol style="font-size:12px">` + c.tarchy.map((x) => `<li>${he(x)}</li>`).join("") + `</ol>`;
+      cc.owners.forEach((o, i) => { const f = shareFrac(o.share); body += row([String(i + 1), he(ownerLabel(o)), he(ownerAddr(o)), he(d?.ku_name ?? "—"), String(lvNo), he(o.share ?? "—"), f != null ? String(Math.round(cc.totalAreaC * f)) : "—"]); });
+      body += `</table><p style="font-size:11px;color:#666">Celková výmera parciel registra C na LV: <b>${cc.totalAreaC}</b> m².</p>`;
+      if (!isEl && cc.tarchy.length) {
+        body += `<h3 style="font-family:Georgia,serif">Časť C — Ťarchy</h3><ol style="font-size:12px">` + cc.tarchy.map((x) => `<li>${he(x)}</li>`).join("") + `</ol>`;
       }
     } else {
-      body += `<p style="font-size:12px;color:#666">${c.count} vlastník(ov) — mená a podiely rola nevidí (prístup: ${he(c.access)}).</p>`;
+      body += `<p style="font-size:12px;color:#666">${cc.count} vlastník(ov) — mená a podiely rola nevidí (prístup: ${he(cc.access)}).</p>`;
     }
     if (!isEl) body += await analyticsDocHtml();
     body += `<p style="font-size:10px;color:#888;margin-top:16px;border-top:1px solid #ccc;padding-top:6px">Vygenerované systémom TRI LIPY KATASTER CORE · interný pracovný výstup · Tento dokument neslúži na právne úkony.</p>`;
@@ -270,14 +271,14 @@ function VypisPage() {
   // Oslovovacie listy vlastníkom (.doc) — 1 list pre každého súkromného spoluvlastníka + súhrn (branded).
   // NEODOSIELA — len vygeneruje dokument; odoslanie robí používateľ. Owner-sensitive (len full).
   async function exportOutreach() {
-    if (c.access !== "full") return;
+    if (cc.access !== "full") return;
     const st = await getLvSettlement({ data: { datasetId, lvNo, role } }).catch(() => null);
     const avm = st?.avm_eur ?? null;
     const settlement = (st?.issues.length ?? 0) > 0;
     const ku = d?.ku_name ?? "";
     const brand = `<div style="border-bottom:2px solid #1E3A2F;padding-bottom:8px;margin-bottom:14px"><div style="font-size:20px;font-weight:bold;letter-spacing:3px;color:#1E3A2F">TRI LIPY</div><div style="font-size:9px;color:#5C8A6B;letter-spacing:2px">PRACOVNÝ PODKLAD — NÁVRH LISTU</div></div>`;
     const suppressedNames = new Set((st?.owners ?? []).filter((o) => o.suppressed).map((o) => o.name));
-    const priv = c.owners.filter((o) => !o.is_company && !suppressedNames.has(o.name));
+    const priv = cc.owners.filter((o) => !o.is_company && !suppressedNames.has(o.name));
     if (!priv.length) { window.alert(suppressedNames.size ? "Súkromní spoluvlastníci sú v GDPR suppression (neoslovovať) alebo tu nie sú." : "Na tomto LV nie sú súkromní (fyzickí) spoluvlastníci pre oslovenie."); return; }
     const offerFor = (o: Content["owners"][number]): number | null => {
       const f = shareFrac(o.share); if (avm == null || f == null) return null;
@@ -285,7 +286,7 @@ function VypisPage() {
     };
     const letters = priv.map((o) => {
       const f = shareFrac(o.share);
-      const shM2 = f != null ? `${Math.round(c.totalAreaC * f)} m²` : "—";
+      const shM2 = f != null ? `${Math.round(cc.totalAreaC * f)} m²` : "—";
       const offer = offerFor(o);
       const parcelaTxt = `nehnuteľností evidovaných na liste vlastníctva č. ${lvNo} v katastrálnom území ${he(ku)} (Váš spoluvlastnícky podiel ${he(o.share ?? "—")}${f != null ? `, čo zodpovedá približne ${shM2}` : ""})`;
       const bodyTxt = settlement
@@ -306,7 +307,7 @@ function VypisPage() {
       + priv.map((o) => { const of = offerFor(o); return `<tr><td>${he(ownerLabel(o))}</td><td>${he(o.share ?? "—")}</td><td>${of != null ? eur(of) + " €" : "—"}</td></tr>`; }).join("")
       + `</table>`
       + `<p style="font-size:10px;color:#888;margin-top:10px">Interný pracovný podklad. Ponuky sú orientačné (AVM × podiel; malé podiely so zľavou). NEODOSIELA sa automaticky — doplň kontakt a odošli manuálne. Rešpektuj predkupné právo spoluvlastníkov (§ 140 OZ).</p>`
-      + (c.owners.some((o) => o.is_company) ? `<p style="font-size:10px;color:#888">Pozn.: firemní/štátni spoluvlastníci (napr. SPF) nie sú v listoch — vyžadujú osobitný proces (SPF/RPVS).</p>` : "")
+      + (cc.owners.some((o) => o.is_company) ? `<p style="font-size:10px;color:#888">Pozn.: firemní/štátni spoluvlastníci (napr. SPF) nie sú v listoch — vyžadujú osobitný proces (SPF/RPVS).</p>` : "")
       + `<div style="page-break-after:always"></div></div>`;
     const html = `<html xmlns:w="urn:schemas-microsoft-com:office:word"><head><meta charset="utf-8"></head><body>${summary}${letters}</body></html>`;
     download("﻿" + html, "application/msword;charset=utf-8", `listy_vlastnikom_LV${lvNo}.doc`);
@@ -322,7 +323,7 @@ function VypisPage() {
             <button onClick={exportDoc} className="rounded-md border border-line px-2.5 py-2 text-sm font-medium text-fg hover:border-ink">Word</button>
             <button onClick={exportXls} className="rounded-md border border-line px-2.5 py-2 text-sm font-medium text-fg hover:border-ink">Excel</button>
             <button onClick={exportCsv} className="rounded-md border border-line px-2.5 py-2 text-sm font-medium text-fg hover:border-ink">CSV</button>
-            {!isEl && c.access === "full" && c.owners.some((o) => !o.is_company) ? (
+            {!isEl && cc.access === "full" && cc.owners.some((o) => !o.is_company) ? (
               <button onClick={() => void exportOutreach()} title="Vygenerovať oslovovacie listy súkromným spoluvlastníkom (.doc) — neodosiela sa"
                 className="rounded-md border border-line px-2.5 py-2 text-sm font-medium text-fg hover:border-ink">Listy vlastníkom</button>
             ) : null}
@@ -338,8 +339,8 @@ function VypisPage() {
         {/* Kolaborácia — sledovanie + tímové komentáre k tomuto LV */}
         <div className="rounded-lg border border-line bg-surface/60 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <span className="text-[11px] uppercase tracking-wide text-muted">Tím — LV {lvNo}{c.dataset?.ku_name ? ` · ${c.dataset.ku_name}` : ""}</span>
-            <WatchButton subjectType="lv" subjectId={`${datasetId}:${lvNo}`} label={`LV ${lvNo}${c.dataset?.ku_name ? " · " + c.dataset.ku_name : ""}`} />
+            <span className="text-[11px] uppercase tracking-wide text-muted">Tím — LV {lvNo}{cc.dataset?.ku_name ? ` · ${cc.dataset.ku_name}` : ""}</span>
+            <WatchButton subjectType="lv" subjectId={`${datasetId}:${lvNo}`} label={`LV ${lvNo}${cc.dataset?.ku_name ? " · " + cc.dataset.ku_name : ""}`} />
           </div>
           <CommentsPanel subjectType="lv" subjectId={`${datasetId}:${lvNo}`} />
         </div>
@@ -393,7 +394,7 @@ function VypisPage() {
 
         <div className="mt-3 rounded-md border px-3 py-2 text-[11px] leading-relaxed" style={{ borderColor: "#9a7b3e55", background: "#33333312", color: "#5b5b5b" }}>
           <b>Interný pracovný podklad</b> — nie je to úradný výpis z katastra nehnuteľností ani právne potvrdenie vlastníctva.
-          Owner-sensitive údaje (mená, dátumy narodenia, tituly, ťarchy) sú rolovo maskované — server ich vydá len role s plným prístupom (rola: {role}, prístup: {c.access}).
+          Owner-sensitive údaje (mená, dátumy narodenia, tituly, ťarchy) sú rolovo maskované — server ich vydá len role s plným prístupom (rola: {role}, prístup: {cc.access}).
           Odvodené z lokálneho SPI/VGI importu.
         </div>
 
@@ -401,10 +402,10 @@ function VypisPage() {
           /* ——— EVIDENČNÝ LIST (register E) ——— */
           <>
             <Section title="Pozemky pozemkovoknižného stavu (register E-KN)">
-              {c.parcelsE.length ? (
+              {cc.parcelsE.length ? (
                 <Table
                   head={["Register", "Parcelné číslo", "Výmera", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)", "AVM (ako-je → potenciál)"]}
-                  rows={c.parcelsE.map((p) => ["E-KN", p.parcel_no, m2(p.area_m2), p.drp_text ?? "—", p.placement ?? "—", zoning[`${p.parcel_no}|${p.register}`] ?? "—", avmCell(`${p.parcel_no}|${p.register}`)])}
+                  rows={cc.parcelsE.map((p) => ["E-KN", p.parcel_no, m2(p.area_m2), p.drp_text ?? "—", p.placement ?? "—", zoning[`${p.parcel_no}|${p.register}`] ?? "—", avmCell(`${p.parcel_no}|${p.register}`)])}
                   mono={[1]}
                 />
               ) : (
@@ -418,19 +419,19 @@ function VypisPage() {
         ) : (
           /* ——— VÝPIS Z LV (Časti A/B/C) ——— */
           <>
-            {(c.signals || c.settledSummary.total > 0) ? (
+            {(cc.signals || cc.settledSummary.total > 0) ? (
               <Section title="Analytické signály & skóre (interné — nie súčasť úradného výpisu)">
-                {c.signals ? (
+                {cc.signals ? (
                   <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm">
                     <span className="text-muted">Skóre príležitosti:</span>
-                    <b className="text-2xl tabular-nums text-fg">{c.signals.score}</b>
-                    {c.signals.reasons.length ? <span className="text-muted">{c.signals.reasons.join(" · ")}</span> : null}
+                    <b className="text-2xl tabular-nums text-fg">{cc.signals.score}</b>
+                    {cc.signals.reasons.length ? <span className="text-muted">{cc.signals.reasons.join(" · ")}</span> : null}
                   </div>
                 ) : <div className="text-sm text-muted">Pre toto LV zatiaľ nemáme vypočítané signály.</div>}
-                {c.settledSummary.total > 0 ? (
+                {cc.settledSummary.total > 0 ? (
                   <div className="mt-1 text-[12px] text-muted">
-                    Vysporiadanosť C-KN parciel na LV: <b className="text-fg">{c.settledSummary.settled}</b> vysporiadaných,{" "}
-                    <b className="text-fg">{c.settledSummary.unsettled}</b> nevysporiadaných z {c.settledSummary.total}.
+                    Vysporiadanosť C-KN parciel na LV: <b className="text-fg">{cc.settledSummary.settled}</b> vysporiadaných,{" "}
+                    <b className="text-fg">{cc.settledSummary.unsettled}</b> nevysporiadaných z {cc.settledSummary.total}.
                   </div>
                 ) : null}
                 <div className="mt-1 text-[11px] text-muted">Skóre = vážený indikátor príležitosti (spoluvlastníci, SPF/štát, dedičské, stavebný potenciál, absentéri, čistý titul). Pracovný nástroj, nie právny záver.</div>
@@ -446,10 +447,10 @@ function VypisPage() {
               <Section title="Časť A — Majetková podstata">
                 {/* Parcely registra „C" — katastrálna mapa */}
                 <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Parcely registra „C" evidované na katastrálnej mape</div>
-                {c.parcelsC.length ? (
+                {cc.parcelsC.length ? (
                   <Table
                     head={["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)", "AVM (ako-je → potenciál)", "Vysporiadané", "BPEJ", "Odňatie – trvalé"]}
-                    rows={c.parcelsC.map((p) => [
+                    rows={cc.parcelsC.map((p) => [
                       p.parcel_no,
                       m2(p.area_m2),
                       p.drp_text ?? "—",
@@ -467,41 +468,41 @@ function VypisPage() {
                 )}
 
                 {/* Parcely registra „E" — pozemkovoknižný stav (patria do majetkovej podstaty) */}
-                {c.parcelsE.length ? (
+                {cc.parcelsE.length ? (
                   <div className="mt-3">
                     <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Parcely registra „E" evidované na mape určeného operátu</div>
                     <Table
                       head={["Parcelné číslo", "Výmera (m²)", "Druh pozemku", "Umiestnenie", "Funkčné využitie (ÚP)", "AVM (ako-je → potenciál)"]}
-                      rows={c.parcelsE.map((p) => [p.parcel_no, m2(p.area_m2), p.drp_text ?? "—", p.placement ?? "—", zoning[`${p.parcel_no}|${p.register}`] ?? "—", avmCell(`${p.parcel_no}|${p.register}`)])}
+                      rows={cc.parcelsE.map((p) => [p.parcel_no, m2(p.area_m2), p.drp_text ?? "—", p.placement ?? "—", zoning[`${p.parcel_no}|${p.register}`] ?? "—", avmCell(`${p.parcel_no}|${p.register}`)])}
                       mono={[0]}
                     />
                   </div>
                 ) : null}
 
-                {c.odnatie && c.odnatie.count > 0 ? (
+                {cc.odnatie && cc.odnatie.count > 0 ? (
                   <div className="mt-2 text-[12px] text-muted">
                     Odňatie poľnohospodárskej pôdy spolu (C-KN, informatívne)<LegalRef id="odvody" />: trvalé{" "}
-                    <b className="text-fg">{eur(c.odnatie.trvale)} €</b>, dočasné{" "}
-                    <b className="text-fg">{eur(c.odnatie.docasne)} €</b> / rok. Sadzby NV 58/2013 podľa skupiny BPEJ.
+                    <b className="text-fg">{eur(cc.odnatie.trvale)} €</b>, dočasné{" "}
+                    <b className="text-fg">{eur(cc.odnatie.docasne)} €</b> / rok. Sadzby NV 58/2013 podľa skupiny BPEJ.
                   </div>
                 ) : null}
-                {c.buildings.length ? (
+                {cc.buildings.length ? (
                   <div className="mt-3">
                     <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Stavby</div>
-                    <Table head={["Popis stavby", "Na parcele"]} rows={c.buildings.map((b) => [b.descr, b.on_parcel || "—"])} mono={[1]} />
+                    <Table head={["Popis stavby", "Na parcele"]} rows={cc.buildings.map((b) => [b.descr, b.on_parcel || "—"])} mono={[1]} />
                   </div>
                 ) : null}
                 {/* Celková výmera + orientačný odhad hodnoty */}
                 <div className="mt-3 border-t border-line pt-2 text-[12px]">
                   <span className="text-muted">Celková výmera parciel na LV: </span>
-                  <b className="text-fg">{m2(c.totalAreaC)}</b>
-                  {c.totalAreaE > 0 ? <span className="text-muted"> · register E: <b className="text-fg">{m2(c.totalAreaE)}</b></span> : null}
+                  <b className="text-fg">{m2(cc.totalAreaC)}</b>
+                  {cc.totalAreaE > 0 ? <span className="text-muted"> · register E: <b className="text-fg">{m2(cc.totalAreaE)}</b></span> : null}
                   {(() => {
-                    const mv = c.parcelsC.reduce((a, p) => a + marketValueEur(p.drp_text, p.placement, p.area_m2).total, 0);
+                    const mv = cc.parcelsC.reduce((a, p) => a + marketValueEur(p.drp_text, p.placement, p.area_m2).total, 0);
                     return mv > 0 ? (
                       <div className="mt-1 text-muted">
                         Orientačný odhad hodnoty (trhový, hrubý screening — nie znalecký posudok): <b className="text-fg">~ {eur(mv)} €</b>
-                        {c.odnatie && c.odnatie.count > 0 ? <span> · odňatie pôdy {eur(c.odnatie.trvale)} €</span> : null}
+                        {cc.odnatie && cc.odnatie.count > 0 ? <span> · odňatie pôdy {eur(cc.odnatie.trvale)} €</span> : null}
                       </div>
                     ) : null;
                   })()}
@@ -509,19 +510,19 @@ function VypisPage() {
               </Section>
             ) : null}
 
-            {parts.A && c.evidencne && c.evidencne.length ? (
+            {parts.A && cc.evidencne && cc.evidencne.length ? (
               <Section title="Evidenčný list / užívateľ (k C-KN parcelám)">
                 <Table
                   head={["Celok (EL)", "Užívateľ", "IČO", "Parcely C-KN"]}
-                  rows={c.evidencne.map((e) => [
+                  rows={cc.evidencne.map((e) => [
                     String(e.celok),
-                    c.access === "full" ? (e.uzivatel ?? "—") : "—",
+                    cc.access === "full" ? (e.uzivatel ?? "—") : "—",
                     e.ico ?? "—",
                     e.parcels.join(", ") || "—",
                   ])}
                   mono={[0, 3]}
                 />
-                {c.access !== "full" ? (
+                {cc.access !== "full" ? (
                   <div className="mt-2 rounded-md border border-line bg-surface-2/40 px-3 py-2 text-sm text-muted">
                     Meno historického užívateľa je owner-sensitive — rola <b className="text-fg">{role}</b> ho nevidí.
                   </div>
@@ -539,17 +540,17 @@ function VypisPage() {
                 {/* Nadobúdacie tituly */}
                 <div className="mt-3">
                   <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Tituly nadobudnutia</div>
-                  {c.access === "full" ? (
-                    c.titles.length ? (
+                  {cc.access === "full" ? (
+                    cc.titles.length ? (
                       <ol className="list-decimal space-y-1 pl-5 text-[13px] text-fg">
-                        {c.titles.map((t, i) => <li key={i}>{t}</li>)}
+                        {cc.titles.map((t, i) => <li key={i}>{t}</li>)}
                       </ol>
                     ) : (
                       <div className="px-1 py-1 text-sm text-muted">Bez evidovaného titulu.</div>
                     )
                   ) : (
                     <div className="rounded-md border border-line bg-surface-2/40 px-3 py-2 text-sm text-muted">
-                      {c.titlesCount} titul(ov) — text rola <b className="text-fg">{role}</b> nevidí.
+                      {cc.titlesCount} titul(ov) — text rola <b className="text-fg">{role}</b> nevidí.
                     </div>
                   )}
                 </div>
@@ -558,17 +559,17 @@ function VypisPage() {
 
             {parts.C ? (
               <Section title="Časť C — Ťarchy">
-                {c.access === "full" ? (
-                  c.tarchy.length ? (
+                {cc.access === "full" ? (
+                  cc.tarchy.length ? (
                     <ol className="list-decimal space-y-1 pl-5 text-[13px] text-fg">
-                      {c.tarchy.map((t, i) => <li key={i}>{t}</li>)}
+                      {cc.tarchy.map((t, i) => <li key={i}>{t}</li>)}
                     </ol>
                   ) : (
                     <div className="px-1 py-2 text-sm text-muted">Bez evidovaného zápisu ťarchy v pracovných dátach.</div>
                   )
                 ) : (
                   <div className="rounded-md border border-line bg-surface-2/40 px-3 py-2 text-sm text-muted">
-                    {c.tarchyCount} zápis(ov) ťarchy — text rola <b className="text-fg">{role}</b> nevidí (owner-sensitive).
+                    {cc.tarchyCount} zápis(ov) ťarchy — text rola <b className="text-fg">{role}</b> nevidí (owner-sensitive).
                   </div>
                 )}
               </Section>
@@ -578,7 +579,7 @@ function VypisPage() {
 
         {/* Pätička */}
         <div className="mt-6 border-t border-line pt-3 text-[11px] text-muted">
-          Vygenerované systémom <b className="text-fg">TRI LIPY KATASTER CORE</b> · interný pracovný výstup · Export Safety: owner masking = {c.access}.
+          Vygenerované systémom <b className="text-fg">TRI LIPY KATASTER CORE</b> · interný pracovný výstup · Export Safety: owner masking = {cc.access}.
           {partial ? " Čiastočný výpis — vybrané časti." : ""} Tento dokument neslúži na právne úkony.
         </div>
       </div>
@@ -651,27 +652,27 @@ function CompanyRegistry({ ico, name, role }: { ico: string; name: string; role:
   );
 }
 function OwnersSection({ c, role, label }: { c: Content; role: string; label: string | null }) {
-  const ku = c.dataset?.ku_name ?? "—";
+  const ku = cc.dataset?.ku_name ?? "—";
   const shareM2 = (share: string | null | undefined): string => {
     const f = shareFrac(share);
-    return f != null ? m2(Math.round(c.totalAreaC * f)) : "—";
+    return f != null ? m2(Math.round(cc.totalAreaC * f)) : "—";
   };
   return (
     <div>
       {label ? <div className="mb-1 font-display text-sm font-bold uppercase tracking-wide text-fg">{label}</div> : null}
-      {c.access === "full" ? (
-        c.owners.length ? (
+      {cc.access === "full" ? (
+        cc.owners.length ? (
           <>
             <Table
               head={["P. č.", "Vlastník", "Adresa", "Kat. územie", "LV", "Podiel", "Výmera podľa podielu (m²)"]}
-              rows={c.owners.map((o, i) => [String(i + 1), ownerLabel(o), ownerAddr(o), ku, String(c.lvNo), o.share || "—", shareM2(o.share)])}
+              rows={cc.owners.map((o, i) => [String(i + 1), ownerLabel(o), ownerAddr(o), ku, String(cc.lvNo), o.share || "—", shareM2(o.share)])}
               mono={[0, 4, 5, 6]}
             />
             <div className="mt-2 text-[12px] text-muted">
-              Celková výmera parciel registra C na LV: <b className="text-fg">{m2(c.totalAreaC)}</b>. „Výmera podľa podielu" = celková výmera × spoluvlastnícky podiel.
+              Celková výmera parciel registra C na LV: <b className="text-fg">{m2(cc.totalAreaC)}</b>. „Výmera podľa podielu" = celková výmera × spoluvlastnícky podiel.
             </div>
             {(() => {
-              const firmy = c.owners.filter((o) => o.is_company && o.ico);
+              const firmy = cc.owners.filter((o) => o.is_company && o.ico);
               return firmy.length ? (
                 <div className="mt-3 space-y-1.5">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Firemní vlastníci — RPVS/RPO (štatutári + koneční užívatelia výhod)</div>
@@ -685,8 +686,8 @@ function OwnersSection({ c, role, label }: { c: Content; role: string; label: st
         )
       ) : (
         <div className="rounded-md border border-line bg-surface-2/40 px-3 py-2 text-sm text-muted">
-          {c.count} vlastník(ov). Mená a podiely rola <b className="text-fg">{role}</b> nevidí
-          ({c.access === "summary" ? "summary-only" : "denied"}) — server ich do výpisu nevkladá.
+          {cc.count} vlastník(ov). Mená a podiely rola <b className="text-fg">{role}</b> nevidí
+          ({cc.access === "summary" ? "summary-only" : "denied"}) — server ich do výpisu nevkladá.
         </div>
       )}
     </div>
