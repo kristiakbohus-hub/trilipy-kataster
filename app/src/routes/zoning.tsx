@@ -22,10 +22,10 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 function ZoningPage() {
-  const [zoning, setZoning] = useState<Awaited<ReturnType<typeof listZoning>>>([]);
+  const [zoning, setZoning] = useState<Awaited<ReturnType<typeof listZoning>>>({ sources: [], findings: [] });
   const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
   const reload = useCallback(() => {
-    listZoning().then(setZoning).catch(() => setZoning([]));
+    listZoning().then(setZoning).catch(() => {});
     getDatasets().then(setDatasets).catch(() => setDatasets([]));
   }, []);
   useEffect(() => { reload(); }, [reload]);
