@@ -15,27 +15,22 @@ type DocType = "vypis" | "el";
 
 const eur = (n: number) => n.toLocaleString("sk-SK", { maximumFractionDigits: n < 100 ? 2 : 0 });
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak. Reťazec content → zoning/avm presunutý do efektu.
 export const Route = createFileRoute("/vypis/$datasetId/$lvNo")({
   head: () => ({ meta: [{ title: "Výpis z LV / evidenčný list — TRI LIPY KATASTER CORE" }] }),
   validateSearch: (s: Record<string, unknown>): { typ: DocType } => ({
     typ: s.typ === "el" ? "el" : "vypis",
   }),
-  loader: async ({ params }) => {
-    const datasetId = params.datasetId;
-    const lvNo = Number(params.lvNo);
-    const content = await getLvVypis({ data: { datasetId, lvNo, role: "viewer" } });
-    const kodKu = content.dataset?.ku_code ?? "";
-    const parcels = [...(content.parcelsC ?? []), ...(content.parcelsE ?? [])].map((p) => ({ parcel_no: p.parcel_no, register: p.register }));
-    const zoning = kodKu && parcels.length ? await getLvZoning({ data: { kodKu, parcels } }).catch(() => ({} as Record<string, string>)) : {};
-    const avmParcels = [...(content.parcelsC ?? []), ...(content.parcelsE ?? [])].map((p) => ({ key: `${p.parcel_no}|${p.register}`, druh: p.drp_text ?? null, areaM2: p.area_m2 ?? null }));
-    const avm = kodKu && avmParcels.length ? await getLvAvm({ data: { kodKu, parcels: avmParcels } }).catch(() => ({} as Record<string, LvParcelAvm>)) : {};
-    return { datasetId, lvNo, content, zoning, avm };
-  },
   component: VypisPage,
 });
 
 function VypisPage() {
-  const { datasetId, lvNo, content: initial, zoning, avm } = Route.useLoaderData();
+  const params = Route.useParams();
+  const datasetId = params.datasetId;
+  const lvNo = Number(params.lvNo);
+  const [zoning, setZoning] = useState<Record<string, string>>({});
+  const [avm, setAvm] = useState<Record<string, LvParcelAvm>>({});
   const avmCell = (key: string) => {
     const a = avm[key];
     if (!a || a.potential == null) return "—";
@@ -44,17 +39,30 @@ function VypisPage() {
   };
   const { typ } = Route.useSearch();
   const { role } = useRole();
-  const [c, setC] = useState<Content>(initial);
+  const [c, setC] = useState<Content | null>(null);
   const [docType, setDocType] = useState<DocType>(typ);
   const [parts, setParts] = useState({ A: true, B: true, C: true });
 
   useEffect(() => { preloadCalib(); }, []); // Fáza 5: nahrej kalibráciu pre Word export (calibDevSync)
   useEffect(() => {
     let alive = true;
-    getLvVypis({ data: { datasetId, lvNo, role } }).then((r) => alive && setC(r));
+    getLvVypis({ data: { datasetId, lvNo, role } }).then(async (r) => {
+      if (!alive) return;
+      setC(r);
+      const kodKu = r.dataset?.ku_code ?? "";
+      const ps = [...(r.parcelsC ?? []), ...(r.parcelsE ?? [])];
+      if (!kodKu || !ps.length) return;
+      const [z, a] = await Promise.all([
+        getLvZoning({ data: { kodKu, parcels: ps.map((x) => ({ parcel_no: x.parcel_no, register: x.register })) } }).catch(() => ({} as Record<string, string>)),
+        getLvAvm({ data: { kodKu, parcels: ps.map((x) => ({ key: `${x.parcel_no}|${x.register}`, druh: x.drp_text ?? null, areaM2: x.area_m2 ?? null })) } }).catch(() => ({} as Record<string, LvParcelAvm>)),
+      ]);
+      if (alive) { setZoning(z); setAvm(a); }
+    });
     return () => { alive = false; };
   }, [datasetId, lvNo, role]);
 
+  // Stráž je až tu, pod všetkými hookmi komponentu (posledný je efekt vyššie).
+  if (!c) return <div className="p-8 text-center text-sm text-muted">Načítavam výpis…</div>;
   const d = c.dataset;
   const isEl = docType === "el";
   const partial = !isEl && !(parts.A && parts.B && parts.C);

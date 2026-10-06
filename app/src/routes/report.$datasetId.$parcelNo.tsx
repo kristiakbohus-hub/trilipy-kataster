@@ -15,14 +15,10 @@ import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "
 import { useCalibDev } from "../lib/calib";
 import { DocumentsPanel } from "../components/documents-panel";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/report/$datasetId/$parcelNo")({
   head: () => ({ meta: [{ title: "Dossier parcely — TRI LIPY KATASTER CORE" }] }),
-  loader: async ({ params }) => {
-    const datasets = await getDatasets().catch(() => []);
-    const ds = datasets.find((d) => d.id === params.datasetId) ?? null;
-    const parcel = await getParcelByNo({ data: { datasetId: params.datasetId, parcelNo: params.parcelNo } }).catch(() => null);
-    return { ds, parcel };
-  },
   component: ReportPage,
 });
 
@@ -46,8 +42,13 @@ function sieteLinks(lat: number, lng: number): { kind: string; op: string; url: 
 }
 
 function ReportPage() {
-  const { ds, parcel } = Route.useLoaderData();
   const { datasetId, parcelNo } = Route.useParams();
+  const [ds, setDs] = useState<Awaited<ReturnType<typeof getDatasets>>[number] | null>(null);
+  const [parcel, setParcel] = useState<Awaited<ReturnType<typeof getParcelByNo>> | null>(null);
+  useEffect(() => {
+    getDatasets().then((all) => setDs(all.find((x) => x.id === datasetId) ?? null)).catch(() => {});
+    getParcelByNo({ data: { datasetId, parcelNo } }).then(setParcel).catch(() => setParcel(null));
+  }, [datasetId, parcelNo]);
   const { role } = useRole();
   const locality = (ds?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "").trim();
 

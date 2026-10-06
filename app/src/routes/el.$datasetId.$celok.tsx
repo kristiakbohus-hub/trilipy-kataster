@@ -6,21 +6,19 @@ import { useRole } from "../lib/role-context";
 
 type Content = Awaited<ReturnType<typeof getEvidencnyList>>;
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/el/$datasetId/$celok")({
   head: () => ({ meta: [{ title: "Evidenčný list — TRI LIPY KATASTER CORE" }] }),
-  loader: async ({ params }) => {
-    const datasetId = params.datasetId;
-    const celok = Number(params.celok);
-    const content = await getEvidencnyList({ data: { datasetId, celok, role: "viewer" } });
-    return { datasetId, celok, content };
-  },
   component: ElPage,
 });
 
 function ElPage() {
-  const { datasetId, celok, content: initial } = Route.useLoaderData();
+  const params = Route.useParams();
+  const datasetId = params.datasetId;
+  const celok = Number(params.celok);
   const { role } = useRole();
-  const [c, setC] = useState<Content>(initial);
+  const [c, setC] = useState<Content | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -28,6 +26,7 @@ function ElPage() {
     return () => { alive = false; };
   }, [datasetId, celok, role]);
 
+  if (!c) return <div className="p-8 text-center text-sm text-muted">Načítavam evidenčný list…</div>;
   const d = c.dataset;
   const he = (v: string | number) => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   function download(content: string, mime: string, filename: string) {
