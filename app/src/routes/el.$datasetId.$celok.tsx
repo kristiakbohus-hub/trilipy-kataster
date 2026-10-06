@@ -54,7 +54,7 @@ function ElPage() {
       ["Užívateľ", cc.access === "full" ? (cc.uzivatel ?? "") : "(skryté)"],
       [""],
       ["Parcelné číslo", "Výmera (m²)", "Druh"],
-      ...c.parcels.map((p) => [p.parcel_no, String(p.area_m2), p.use_type ?? ""]),
+      ...cc.parcels.map((p) => [p.parcel_no, String(p.area_m2), p.use_type ?? ""]),
     ].map((r) => r.map(esc).join(";"));
     download("﻿" + rows.join("\r\n"), "text/csv;charset=utf-8", `evidencny_list_${celok}.csv`);
   }

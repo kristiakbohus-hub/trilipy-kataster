@@ -63,7 +63,7 @@ function VypisPage() {
 
   // Stráž je až tu, pod všetkými hookmi komponentu (posledný je efekt vyššie).
   if (!c) return <div className="p-8 text-center text-sm text-muted">Načítavam výpis…</div>;
-  const cc = c;   // nenulový alias — narrowing z if(!c) neplatí vnútri funkcií nižšie
+  const cc = c;   // nenulový alias — narrowing z if(!c) neplatí vo funkciách nižšie
   const d = cc.dataset;
   const isEl = docType === "el";
   const partial = !isEl && !(parts.A && parts.B && parts.C);
@@ -414,7 +414,7 @@ function VypisPage() {
                 </div>
               )}
             </Section>
-            <OwnersSection c={c} role={role} label="Vlastníci / oprávnené osoby podľa evidenčného stavu" />
+            <OwnersSection c={cc} role={role} label="Vlastníci / oprávnené osoby podľa evidenčného stavu" />
           </>
         ) : (
           /* ——— VÝPIS Z LV (Časti A/B/C) ——— */
@@ -536,7 +536,7 @@ function VypisPage() {
 
             {parts.B ? (
               <Section title="Časť B — Vlastníci a iné oprávnené osoby">
-                <OwnersSection c={c} role={role} label={null} />
+                <OwnersSection c={cc} role={role} label={null} />
                 {/* Nadobúdacie tituly */}
                 <div className="mt-3">
                   <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Tituly nadobudnutia</div>
@@ -652,27 +652,27 @@ function CompanyRegistry({ ico, name, role }: { ico: string; name: string; role:
   );
 }
 function OwnersSection({ c, role, label }: { c: Content; role: string; label: string | null }) {
-  const ku = cc.dataset?.ku_name ?? "—";
+  const ku = c.dataset?.ku_name ?? "—";
   const shareM2 = (share: string | null | undefined): string => {
     const f = shareFrac(share);
-    return f != null ? m2(Math.round(cc.totalAreaC * f)) : "—";
+    return f != null ? m2(Math.round(c.totalAreaC * f)) : "—";
   };
   return (
     <div>
       {label ? <div className="mb-1 font-display text-sm font-bold uppercase tracking-wide text-fg">{label}</div> : null}
-      {cc.access === "full" ? (
-        cc.owners.length ? (
+      {c.access === "full" ? (
+        c.owners.length ? (
           <>
             <Table
               head={["P. č.", "Vlastník", "Adresa", "Kat. územie", "LV", "Podiel", "Výmera podľa podielu (m²)"]}
-              rows={cc.owners.map((o, i) => [String(i + 1), ownerLabel(o), ownerAddr(o), ku, String(cc.lvNo), o.share || "—", shareM2(o.share)])}
+              rows={c.owners.map((o, i) => [String(i + 1), ownerLabel(o), ownerAddr(o), ku, String(c.lvNo), o.share || "—", shareM2(o.share)])}
               mono={[0, 4, 5, 6]}
             />
             <div className="mt-2 text-[12px] text-muted">
-              Celková výmera parciel registra C na LV: <b className="text-fg">{m2(cc.totalAreaC)}</b>. „Výmera podľa podielu" = celková výmera × spoluvlastnícky podiel.
+              Celková výmera parciel registra C na LV: <b className="text-fg">{m2(c.totalAreaC)}</b>. „Výmera podľa podielu" = celková výmera × spoluvlastnícky podiel.
             </div>
             {(() => {
-              const firmy = cc.owners.filter((o) => o.is_company && o.ico);
+              const firmy = c.owners.filter((o) => o.is_company && o.ico);
               return firmy.length ? (
                 <div className="mt-3 space-y-1.5">
                   <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Firemní vlastníci — RPVS/RPO (štatutári + koneční užívatelia výhod)</div>
@@ -686,8 +686,8 @@ function OwnersSection({ c, role, label }: { c: Content; role: string; label: st
         )
       ) : (
         <div className="rounded-md border border-line bg-surface-2/40 px-3 py-2 text-sm text-muted">
-          {cc.count} vlastník(ov). Mená a podiely rola <b className="text-fg">{role}</b> nevidí
-          ({cc.access === "summary" ? "summary-only" : "denied"}) — server ich do výpisu nevkladá.
+          {c.count} vlastník(ov). Mená a podiely rola <b className="text-fg">{role}</b> nevidí
+          ({c.access === "summary" ? "summary-only" : "denied"}) — server ich do výpisu nevkladá.
         </div>
       )}
     </div>
