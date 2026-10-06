@@ -3158,6 +3158,7 @@ export const getLvAvm = createServerFn({ method: "POST" })
 export const ingestDataset = createServerFn({ method: "POST" })
   .validator(z.object({
     secret: z.string(), kodKu: z.string(), reset: z.boolean().optional(),
+    resetTitles: z.boolean().optional(),
     dataset: z.object({ kuName: z.string().optional(), region: z.string().optional(), knType: z.string().optional(), nParcels: z.number().optional(), nOwners: z.number().optional(), sumArea: z.number().optional() }).optional(),
     parcels: z.array(z.object({ parcelNo: z.string(), knType: z.string().optional(), areaM2: z.number().nullable().optional(), useType: z.string().nullable().optional(), lvNo: z.string().nullable().optional(), centroidLat: z.number().nullable().optional(), centroidLng: z.number().nullable().optional(), geometryJson: z.string().nullable().optional(), bpej: z.string().nullable().optional(), bpejSkupina: z.number().nullable().optional() })).optional(),
     lvs: z.array(z.object({ lvNo: z.string(), coOwners: z.number().nullable().optional(), note: z.string().nullable().optional() })).optional(),
@@ -3172,6 +3173,11 @@ export const ingestDataset = createServerFn({ method: "POST" })
     const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
     if (!expected || data.secret !== expected) return { ok: false, message: "Neplatný secret" };
     const did = `kn-${data.kodKu}`;
+    // Cielené premazanie LEN titulov/tiarch — lv_titles nemá unique kľúč, takže opakovaný push bez
+    // neho duplikuje riadky. `reset` sa na to použiť nedá, ten zmaže aj parcely, vlastníkov a signály.
+    if (data.resetTitles) {
+      await DB.prepare("DELETE FROM lv_titles WHERE dataset_id=?").bind(did).run();
+    }
     if (data.reset) {
       await DB.batch([
         DB.prepare("DELETE FROM parcels WHERE dataset_id=?").bind(did),
