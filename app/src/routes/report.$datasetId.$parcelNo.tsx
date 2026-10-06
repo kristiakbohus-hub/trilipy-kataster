@@ -22,6 +22,23 @@ export const Route = createFileRoute("/report/$datasetId/$parcelNo")({
   component: ReportPage,
 });
 
+// Pusher posiela strojové kódy (`zalozne_pravo`, `dedicstvo`…) — v klientskom dossieri musia byť
+// po slovensky. Číselník zodpovedá hodnotám v lv_tarchy.type a lv_titles.type na Macu.
+const LEGAL_LABEL: Record<string, string> = {
+  zalozne_pravo: "Záložné právo", vecne_bremeno: "Vecné bremeno", predkupne: "Predkupné právo",
+  najom: "Nájom", exekucia: "Exekúcia",
+  dedicstvo: "Dedičstvo", kupa: "Kúpna zmluva", darovanie: "Darovacia zmluva",
+  rozhodnutie: "Rozhodnutie", drazba: "Dražba", ine: "Iné",
+};
+// „zalozne_pravo 2019“ → „Záložné právo 2019“; neznámy kód nechá tak, nech sa nič nestratí.
+const legalLabel = (raw: string) => raw.replace(/^([a-z_]+)/, (m) => LEGAL_LABEL[m] ?? m);
+// 9 rovnakých riadkov pod sebou je šum → zoskupiť na „Záložné právo ×8“.
+function groupLegal(items: string[]): { label: string; n: number }[] {
+  const m = new Map<string, number>();
+  for (const it of items) { const l = legalLabel(it.trim()); m.set(l, (m.get(l) ?? 0) + 1); }
+  return [...m].map(([label, n]) => ({ label, n })).sort((a, b) => b.n - a.n);
+}
+
 const eurM2 = (n: number | null | undefined) => (n == null ? "—" : Math.round(n).toLocaleString("sk-SK") + " €/m²");
 const eur = (n: number | null | undefined) => (n == null ? "—" : Math.round(n).toLocaleString("sk-SK") + " €");
 const m2 = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("sk-SK") + " m²");
@@ -185,9 +202,14 @@ function ReportPage() {
           : !legal.hasData ? <Muted>O tomto LV nemáme záznam časti B. Neznamená to, že tituly neexistujú — over na úradnom výpise.</Muted>
           : legal.titlesCount === 0 ? <Muted>V našom zázname nie je k tomuto LV uvedený žiadny titul nadobudnutia.</Muted>
           : legal.access === "full" ? (
-            <ol className="list-decimal space-y-1 pl-5 text-sm">
-              {legal.titles.map((t, i) => <li key={i} className="leading-relaxed">{t}</li>)}
-            </ol>
+            <ul className="space-y-1 text-sm">
+              {groupLegal(legal.titles).map((g, i) => (
+                <li key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
+                  <span>{g.label}</span>
+                  {g.n > 1 ? <span className="shrink-0 tabular-nums text-muted">×{g.n}</span> : null}
+                </li>
+              ))}
+            </ul>
           ) : <Muted>{legal.titlesCount} titulov (text chránený — rola bez plného prístupu).</Muted>}
       </Section>
 
@@ -218,9 +240,14 @@ function ReportPage() {
               <div className="mb-2 text-sm font-medium" style={{ color: "#a4553a" }}>
                 {legal.tarchyCount}× zapísaná ťarcha alebo poznámka
               </div>
-              <ol className="list-decimal space-y-1 pl-5 text-sm">
-                {legal.tarchy.map((t, i) => <li key={i} className="leading-relaxed">{t}</li>)}
-              </ol>
+              <ul className="space-y-1 text-sm">
+                {groupLegal(legal.tarchy).map((g, i) => (
+                  <li key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
+                    <span>{g.label}</span>
+                    {g.n > 1 ? <span className="shrink-0 tabular-nums text-muted">×{g.n}</span> : null}
+                  </li>
+                ))}
+              </ul>
             </>
           ) : (
             <div className="text-sm" style={{ color: "#a4553a" }}>
