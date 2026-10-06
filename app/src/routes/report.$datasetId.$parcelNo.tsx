@@ -83,7 +83,10 @@ function ReportPage() {
     if (locality) jobs.push(getLocalityMedian({ data: { okres: locality, ptype: "pozemok", deal: "predaj" } }).then((r) => setMedPoz(r.median)).catch(() => {}));
     Promise.allSettled(jobs).finally(() => setReady(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datasetId, parcelNo, role]);
+    // `parcel` a `locality` MUSIA byť v deps: kým prichádzali zo SSR loadera, boli dostupné už pri
+    // prvom renderi. Teraz sa načítavajú asynchrónne — bez nich efekt zbehne s parcel===null,
+    // vyskočí hneď na začiatku a nikdy sa nezopakuje (prázdne vlastníctvo, ťarchy, trh, dostupnosť).
+  }, [datasetId, parcelNo, role, parcel, locality]);
 
   const calibDev = useCalibDev(); // Fáza 5: kalibrované dev sadzby
 
@@ -178,7 +181,7 @@ function ReportPage() {
       {/* Property-360 §2: Tituly (časť B). Plný text je owner-sensitive → len rola s plným prístupom. */}
       <Section title="Tituly (časť B)">
         {parcel.lv_no == null ? <Muted>Parcela nemá priradené LV — tituly sa nedajú priradiť.</Muted>
-          : legal == null ? <Muted>Načítavam…</Muted>
+          : legal == null ? <Muted>{ready ? "Údaje o tituloch sa nepodarilo načítať." : "Načítavam…"}</Muted>
           : !legal.hasData ? <Muted>O tomto LV nemáme záznam časti B. Neznamená to, že tituly neexistujú — over na úradnom výpise.</Muted>
           : legal.titlesCount === 0 ? <Muted>V našom zázname nie je k tomuto LV uvedený žiadny titul nadobudnutia.</Muted>
           : legal.access === "full" ? (
@@ -191,7 +194,13 @@ function ReportPage() {
       {/* Property-360 §2 + §4: nikdy netvrdiť „bez tiarch“ — chýbajúci záznam je NEZNÁMY stav. */}
       <Section title="Ťarchy a poznámky (časť C)">
         {parcel.lv_no == null ? <Muted>Parcela nemá priradené LV — ťarchy sa nedajú priradiť.</Muted>
-          : legal == null ? <Muted>Načítavam…</Muted>
+          : legal == null ? (
+            <Muted>
+              {ready
+                ? "Údaje o ťarchách sa nepodarilo načítať — stav je NEZNÁMY, nie „bez tiarch“. Over na úradnom výpise."
+                : "Načítavam…"}
+            </Muted>
+          )
           : !legal.hasData ? (
             <Muted>
               O tomto LV nemáme záznam časti C. <b>Nie je to potvrdenie, že pozemok je bez tiarch</b> —
