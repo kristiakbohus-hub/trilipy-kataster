@@ -4,9 +4,10 @@ import { getDashboard, type Dashboard } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
 import { DEAL_STATUS, DEAL_STATUS_ORDER } from "../lib/domain";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
+// cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
 export const Route = createFileRoute("/prehlad")({
   head: () => ({ meta: [{ title: "Prehľad / Dashboard — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getDashboard({ data: {} }).catch((): Dashboard | null => null),
   component: PrehladPage,
 });
 
@@ -41,8 +42,8 @@ function Kpi({ label, value, hint }: { label: string; value: string; hint?: stri
 }
 
 function PrehladPage() {
-  const initial = Route.useLoaderData();
-  const [d, setD] = useState<Dashboard | null>(initial);
+  const [d, setD] = useState<Dashboard | null>(null);
+  useEffect(() => { getDashboard({ data: {} }).then(setD).catch(() => {}); }, []);
   const [busy, setBusy] = useState(false);
 
   async function refresh() {

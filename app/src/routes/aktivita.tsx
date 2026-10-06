@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { getActivity, type ActivityRow } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
+// cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
 export const Route = createFileRoute("/aktivita")({
   head: () => ({ meta: [{ title: "Denník aktivity — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getActivity({ data: { limit: 150 } }).catch((): ActivityRow[] => []),
   component: ActivityPage,
 });
 
@@ -20,7 +22,8 @@ function subjectLink(a: ActivityRow) {
 }
 
 function ActivityPage() {
-  const rows = Route.useLoaderData();
+  const [rows, setRows] = useState<ActivityRow[]>([]);
+  useEffect(() => { getActivity({ data: { limit: 150 } }).then(setRows).catch(() => setRows([])); }, []);
   return (
     <div className="space-y-4">
       <div>

@@ -1,14 +1,15 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
 import { getDatasets, importDataset, importEknParcels, runReadinessRecheck } from "../lib/api/kataster.functions";
 import { STATUS_META, canRunPipeline } from "../lib/domain";
 import type { ImportParcel } from "../lib/vgi-import";
 import { Badge, Card, Disclaimer, Icon, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
+// cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
 export const Route = createFileRoute("/import")({
   head: () => ({ meta: [{ title: "Import & intake — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getDatasets(),
   component: ImportPage,
 });
 
@@ -30,9 +31,10 @@ const PIPELINE = [
 ];
 
 function ImportPage() {
-  const datasets = Route.useLoaderData();
+  const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
+  const reload = useCallback(() => { getDatasets().then(setDatasets).catch(() => setDatasets([])); }, []);
+  useEffect(() => { reload(); }, [reload]);
   const { role } = useRole();
-  const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<Record<string, string>>({});
 
@@ -41,7 +43,7 @@ function ImportPage() {
     try {
       const r = await runReadinessRecheck({ data: { datasetId: id, role } });
       setMsg((m) => ({ ...m, [id]: r.message ?? (r.ok ? "Hotovo." : "Neúspešné.") }));
-      router.invalidate();
+      reload();
     } finally {
       setBusy(null);
     }
@@ -91,7 +93,7 @@ function ImportPage() {
         setImpMsg(`Dataset vytvorený — ${r.count} parciel. Geometria georeferencovaná (Krovák→WGS84).`);
         setNewId(r.datasetId ?? null);
         setParsed(null); setCode(""); setKuName(""); setRegion("");
-        router.invalidate();
+        reload();
       } else {
         setImpMsg(r.message ?? "Import neúspešný.");
       }
@@ -131,7 +133,7 @@ function ImportPage() {
       }
       setEknMsg(`Hotovo — ${done} E-KN parciel doplnených. Otvor mapu a zapni/izoluj vrstvu „E-KN" (zelená).`);
       setEknParsed(null);
-      router.invalidate();
+      reload();
     } catch (e) { setEknMsg(e instanceof Error ? e.message : "Chyba pri importe E-KN."); }
     finally { setEknBusy(false); }
   }

@@ -1,17 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { exportBackup, getSystemStatus, egressSelfTest } from "../lib/api/kataster.functions";
 import { Badge, Card, Disclaimer, Icon, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
+// cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
 export const Route = createFileRoute("/system")({
   head: () => ({ meta: [{ title: "System Status — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getSystemStatus(),
   component: SystemPage,
 });
 
 function SystemPage() {
-  const s = Route.useLoaderData();
+  const [s, setS] = useState<Awaited<ReturnType<typeof getSystemStatus>> | null>(null);
+  useEffect(() => { getSystemStatus().then(setS).catch(() => {}); }, []);
   const { role } = useRole();
   const [bkBusy, setBkBusy] = useState(false);
   const [bkMsg, setBkMsg] = useState<string | null>(null);
@@ -40,6 +42,8 @@ function SystemPage() {
       } else setBkMsg(r.message ?? "Neúspešné.");
     } finally { setBkBusy(false); }
   }
+  if (!s) return <Card className="p-6 text-center text-sm text-muted">Načítavam stav systému…</Card>;
+
   return (
     <div className="space-y-8">
       <div>

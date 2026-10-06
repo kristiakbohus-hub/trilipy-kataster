@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getDeal, listDeals, updateDealStatus, updateDealTask, addDealNote, updateDeal } from "../lib/api/kataster.functions";
 import { DEAL_STATUS, DEAL_STATUS_ORDER, TASK_STATE, TASK_STATE_ORDER, eur, m2 } from "../lib/domain";
 import { Badge, Card, Disclaimer, Meter, SectionHeader, Stat } from "../components/kit";
@@ -57,15 +57,17 @@ function DealKpis({ deals }: { deals: DealListItem[] }) {
 
 type DealDetail = Awaited<ReturnType<typeof getDeal>>;
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
+// cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
 export const Route = createFileRoute("/deals")({
   head: () => ({ meta: [{ title: "Deal pipeline — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await listDeals(),
   component: DealsPage,
 });
 
 function DealsPage() {
-  const deals = Route.useLoaderData();
-  const router = useRouter();
+  const [deals, setDeals] = useState<Awaited<ReturnType<typeof listDeals>>>([]);
+  const reloadDeals = useCallback(() => { listDeals().then(setDeals).catch(() => setDeals([])); }, []);
+  useEffect(() => { reloadDeals(); }, [reloadDeals]);
   const { role } = useRole();
   const [sel, setSel] = useState<string | null>(null);
   const [detail, setDetail] = useState<DealDetail | null>(null);
@@ -86,13 +88,13 @@ function DealsPage() {
     setBusy(true);
     try {
       await updateDeal({ data: { id: sel, role, odkupEur: odkupInput.trim() ? Number(odkupInput.replace(/\s/g, "")) : null, nextStep: stepInput.trim() || null } });
-      await open(sel); router.invalidate();
+      await open(sel); reloadDeals();
     } finally { setBusy(false); }
   }
   async function setStatus(status: (typeof DEAL_STATUS_ORDER)[number]) {
     if (!sel) return;
     setBusy(true);
-    try { await updateDealStatus({ data: { id: sel, status, role } }); await open(sel); router.invalidate(); }
+    try { await updateDealStatus({ data: { id: sel, status, role } }); await open(sel); reloadDeals(); }
     finally { setBusy(false); }
   }
   async function cycleTask(taskId: number, state: string) {
@@ -106,7 +108,7 @@ function DealsPage() {
     await addDealNote({ data: { dealId: sel, body: noteBody.trim(), role } });
     setNoteBody("");
     await open(sel);
-    router.invalidate();
+    reloadDeals();
   }
 
   return (

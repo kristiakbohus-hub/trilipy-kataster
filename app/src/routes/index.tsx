@@ -1,16 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { getOverview } from "../lib/api/kataster.functions";
 import { STATUS_META, type AppPath, type Dataset } from "../lib/domain";
 import { Badge, Card, Icon, Meter, SectionHeader, Stat } from "../components/kit";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
+// cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
 export const Route = createFileRoute("/")({
   head: () => ({ meta: [{ title: "Mission Control — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getOverview(),
   component: MissionControl,
 });
 
 function MissionControl() {
-  const { datasets, counts, avgCoverage, recentAudit } = Route.useLoaderData();
+  const [ov, setOv] = useState<Awaited<ReturnType<typeof getOverview>> | null>(null);
+  useEffect(() => { getOverview().then(setOv).catch(() => {}); }, []);
+
+  if (!ov) return <Card className="p-6 text-center text-sm text-muted">Načítavam prehľad…</Card>;
+  const { datasets, counts, avgCoverage, recentAudit } = ov;
 
   return (
     <div className="space-y-8">

@@ -1,16 +1,19 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { getDatasets } from "../lib/api/kataster.functions";
 import { STATUS_META } from "../lib/domain";
 import { Badge, Card, Icon, Meter } from "../components/kit";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
+// cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
 export const Route = createFileRoute("/datasety/")({
   head: () => ({ meta: [{ title: "Datasety — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getDatasets(),
   component: DatasetsPage,
 });
 
 function DatasetsPage() {
-  const datasets = Route.useLoaderData();
+  const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
+  useEffect(() => { getDatasets().then(setDatasets).catch(() => setDatasets([])); }, []);
   return (
     <div className="space-y-6">
       <div>

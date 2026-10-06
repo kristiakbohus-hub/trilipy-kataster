@@ -4,9 +4,10 @@ import { getCalib, setCalib, resetCalib, type CalibRow } from "../lib/api/katast
 import { Card, SectionHeader } from "../components/kit";
 import { useAuth } from "../lib/auth-context";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
+// cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
 export const Route = createFileRoute("/kalibracia")({
   head: () => ({ meta: [{ title: "Kalibrácia AVM/GDV — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => await getCalib().catch((): CalibRow[] => []),
   component: KalibraciaPage,
 });
 
@@ -18,11 +19,10 @@ const CAT_META: { key: string; title: string; hint: string }[] = [
 ];
 
 function KalibraciaPage() {
-  const initial = Route.useLoaderData();
   const { user, token } = useAuth();
   const isAdmin = user?.role === "admin";
-  const [rows, setRows] = useState<CalibRow[]>(initial);
-  const [vals, setVals] = useState<Record<string, string>>(() => Object.fromEntries(initial.map((r) => [r.key, String(r.value)])));
+  const [rows, setRows] = useState<CalibRow[]>([]);
+  const [vals, setVals] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
