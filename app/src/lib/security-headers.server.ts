@@ -17,7 +17,9 @@ export function applySecurityHeaders(response: Response): Response {
     "default-src 'self'; " +
       "script-src 'self' 'unsafe-inline'; " +
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
-      "font-src 'self' https://fonts.gstatic.com; " +
+      // data: je nutné — MapLibre si glyfy mapy načítava ako data:font/woff2 (bez toho mapa padne
+      // na „violates CSP font-src" a popisky sa nevykreslia). Overené na /mapa.
+      "font-src 'self' data: https://fonts.gstatic.com; " +
       "img-src 'self' data: https:; media-src 'self' https:; " +
       "connect-src 'self' https:; " +
       "base-uri 'self'; form-action 'self'",
