@@ -1,12 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getBpejCennik } from "../lib/api/kataster.functions";
 import { LEGAL, LEGAL_CATEGORIES, citeLabel, type LegalEntry } from "../lib/legal";
 import { Card, Disclaimer, SectionHeader, Badge } from "../components/kit";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/pravny-referent")({
   head: () => ({ meta: [{ title: "Právny referent — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => ({ cennik: await getBpejCennik().catch(() => []) }),
   component: PravnyReferentPage,
 });
 
@@ -15,7 +16,8 @@ function eur(n: number): string {
 }
 
 function PravnyReferentPage() {
-  const { cennik } = Route.useLoaderData();
+  const [cennik, setCennik] = useState<Awaited<ReturnType<typeof getBpejCennik>>>([]);
+  useEffect(() => { getBpejCennik().then(setCennik).catch(() => setCennik([])); }, []);
   const [q, setQ] = useState("");
 
   const filtered = useMemo(() => {

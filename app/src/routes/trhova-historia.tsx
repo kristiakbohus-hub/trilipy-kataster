@@ -1,16 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getMarketHistory, getMarketTree, getListingPriceHistory, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { Card, SectionHeader, Disclaimer } from "../components/kit";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/trhova-historia")({
   head: () => ({ meta: [{ title: "Trhová história — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => {
-    const tree = await getMarketTree({ data: { deal: "predaj" } }).catch((): MarketTreeRow[] => []);
-    const init = await getMarketHistory({ data: { okres: "Čadca", ptype: "pozemok", deal: "predaj" } })
-      .catch((): Awaited<ReturnType<typeof getMarketHistory>> => ({ series: [], movers: [], deal: "predaj", ptype: "pozemok" }));
-    return { tree, init };
-  },
   component: TrhovaHistoriaPage,
 });
 
@@ -75,11 +71,15 @@ function Sparkline({ pts }: { pts: { day: string; price_eur: number | null }[] }
 }
 
 function TrhovaHistoriaPage() {
-  const { tree, init } = Route.useLoaderData();
+  const [tree, setTree] = useState<MarketTreeRow[]>([]);
   const [okres, setOkres] = useState("Čadca");
   const [ptype, setPtype] = useState("pozemok");
   const [deal, setDeal] = useState("predaj");
-  const [res, setRes] = useState(init);
+  const [res, setRes] = useState<Awaited<ReturnType<typeof getMarketHistory>>>({ series: [], movers: [], deal: "predaj", ptype: "pozemok" });
+  useEffect(() => {
+    getMarketTree({ data: { deal: "predaj" } }).then(setTree).catch(() => {});
+    getMarketHistory({ data: { okres: "Čadca", ptype: "pozemok", deal: "predaj" } }).then(setRes).catch(() => {});
+  }, []);
   const [busy, setBusy] = useState(false);
 
   const okresy = useMemo(() => {

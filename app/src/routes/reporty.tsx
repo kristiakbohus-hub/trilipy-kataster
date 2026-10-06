@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
 import {
   generateReport,
   getDatasets,
@@ -12,16 +12,22 @@ import { useRole } from "../lib/role-context";
 
 type Kind = "evidence_list" | "parcel_pack" | "map_sheet";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/reporty")({
   head: () => ({ meta: [{ title: "Reporty — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => ({ reports: await listReports(), datasets: await getDatasets() }),
   component: ReportsPage,
 });
 
 function ReportsPage() {
-  const { reports, datasets } = Route.useLoaderData();
+  const [reports, setReports] = useState<Awaited<ReturnType<typeof listReports>>>([]);
+  const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
+  const reload = useCallback(() => {
+    listReports().then(setReports).catch(() => setReports([]));
+    getDatasets().then(setDatasets).catch(() => setDatasets([]));
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
   const { role } = useRole();
-  const router = useRouter();
 
   const usable = datasets.filter((d) => d.status !== "blocked");
   const [datasetId, setDatasetId] = useState(usable[0]?.id ?? "");
@@ -41,7 +47,7 @@ function ReportsPage() {
       const r = await generateReport({ data: { datasetId, kind, title: title.trim(), role } });
       setNote(r.ok ? `Report vytvorený (draft, audit ${r.hash}).` : r.message ?? "Neúspešné.");
       if (r.ok) setTitle("");
-      router.invalidate();
+      reload();
     } finally {
       setBusy(false);
     }
@@ -50,7 +56,7 @@ function ReportsPage() {
   async function changeStatus(id: number, status: "review" | "signed") {
     const r = await setReportStatus({ data: { id, status, role } });
     if (!r.ok) setNote(r.message ?? "Neúspešné.");
-    router.invalidate();
+    reload();
   }
 
   return (

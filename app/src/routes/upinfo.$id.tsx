@@ -1,14 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { getUpInfo } from "../lib/api/kataster.functions";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek (toto bola
+// najväčšia diera: 18 MB parciel k.ú.). Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/upinfo/$id")({
   head: () => ({ meta: [{ title: "Územnoplánovacia informácia — TRI LIPY KATASTER CORE" }] }),
-  loader: async ({ params }) => await getUpInfo({ data: { id: params.id } }),
   component: UpInfoPage,
 });
 
 function UpInfoPage() {
-  const { row, dataset } = Route.useLoaderData();
+  const { id } = Route.useParams();
+  const [res, setRes] = useState<Awaited<ReturnType<typeof getUpInfo>> | null>(null);
+  useEffect(() => { getUpInfo({ data: { id } }).then(setRes).catch(() => {}); }, [id]);
+  const row = res?.row ?? null;
+  const dataset = res?.dataset ?? null;
 
   if (!row) {
     return (

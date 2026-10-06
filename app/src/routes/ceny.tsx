@@ -4,12 +4,10 @@ import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities,
 import { useRole } from "../lib/role-context";
 import { Card, Disclaimer, SectionHeader, Badge } from "../components/kit";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/ceny")({
   head: () => ({ meta: [{ title: "Trhové ceny — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => ({
-    stats: await getMarketStats().catch((): Awaited<ReturnType<typeof getMarketStats>> => ({ meta: {}, latest: null, overview: [] })),
-    tree: await getMarketTree({ data: { deal: "predaj" } }).catch((): MarketTreeRow[] => []),
-  }),
   component: CenyPage,
 });
 
@@ -23,10 +21,14 @@ type OkresNode = { okres: string; median: number | null; cnt: number; obce: Obec
 type KrajNode = { kraj: string; median: number | null; cnt: number; okresy: OkresNode[] };
 
 function CenyPage() {
-  const { stats: initial, tree: initialTree } = Route.useLoaderData();
+
   const { role } = useRole();
-  const [stats, setStats] = useState(initial);
-  const [tree, setTree] = useState<MarketTreeRow[]>(initialTree);
+  const [stats, setStats] = useState<Awaited<ReturnType<typeof getMarketStats>>>({ meta: {}, latest: null, overview: [] });
+  const [tree, setTree] = useState<MarketTreeRow[]>([]);
+  useEffect(() => {
+    getMarketStats().then(setStats).catch(() => {});
+    getMarketTree({ data: { deal: "predaj" } }).then(setTree).catch(() => {});
+  }, []);
   const [ptype, setPtype] = useState("pozemok");
   const [okres, setOkres] = useState<string | null>(null);
   const [okSearch, setOkSearch] = useState("");

@@ -1,5 +1,5 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
 import { addZoningFinding, getDatasets, listZoning } from "../lib/api/kataster.functions";
 import { ZONING_STATUS_META, canRunPipeline } from "../lib/domain";
 import { Badge, Card, Disclaimer, Icon, SectionHeader, Stat } from "../components/kit";
@@ -8,9 +8,10 @@ import { useRole } from "../lib/role-context";
 type Cat = "zoning" | "access";
 type St = "screening" | "possible" | "unclear" | "review" | "unknown";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/zoning")({
   head: () => ({ meta: [{ title: "Územný plán & prístup — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => ({ zoning: await listZoning(), datasets: await getDatasets() }),
   component: ZoningPage,
 });
 
@@ -21,9 +22,14 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 function ZoningPage() {
-  const { zoning, datasets } = Route.useLoaderData();
+  const [zoning, setZoning] = useState<Awaited<ReturnType<typeof listZoning>>>([]);
+  const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
+  const reload = useCallback(() => {
+    listZoning().then(setZoning).catch(() => setZoning([]));
+    getDatasets().then(setDatasets).catch(() => setDatasets([]));
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
   const { role } = useRole();
-  const router = useRouter();
   const usable = datasets.filter((d) => d.status !== "blocked");
 
   const [datasetId, setDatasetId] = useState(usable[0]?.id ?? "");
@@ -44,7 +50,7 @@ function ZoningPage() {
       const r = await addZoningFinding({ data: { datasetId, category, label: label.trim(), status, target: target.trim() || undefined, role } });
       setNote(r.ok ? "Screening finding pridaný." : r.message ?? "Neúspešné.");
       if (r.ok) { setLabel(""); setTarget(""); }
-      router.invalidate();
+      reload();
     } finally { setBusy(false); }
   }
 

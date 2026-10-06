@@ -1,5 +1,5 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useState } from "react";
 import { addCaseNote, createCase, getCase, getDatasets, listCases, updateCaseStatus, linkCaseEntity, unlinkCaseEntity, DEAL_STAGE_LABEL } from "../lib/api/kataster.functions";
 import { CASE_KIND_LABEL, CASE_STATUS_META, type Case, type CaseNote } from "../lib/domain";
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
@@ -8,16 +8,22 @@ import { useRole } from "../lib/role-context";
 
 type Kind = "vysporiadanie" | "screening" | "pristup" | "ine";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
+// Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/cases")({
   head: () => ({ meta: [{ title: "Cases — TRI LIPY KATASTER CORE" }] }),
-  loader: async () => ({ cases: await listCases(), datasets: await getDatasets() }),
   component: CasesPage,
 });
 
 function CasesPage() {
-  const { cases, datasets } = Route.useLoaderData();
+  const [cases, setCases] = useState<Awaited<ReturnType<typeof listCases>>>([]);
+  const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
+  const reload = useCallback(() => {
+    listCases().then(setCases).catch(() => setCases([]));
+    getDatasets().then(setDatasets).catch(() => setDatasets([]));
+  }, []);
+  useEffect(() => { reload(); }, [reload]);
   const { role } = useRole();
-  const router = useRouter();
   const usable = datasets.filter((d) => d.status !== "blocked");
 
   const [datasetId, setDatasetId] = useState(usable[0]?.id ?? "");
@@ -59,13 +65,13 @@ function CasesPage() {
       const r = await createCase({ data: { datasetId, title: title.trim(), kind, nextSteps: nextSteps.trim() || undefined, role } });
       setMsg(r.ok ? "Case vytvorený." : r.message ?? "Neúspešné.");
       if (r.ok) { setTitle(""); setNextSteps(""); }
-      router.invalidate();
+      reload();
     } finally { setBusy(false); }
   }
 
   async function setStatus(id: number, status: "open" | "review" | "done") {
     await updateCaseStatus({ data: { id, status, role } });
-    router.invalidate();
+    reload();
     void openCase(id);
   }
 
@@ -74,7 +80,7 @@ function CasesPage() {
     await addCaseNote({ data: { caseId: selected.case.id, body: noteBody.trim(), role } });
     setNoteBody("");
     void openCase(selected.case.id);
-    router.invalidate();
+    reload();
   }
 
   return (

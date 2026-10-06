@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useRouter, notFound } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState, useEffect, useState} from "react";
 import { getDataset, runReadinessRecheck } from "../lib/api/kataster.functions";
 import {
   JOB_STATE_META,
@@ -15,25 +15,28 @@ import {
 import { Badge, Card, Disclaimer, Icon, Meter, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek (toto bola
+// najväčšia diera: 18 MB parciel k.ú.). Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/datasety/$id")({
   head: () => ({ meta: [{ title: "Detail datasetu — TRI LIPY KATASTER CORE" }] }),
-  loader: async ({ params }) => {
-    const data = await getDataset({ data: { id: params.id, role: "viewer" } });
-    if (!data.dataset) throw notFound();
-    return data;
-  },
   component: DatasetDetail,
 });
 
 function DatasetDetail() {
-  const data = Route.useLoaderData();
-  const d = data.dataset!;
+  const { id } = Route.useParams();
+  const [data, setData] = useState<Awaited<ReturnType<typeof getDataset>> | null>(null);
   const { role } = useRole();
-  const router = useRouter();
-  const meta = STATUS_META[d.status];
-
   const [recheck, setRecheck] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const reload = useCallback(() => {
+    getDataset({ data: { id, role: "viewer" } }).then(setData).catch(() => {});
+  }, [id]);
+  useEffect(() => { reload(); }, [reload]);
+
+  // Stráž až POD všetkými hookmi — skorý return nad nimi by porušil pravidlá hookov.
+  if (!data?.dataset) return <Card className="p-6 text-center text-sm text-muted">Načítavam dataset…</Card>;
+  const d = data.dataset;
+  const meta = STATUS_META[d.status];
 
   async function doRecheck() {
     setBusy(true);
@@ -41,7 +44,7 @@ function DatasetDetail() {
     try {
       const r = await runReadinessRecheck({ data: { datasetId: d.id, role } });
       setRecheck(r.message ?? (r.ok ? "Hotovo." : "Neúspešné."));
-      router.invalidate();
+      reload();
     } finally {
       setBusy(false);
     }

@@ -50,7 +50,6 @@ function PrehladPage() {
     setBusy(true);
     try { setD(await getDashboard({ data: { refresh: true } })); } finally { setBusy(false); }
   }
-  useEffect(() => { if (!initial) void refresh(); /* eslint-disable-next-line */ }, []);
 
   if (!d) return (
     <div className="space-y-4">

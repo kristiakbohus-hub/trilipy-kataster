@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getReportContent } from "../lib/api/kataster.functions";
 import { REPORT_KIND_LABEL, REPORT_STATUS_META, canExport } from "../lib/domain";
@@ -7,21 +7,18 @@ import { useRole } from "../lib/role-context";
 
 type Content = Awaited<ReturnType<typeof getReportContent>>;
 
+// BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek (toto bola
+// najväčšia diera: 18 MB parciel k.ú.). Viď pamäť cf_app_ssr_loader_leak.
 export const Route = createFileRoute("/reporty/$id")({
   head: () => ({ meta: [{ title: "Report — TRI LIPY KATASTER CORE" }] }),
-  loader: async ({ params }) => {
-    const id = Number(params.id);
-    const content = await getReportContent({ data: { id, role: "viewer" } });
-    if (!content.report) throw notFound();
-    return { id, content };
-  },
   component: ReportDetail,
 });
 
 function ReportDetail() {
-  const { id, content: initial } = Route.useLoaderData();
+  const params = Route.useParams();
+  const id = Number(params.id);
   const { role } = useRole();
-  const [content, setContent] = useState<Content>(initial);
+  const [content, setContent] = useState<Content | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -29,9 +26,9 @@ function ReportDetail() {
     return () => { alive = false; };
   }, [id, role]);
 
-  const r = content.report;
+  const r = content?.report;
   if (!r) return null;
-  const es = content.exportSafety;
+  const es = content!.exportSafety;
   const sm = REPORT_STATUS_META[r.status] ?? { label: r.status, color: "#8a8a8a" };
 
   return (
