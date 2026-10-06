@@ -1309,6 +1309,55 @@ export const getZACases = createServerFn({ method: "POST" })
     ).catch(() => []);
   });
 
+// ——— Štatistika behu scenára (dok. 16 §3 F: „Prečo iné kandidáty neprešli") ———
+// Jeden riadok na (scenár, k.ú.). Scenárové pushe posielajú len MATCH+PROVISIONAL, takže počty
+// zamietnutých a dôvody vylúčenia musia prísť samostatne, inak by sekcia F bola len odhad.
+export type ScenarioRun = {
+  scenario: string; kod_ku: string; ku_name: string | null;
+  examined: number | null; n_match: number | null; n_provisional: number | null;
+  n_rejected: number | null; n_pushed: number | null;
+  reasons_json: string | null; params_json: string | null; as_of: string | null;
+};
+export const ingestScenarioRun = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    rows: z.array(z.object({
+      scenario: z.string(), kodKu: z.string(), kuName: z.string().nullable().optional(),
+      examined: z.number().nullable().optional(), nMatch: z.number().nullable().optional(),
+      nProvisional: z.number().nullable().optional(), nRejected: z.number().nullable().optional(),
+      nPushed: z.number().nullable().optional(), reasonsJson: z.string().nullable().optional(),
+      paramsJson: z.string().nullable().optional(), asOf: z.string().nullable().optional(),
+    })).max(200),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const stmt = DB.prepare(
+      `INSERT INTO scenario_runs (scenario,kod_ku,ku_name,examined,n_match,n_provisional,n_rejected,n_pushed,reasons_json,params_json,as_of)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(scenario,kod_ku) DO UPDATE SET ku_name=excluded.ku_name, examined=excluded.examined,
+         n_match=excluded.n_match, n_provisional=excluded.n_provisional, n_rejected=excluded.n_rejected,
+         n_pushed=excluded.n_pushed, reasons_json=excluded.reasons_json, params_json=excluded.params_json,
+         as_of=excluded.as_of`);
+    const batch = data.rows.map((r) => stmt.bind(r.scenario, r.kodKu, r.kuName ?? null, r.examined ?? null,
+      r.nMatch ?? null, r.nProvisional ?? null, r.nRejected ?? null, r.nPushed ?? null,
+      r.reasonsJson ?? null, r.paramsJson ?? null, r.asOf ?? null));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
+  });
+
+export const getScenarioRun = createServerFn({ method: "POST" })
+  .validator(z.object({ scenario: z.string(), kodKu: z.string().optional() }))
+  .handler(async ({ data }): Promise<ScenarioRun[]> => {
+    const where = data.kodKu ? "AND kod_ku = ?" : "";
+    const args: unknown[] = data.kodKu ? [data.scenario, data.kodKu] : [data.scenario];
+    return await q<ScenarioRun>(
+      `SELECT * FROM scenario_runs WHERE scenario = ? ${where} ORDER BY n_match DESC`, args,
+    ).catch(() => []);
+  });
+
 // ——— Property-360 §2: sekcie „Tituly" (časť B) a „Ťarchy a poznámky" (časť C) pre dossier ———
 // Zdroj je `lv_titles`, rovnaký ako výpis LV — plný text je owner-sensitive (mená, rodné priezviská,
 // dátumy narodenia), preto ho vydáme len role s plným prístupom; počty vidí každý.

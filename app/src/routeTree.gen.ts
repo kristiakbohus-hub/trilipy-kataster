@@ -49,6 +49,7 @@ import { Route as ApiIngestAcquisitionsRouteImport } from './routes/api.ingest-a
 import { Route as ApiIngestLandsearchRouteImport } from './routes/api.ingest-landsearch'
 import { Route as ApiIngestZaRouteImport } from './routes/api.ingest-za'
 import { Route as ApiIngestUpRouteImport } from './routes/api.ingest-up'
+import { Route as ApiIngestScenarioRunRouteImport } from './routes/api.ingest-scenario-run'
 import { Route as ApiIngestSettlementRouteImport } from './routes/api.ingest-settlement'
 import { Route as ApiIngestParcelZoningRouteImport } from './routes/api.ingest-parcel-zoning'
 import { Route as ApiIngestMarketRouteImport } from './routes/api.ingest-market'
@@ -258,6 +259,11 @@ const ApiIngestUpRoute = ApiIngestUpRouteImport.update({
   path: '/api/ingest-up',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestScenarioRunRoute = ApiIngestScenarioRunRouteImport.update({
+  id: '/api/ingest-scenario-run',
+  path: '/api/ingest-scenario-run',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIngestSettlementRoute = ApiIngestSettlementRouteImport.update({
   id: '/api/ingest-settlement',
   path: '/api/ingest-settlement',
@@ -306,6 +312,7 @@ export interface FileRoutesByFullPath {
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
+  '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -356,6 +363,7 @@ export interface FileRoutesByTo {
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
+  '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -407,6 +415,7 @@ export interface FileRoutesById {
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
+  '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
   '/': typeof IndexRoute
   '/mapa': typeof MapaRoute
@@ -459,6 +468,7 @@ export interface FileRouteTypes {
     | '/poda-na-byvanie'
     | '/api/ingest-za'
     | '/api/ingest-up'
+    | '/api/ingest-scenario-run'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -509,6 +519,7 @@ export interface FileRouteTypes {
     | '/poda-na-byvanie'
     | '/api/ingest-za'
     | '/api/ingest-up'
+    | '/api/ingest-scenario-run'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -559,6 +570,7 @@ export interface FileRouteTypes {
     | '/poda-na-byvanie'
     | '/api/ingest-za'
     | '/api/ingest-up'
+    | '/api/ingest-scenario-run'
     | '/api/ingest-settlement'
     | '/'
     | '/mapa'
@@ -607,6 +619,7 @@ export interface RootRouteChildren {
   PodaNaByvanieRoute: typeof PodaNaByvanieRoute
   ApiIngestZaRoute: typeof ApiIngestZaRoute
   ApiIngestUpRoute: typeof ApiIngestUpRoute
+  ApiIngestScenarioRunRoute: typeof ApiIngestScenarioRunRoute
   ApiIngestSettlementRoute: typeof ApiIngestSettlementRoute
   IndexRoute: typeof IndexRoute
   MapaRoute: typeof MapaRoute
@@ -791,6 +804,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ingest-up'
       fullPath: '/api/ingest-up'
       preLoaderRoute: typeof ApiIngestUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-scenario-run': {
+      id: '/api/ingest-scenario-run'
+      path: '/api/ingest-scenario-run'
+      fullPath: '/api/ingest-scenario-run'
+      preLoaderRoute: typeof ApiIngestScenarioRunRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-settlement': {
@@ -999,6 +1019,7 @@ const rootRouteChildren: RootRouteChildren = {
   PodaNaByvanieRoute: PodaNaByvanieRoute,
   ApiIngestZaRoute: ApiIngestZaRoute,
   ApiIngestUpRoute: ApiIngestUpRoute,
+  ApiIngestScenarioRunRoute: ApiIngestScenarioRunRoute,
   ApiIngestSettlementRoute: ApiIngestSettlementRoute,
   IndexRoute: IndexRoute,
   MapaRoute: MapaRoute,
