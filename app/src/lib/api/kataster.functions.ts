@@ -20,7 +20,7 @@ import type {
   ZoningFinding,
   ZoningSource,
 } from "../domain";
-import { canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, type Role } from "../domain";
+import { canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode } from "../development";
 
 const roleSchema = z.enum([
@@ -1307,6 +1307,37 @@ export const getZACases = createServerFn({ method: "POST" })
        ORDER BY zc.classification, zc.instrument_year DESC, zc.lv_no`,
       args,
     ).catch(() => []);
+  });
+
+// ——— Property-360 §2: sekcie „Tituly" (časť B) a „Ťarchy a poznámky" (časť C) pre dossier ———
+// Zdroj je `lv_titles`, rovnaký ako výpis LV — plný text je owner-sensitive (mená, rodné priezviská,
+// dátumy narodenia), preto ho vydáme len role s plným prístupom; počty vidí každý.
+// KĽÚČOVÉ (kontrakt §2 a §4): „neprítomné dáta nie sú 'bez tiarch'". Preto `hasData` rozlišuje
+//   hasData=false → o tomto LV nemáme ŽIADNY záznam časti B/C → stav je NEZNÁMY
+//   hasData=true, tarchyCount=0 → v našom snapshote ťarchy nie sú (stále treba overiť na úradnom LV)
+export type LvLegal = {
+  hasData: boolean; access: OwnerAccess;
+  titlesCount: number; tarchyCount: number;
+  titles: string[]; tarchy: string[];
+};
+export const getLvLegal = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema }))
+  .handler(async ({ data }): Promise<LvLegal> => {
+    const access = ownerAccess(data.role as Role);
+    const rows = await q<{ kind: string; txt: string }>(
+      "SELECT kind, txt FROM lv_titles WHERE dataset_id = ? AND lv_no = ? ORDER BY kind DESC, id",
+      [data.datasetId, data.lvNo],
+    ).catch(() => []);
+    const tit = rows.filter((r) => r.kind === "titul");
+    const tar = rows.filter((r) => r.kind === "tarcha");
+    return {
+      hasData: rows.length > 0,
+      access,
+      titlesCount: tit.length,
+      tarchyCount: tar.length,
+      titles: access === "full" ? tit.map((r) => r.txt) : [],
+      tarchy: access === "full" ? tar.map((r) => r.txt) : [],
+    };
   });
 
 // ——— GOLD-UP: ÚP určil na bývanie, kataster stále vedie ornú/TTP, nestojí na tom nič ———

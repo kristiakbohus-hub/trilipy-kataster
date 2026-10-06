@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import {
   getDatasets, getParcelByNo, getLvDetail, getParcelAccessibility, getParcelLimits,
   getUpDocs, getLocalityMedian, getParcelZone, getMarketListingsNear, esknIdentify,
-  getProperty360,
+  getProperty360, getLvLegal,
 } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
 import { CriteriaMatrix } from "../components/kit";
@@ -61,6 +61,7 @@ function ReportPage() {
   const [avm, setAvm] = useState<Awaited<ReturnType<typeof esknIdentify>>["avm"] | null>(null);
   const [market, setMarket] = useState<Awaited<ReturnType<typeof getMarketListingsNear>>>([]);
   const [signals, setSignals] = useState<Awaited<ReturnType<typeof getProperty360>> | null>(null);
+  const [legal, setLegal] = useState<Awaited<ReturnType<typeof getLvLegal>> | null>(null);
   const [ready, setReady] = useState(false);
   const [resultHash, setResultHash] = useState<string | null>(null);
 
@@ -69,6 +70,7 @@ function ReportPage() {
     const lat = parcel.centroid_lat, lng = parcel.centroid_lng;
     const jobs: Promise<unknown>[] = [];
     if (parcel.lv_no != null) jobs.push(getLvDetail({ data: { datasetId, lvNo: parcel.lv_no, role } }).then(setLv).catch(() => {}));
+    if (parcel.lv_no != null) jobs.push(getLvLegal({ data: { datasetId, lvNo: parcel.lv_no, role } }).then(setLegal).catch(() => {}));
     if (lat != null && lng != null) {
       jobs.push(getParcelAccessibility({ data: { lat, lng } }).then(setAccess).catch(() => {}));
       jobs.push(getParcelLimits({ data: { lat, lng } }).then(setLimits).catch(() => {}));
@@ -95,10 +97,10 @@ function ReportPage() {
   // Property-360 kontrakt (42_NL docs/16 §6): strojovo čitateľný JSON export + result_hash —
   // rovnaké fakty/počty/hodnoty musia sedieť medzi web zobrazením a exportom (jeden ResultBundle).
   const bundle = useMemo(() => ({
-    dataset: ds, parcel, lv, access, limits, upDocs, zone, avm, market, signals,
+    dataset: ds, parcel, lv, access, limits, upDocs, zone, avm, market, signals, legal,
     development: dev, odhadCenyEur: odhadCeny, medianEurM2: medPoz,
     as_of: ds?.updated_at ?? null,
-  }), [ds, parcel, lv, access, limits, upDocs, zone, avm, market, signals, dev, odhadCeny, medPoz]);
+  }), [ds, parcel, lv, access, limits, upDocs, zone, avm, market, signals, legal, dev, odhadCeny, medPoz]);
 
   useEffect(() => {
     if (!ready || !parcel) return;
@@ -171,6 +173,51 @@ function ReportPage() {
             ))}
           </tbody></table>
         ) : <Muted>{lv.count} vlastníkov (mená chránené — rola bez plného prístupu).</Muted>}
+      </Section>
+
+      {/* Property-360 §2: Tituly (časť B). Plný text je owner-sensitive → len rola s plným prístupom. */}
+      <Section title="Tituly (časť B)">
+        {parcel.lv_no == null ? <Muted>Parcela nemá priradené LV — tituly sa nedajú priradiť.</Muted>
+          : legal == null ? <Muted>Načítavam…</Muted>
+          : !legal.hasData ? <Muted>O tomto LV nemáme záznam časti B. Neznamená to, že tituly neexistujú — over na úradnom výpise.</Muted>
+          : legal.titlesCount === 0 ? <Muted>V našom zázname nie je k tomuto LV uvedený žiadny titul nadobudnutia.</Muted>
+          : legal.access === "full" ? (
+            <ol className="list-decimal space-y-1 pl-5 text-sm">
+              {legal.titles.map((t, i) => <li key={i} className="leading-relaxed">{t}</li>)}
+            </ol>
+          ) : <Muted>{legal.titlesCount} titulov (text chránený — rola bez plného prístupu).</Muted>}
+      </Section>
+
+      {/* Property-360 §2 + §4: nikdy netvrdiť „bez tiarch“ — chýbajúci záznam je NEZNÁMY stav. */}
+      <Section title="Ťarchy a poznámky (časť C)">
+        {parcel.lv_no == null ? <Muted>Parcela nemá priradené LV — ťarchy sa nedajú priradiť.</Muted>
+          : legal == null ? <Muted>Načítavam…</Muted>
+          : !legal.hasData ? (
+            <Muted>
+              O tomto LV nemáme záznam časti C. <b>Nie je to potvrdenie, že pozemok je bez tiarch</b> —
+              stav je neznámy, over ho na úradnom výpise z listu vlastníctva.
+            </Muted>
+          )
+          : legal.tarchyCount === 0 ? (
+            <Muted>
+              V našom snapshote nie je k tomuto LV zapísaná žiadna ťarcha. Pred prevodom to over na
+              úradnom výpise — náš záznam je informatívny a nemusí byť aktuálny.
+            </Muted>
+          )
+          : legal.access === "full" ? (
+            <>
+              <div className="mb-2 text-sm font-medium" style={{ color: "#a4553a" }}>
+                {legal.tarchyCount}× zapísaná ťarcha alebo poznámka
+              </div>
+              <ol className="list-decimal space-y-1 pl-5 text-sm">
+                {legal.tarchy.map((t, i) => <li key={i} className="leading-relaxed">{t}</li>)}
+              </ol>
+            </>
+          ) : (
+            <div className="text-sm" style={{ color: "#a4553a" }}>
+              {legal.tarchyCount}× zapísaná ťarcha alebo poznámka — text chránený (rola bez plného prístupu).
+            </div>
+          )}
       </Section>
 
       {signals && (signals.settlement.length > 0 || signals.landsearch.length > 0 || signals.deal) ? (
