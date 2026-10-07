@@ -414,7 +414,7 @@ function VypisPage() {
                 </div>
               )}
             </Section>
-            <OwnersSection c={cc} role={role} label="Vlastníci / oprávnené osoby podľa evidenčného stavu" />
+            <OwnersSection c={cc} role={role} datasetId={datasetId} label="Vlastníci / oprávnené osoby podľa evidenčného stavu" />
           </>
         ) : (
           /* ——— VÝPIS Z LV (Časti A/B/C) ——— */
@@ -536,7 +536,7 @@ function VypisPage() {
 
             {parts.B ? (
               <Section title="Časť B — Vlastníci a iné oprávnené osoby">
-                <OwnersSection c={cc} role={role} label={null} />
+                <OwnersSection c={cc} role={role} datasetId={datasetId} label={null} />
                 {/* Nadobúdacie tituly */}
                 <div className="mt-3">
                   <div className="mb-1 text-[11px] uppercase tracking-wide text-muted">Tituly nadobudnutia</div>
@@ -651,7 +651,11 @@ function CompanyRegistry({ ico, name, role }: { ico: string; name: string; role:
     </div>
   );
 }
-function OwnersSection({ c, role, label }: { c: Content; role: string; label: string | null }) {
+function OwnersSection({ c, role, datasetId, label }: { c: Content; role: string; datasetId: string; label: string | null }) {
+  // Dokumenty viazané na konkrétneho spoluvlastníka (splnomocnenie, korešpondencia, podpísaná zmluva).
+  // Schéma to vedela od začiatku (subject_type='owner'), chýbalo len UI. Panel pri každom riadku
+  // tabuľky by bol neprehľadný, preto výber vlastníka + jeden panel.
+  const [docOwner, setDocOwner] = useState<string>("");
   const ku = c.dataset?.ku_name ?? "—";
   const shareM2 = (share: string | null | undefined): string => {
     const f = shareFrac(share);
@@ -670,6 +674,20 @@ function OwnersSection({ c, role, label }: { c: Content; role: string; label: st
             />
             <div className="mt-2 text-[12px] text-muted">
               Celková výmera parciel registra C na LV: <b className="text-fg">{m2(c.totalAreaC)}</b>. „Výmera podľa podielu" = celková výmera × spoluvlastnícky podiel.
+            </div>
+            <div className="mt-3">
+              <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted">Dokumenty k vlastníkovi</div>
+              <select
+                value={docOwner}
+                onChange={(e) => setDocOwner(e.target.value)}
+                className="mb-2 rounded-md border border-line bg-paper px-2 py-1 text-xs text-fg"
+              >
+                <option value="">— vyber vlastníka —</option>
+                {c.owners.map((o, i) => <option key={i} value={o.name}>{o.name}</option>)}
+              </select>
+              {docOwner ? (
+                <DocumentsPanel datasetId={datasetId} subjectType="owner" subjectRef={docOwner} role={role as Role} compact />
+              ) : null}
             </div>
             {(() => {
               const firmy = c.owners.filter((o) => o.is_company && o.ico);
