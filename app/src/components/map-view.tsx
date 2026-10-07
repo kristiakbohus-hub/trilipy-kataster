@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { PointerEvent as RPointerEvent, WheelEvent as RWheelEvent, ReactNode } from "react";
 import type { LvOwner, Parcel, Role } from "../lib/domain";
+import { useAuth } from "../lib/auth-context";
 import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
 import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, type EsknParcel } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
@@ -315,6 +316,8 @@ export function MapView({
   initialCenter?: { lat: number; lng: number; zoom: number } | null;
   flyTo?: { lat: number; lng: number; zoom: number; nonce: number } | null;
 }) {
+  // token pre serverové funkcie, ktoré vydávajú mená vlastníkov (rola sa berie zo session)
+  const { token } = useAuth();
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const calibDev = useCalibDev(); // Fáza 5: kalibrované dev sadzby
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -751,7 +754,7 @@ export function MapView({
     }
     if (identified?.lv_no != null && datasetId) {
       setIdOwners(null);
-      getLvDetail({ data: { datasetId, lvNo: identified.lv_no, role } })
+      getLvDetail({ data: { datasetId, lvNo: identified.lv_no, role, token: token ?? undefined } })
         .then((r) => { if (alive) setIdOwners({ access: r.access, count: r.count, owners: r.owners }); })
         .catch(() => { if (alive) setIdOwners({ access: "denied", count: 0, owners: [] }); });
     } else {
@@ -2346,7 +2349,7 @@ export function MapView({
             <div className="mt-3">
               {!fullLv ? (
                 <button
-                  onClick={() => { if (!datasetId || identified.lv_no == null) return; setFullBusy(true); getLvVypis({ data: { datasetId, lvNo: identified.lv_no, role } }).then((r) => setFullLv(r)).catch(() => {}).finally(() => setFullBusy(false)); }}
+                  onClick={() => { if (!datasetId || identified.lv_no == null) return; setFullBusy(true); getLvVypis({ data: { datasetId, lvNo: identified.lv_no, role, token: token ?? undefined } }).then((r) => setFullLv(r)).catch(() => {}).finally(() => setFullBusy(false)); }}
                   disabled={fullBusy}
                   className="w-full rounded-md border border-line px-3 py-1.5 text-xs font-medium text-fg hover:bg-surface-2 disabled:opacity-50"
                 >

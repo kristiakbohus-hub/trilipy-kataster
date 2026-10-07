@@ -4,6 +4,7 @@ import { getDatasets, getLvRegistry, getLvDetail } from "../lib/api/kataster.fun
 import { ownerAccess, type Dataset, type Lv, type LvOwner } from "../lib/domain";
 import { Badge, Card, Disclaimer, Icon, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 // ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
 // by vložil dáta do HTML pre KOHOKOĽVEK, kto pozná URL. Ťaháme ich až v efekte.
@@ -23,6 +24,7 @@ type Detail = {
 function BrowserPage() {
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const { role } = useRole();
+  const { token } = useAuth();
   const access = ownerAccess(role);
 
   const [datasetId, setDatasetId] = useState<string | null>(null);
@@ -46,14 +48,14 @@ function BrowserPage() {
       setSelected(null);
       setDetail(null);
       try {
-        const r = await getLvRegistry({ data: { datasetId: dsId, role, q: q || undefined } });
+        const r = await getLvRegistry({ data: { datasetId: dsId, role, q: q || undefined, token: token ?? undefined } });
         setLvs(r.lvs);
         setCount(r.total);
       } finally {
         setLoading(false);
       }
     },
-    [role],
+    [role, token],
   );
 
   // Pri zmene roly znova načítať (mení sa name-search access) a pri prvom zvolení datasetu —
@@ -67,7 +69,7 @@ function BrowserPage() {
     if (!datasetId) return;
     setSelected(lvNo);
     setDetail(null);
-    const r = await getLvDetail({ data: { datasetId, lvNo, role } });
+    const r = await getLvDetail({ data: { datasetId, lvNo, role, token: token ?? undefined } });
     setDetail(r as Detail);
   }
 

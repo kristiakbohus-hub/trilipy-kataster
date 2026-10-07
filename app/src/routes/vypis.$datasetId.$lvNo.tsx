@@ -3,6 +3,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility, getChanges, getLvZoning, getLvAvm, type LvParcelAvm } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 import type { Role } from "../lib/domain";
 import { CommentsPanel, WatchButton } from "../components/collab";
 import { LegalRef } from "../components/legal-ref";
@@ -39,6 +40,7 @@ function VypisPage() {
   };
   const { typ } = Route.useSearch();
   const { role } = useRole();
+  const { token } = useAuth();
   const [c, setC] = useState<Content | null>(null);
   const [docType, setDocType] = useState<DocType>(typ);
   const [parts, setParts] = useState({ A: true, B: true, C: true });
@@ -46,7 +48,7 @@ function VypisPage() {
   useEffect(() => { preloadCalib(); }, []); // Fáza 5: nahrej kalibráciu pre Word export (calibDevSync)
   useEffect(() => {
     let alive = true;
-    getLvVypis({ data: { datasetId, lvNo, role } }).then(async (r) => {
+    getLvVypis({ data: { datasetId, lvNo, role, token: token ?? undefined } }).then(async (r) => {
       if (!alive) return;
       setC(r);
       const kodKu = r.dataset?.ku_code ?? "";
@@ -59,7 +61,7 @@ function VypisPage() {
       if (alive) { setZoning(z); setAvm(a); }
     });
     return () => { alive = false; };
-  }, [datasetId, lvNo, role]);
+  }, [datasetId, lvNo, role, token]);
 
   // Stráž je až tu, pod všetkými hookmi komponentu (posledný je efekt vyššie).
   if (!c) return <div className="p-8 text-center text-sm text-muted">Načítavam výpis…</div>;

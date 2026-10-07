@@ -4,6 +4,7 @@ import { getLandsearchBrowse, type LandsearchRow } from "../lib/api/kataster.fun
 import { m2 } from "../lib/domain";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 export const Route = createFileRoute("/stavebne-pozemky")({
   head: () => ({ meta: [{ title: "Stavebné pozemky — TRI LIPY KATASTER CORE" }] }),
@@ -29,6 +30,7 @@ function parseAccessTimes(s: string | null): { label: string; seconds: number }[
 
 function LandPage() {
   const { role } = useRole();
+  const { token } = useAuth();
   const [purpose, setPurpose] = useState<"residential" | "retail" | "industrial">("residential");
   const [kuFilter, setKuFilter] = useState("");
   const [verdict, setVerdict] = useState<"MATCH" | "PROVISIONAL">("MATCH");
@@ -38,10 +40,10 @@ function LandPage() {
 
   useEffect(() => {
     setLoading(true);
-    getLandsearchBrowse({ data: { purpose, role } })
+    getLandsearchBrowse({ data: { purpose, role, token: token ?? undefined } })
       .then(setRows)
       .finally(() => setLoading(false));
-  }, [purpose, role]);
+  }, [purpose, role, token]);
 
   const katastre = useMemo(() => {
     const m = new Map<string, string>();

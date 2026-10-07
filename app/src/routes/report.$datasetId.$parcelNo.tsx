@@ -9,6 +9,7 @@ import {
   getProperty360, getLvLegal,
 } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 import { CriteriaMatrix } from "../components/kit";
 import { QUALITY_META } from "../lib/domain";
 import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "../lib/development";
@@ -67,6 +68,7 @@ function ReportPage() {
     getParcelByNo({ data: { datasetId, parcelNo } }).then(setParcel).catch(() => setParcel(null));
   }, [datasetId, parcelNo]);
   const { role } = useRole();
+  const { token } = useAuth();
   const locality = (ds?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "").trim();
 
   const [lv, setLv] = useState<Awaited<ReturnType<typeof getLvDetail>> | null>(null);
@@ -86,8 +88,8 @@ function ReportPage() {
     if (!parcel) { setReady(true); return; }
     const lat = parcel.centroid_lat, lng = parcel.centroid_lng;
     const jobs: Promise<unknown>[] = [];
-    if (parcel.lv_no != null) jobs.push(getLvDetail({ data: { datasetId, lvNo: parcel.lv_no, role } }).then(setLv).catch(() => {}));
-    if (parcel.lv_no != null) jobs.push(getLvLegal({ data: { datasetId, lvNo: parcel.lv_no, role } }).then(setLegal).catch(() => {}));
+    if (parcel.lv_no != null) jobs.push(getLvDetail({ data: { datasetId, lvNo: parcel.lv_no, role, token: token ?? undefined } }).then(setLv).catch(() => {}));
+    if (parcel.lv_no != null) jobs.push(getLvLegal({ data: { datasetId, lvNo: parcel.lv_no, role, token: token ?? undefined } }).then(setLegal).catch(() => {}));
     if (lat != null && lng != null) {
       jobs.push(getParcelAccessibility({ data: { lat, lng } }).then(setAccess).catch(() => {}));
       jobs.push(getParcelLimits({ data: { lat, lng } }).then(setLimits).catch(() => {}));
@@ -103,7 +105,7 @@ function ReportPage() {
     // `parcel` a `locality` MUSIA byť v deps: kým prichádzali zo SSR loadera, boli dostupné už pri
     // prvom renderi. Teraz sa načítavajú asynchrónne — bez nich efekt zbehne s parcel===null,
     // vyskočí hneď na začiatku a nikdy sa nezopakuje (prázdne vlastníctvo, ťarchy, trh, dostupnosť).
-  }, [datasetId, parcelNo, role, parcel, locality]);
+  }, [datasetId, parcelNo, role, token, parcel, locality]);
 
   const calibDev = useCalibDev(); // Fáza 5: kalibrované dev sadzby
 

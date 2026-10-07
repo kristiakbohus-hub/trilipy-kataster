@@ -106,9 +106,10 @@ export const getDataset = createServerFn({ method: "POST" })
 
 // ——— Kataster Browser: register LV (rolovo maskovaný na serveri) ———
 export const getLvRegistry = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), role: roleSchema, q: z.string().optional() }))
+  .validator(z.object({ datasetId: z.string(), role: roleSchema, q: z.string().optional(), token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken)
+    const role = await roleFromToken(data.token);
     const access = ownerAccess(role);
     const query = (data.q ?? "").trim();
     let lvs: Lv[];
@@ -146,9 +147,10 @@ export const getLvRegistry = createServerFn({ method: "POST" })
 
 // Detail jedného LV — mená/podiely len pre full; real_estate dostane súhrn; ostatní denied.
 export const getLvDetail = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken)
+    const role = await roleFromToken(data.token);
     const access = ownerAccess(role);
     const cols = access === "full"
       ? "id, lv_no, name, share, is_company, birth_date, title, born_name, ico, addr_obec, addr_cislo, addr_psc"
@@ -783,6 +785,21 @@ async function userFromToken(token: string): Promise<AuthUser | null> {
   const u = (await q<{ id: string; email: string; name: string | null; role: string }>("SELECT id, email, name, role FROM users WHERE id = ?", [s.user_id]))[0];
   return u ? { id: u.id, email: u.email, name: u.name, role: u.role as Role } : null;
 }
+/**
+ * Autoritatívna rola zo serverovej session — NIE z toho, čo pošle klient.
+ *
+ * Rola sa dovtedy brala z `localStorage` (role-context.tsx) a serverové funkcie jej verili, takže
+ * prihlásený používateľ si ju mohol prepnúť na „admin" a dostať mená vlastníkov, dátumy narodenia
+ * a adresy. `users.role` je pritom v D1 a session ju vie dohľadať.
+ *
+ * Pri chýbajúcom alebo neplatnom tokene vraciame NAJNIŽŠIE oprávnenie, nie to klientske — výpadok
+ * sa prejaví ako maskované údaje (viditeľné a opraviteľné), nie ako tichý únik.
+ */
+async function roleFromToken(token: string | undefined): Promise<Role> {
+  const u = token ? await userFromToken(token).catch(() => null) : null;
+  return (u?.role ?? "viewer") as Role;
+}
+
 export const registerUser = createServerFn({ method: "POST" })
   .validator(z.object({ email: z.string().email(), password: z.string().min(6), name: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; token?: string; user?: AuthUser; message?: string }> => {
@@ -1517,9 +1534,10 @@ export type LvLegal = {
   titles: string[]; tarchy: string[];
 };
 export const getLvLegal = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<LvLegal> => {
-    const access = ownerAccess(data.role as Role);
+    // rola zo session, nie od klienta (viď roleFromToken)
+    const access = ownerAccess(await roleFromToken(data.token));
     const rows = await q<{ kind: string; txt: string }>(
       "SELECT kind, txt FROM lv_titles WHERE dataset_id = ? AND lv_no = ? ORDER BY kind DESC, id",
       [data.datasetId, data.lvNo],
@@ -1616,7 +1634,7 @@ export type LandsearchRow = {
   access_times: string | null; owners: string | null; n_owners: number | null; reason: string | null;
 };
 export const getLandsearchBrowse = createServerFn({ method: "POST" })
-  .validator(z.object({ purpose: z.string().optional(), kodKu: z.string().optional(), role: roleSchema }))
+  .validator(z.object({ purpose: z.string().optional(), kodKu: z.string().optional(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<LandsearchRow[]> => {
     const where: string[] = ["verdict IN ('MATCH','PROVISIONAL')"];
     const args: unknown[] = [];
@@ -1628,7 +1646,8 @@ export const getLandsearchBrowse = createServerFn({ method: "POST" })
        FROM landsearch_results WHERE ${where.join(" AND ")}
        ORDER BY (verdict='MATCH') DESC, quality DESC LIMIT 300`, args,
     ).catch(() => []);
-    const full = ownerAccess(data.role as Role) === "full";
+    // rola zo session, nie od klienta — landsearch_results nesú REÁLNE mená vlastníkov
+    const full = ownerAccess(await roleFromToken(data.token)) === "full";
     return full ? rows : rows.map((r) => ({ ...r, owners: null }));
   });
 
@@ -1678,9 +1697,10 @@ export const getLvZoning = createServerFn({ method: "POST" })
 type DocParcel = { register: string; parcel_no: string; area_m2: number; drp_text: string | null; placement: string | null };
 type DocBuilding = { descr: string; on_parcel: string | null };
 export const getLvVypis = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken)
+    const role = await roleFromToken(data.token);
     const access = ownerAccess(role);
     const dataset = (await q<Dataset>("SELECT * FROM datasets WHERE id = ?", [data.datasetId]))[0] ?? null;
 
@@ -3790,7 +3810,7 @@ export type LvSettlement = {
   disclaimer: string;
 };
 export const getLvSettlement = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<LvSettlement> => {
     const access = ownerAccess(data.role as Role);
     const disclaimer = "Orientačné, nie právna rada — over s notárom/advokátom. § kurátorované zo znalostnej bázy.";
