@@ -15,6 +15,14 @@ const SCENARIO_LABEL: Record<string, string> = {
 const EFFECT_LABEL: Record<string, string> = {
   MUST: "Povinná podmienka", MUST_NOT: "Zákaz", PREFER: "Preferencia", AVOID: "Nežiaduce", INFO: "Informatívne",
 };
+// Kritériá chodia ako strojové kľúče — v klientskom výstupe musia byť čitateľnou podmienkou.
+const CRIT_LABEL: Record<string, string> = {
+  zoning_permits_housing: "Územný plán na danom mieste dovoľuje bývanie",
+  land_still_agricultural: "Kataster vedie pozemok ako ornú pôdu alebo trvalý trávny porast",
+  already_built: "Na pozemku stojí stavba",
+  protected_soil: "Chránená pôda (vyňatie je podstatne ťažšie)",
+  cheap_withdrawal: "Nízky náklad vyňatia z poľnohospodárskeho fondu",
+};
 const num = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("sk-SK"));
 
 function Sec({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
@@ -77,7 +85,7 @@ function ClientReportPage() {
             {r.brief.map((c, i) => (
               <tr key={i} className="border-b border-line/40">
                 <td className="py-0.5 pr-3 text-muted">{EFFECT_LABEL[c.effect] ?? c.effect}</td>
-                <td className="py-0.5">{c.key}{c.note ? <span className="text-muted"> — {c.note}</span> : null}</td>
+                <td className="py-0.5">{CRIT_LABEL[c.key] ?? c.key}</td>
               </tr>
             ))}
           </tbody></table>
@@ -187,11 +195,17 @@ function ClientReportPage() {
           <M>Pri preukázaných zhodách neostali nevyhodnotené povinné podmienky.</M>
         ) : (
           <ul className="space-y-0.5">
-            {r.uncertainties.map((u, i) => (
-              <li key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
-                <span>{u.text}</span><span className="shrink-0 tabular-nums text-muted">{u.n}×</span>
-              </li>
-            ))}
+            {r.uncertainties.map((u, i) => {
+              // candidate.py posiela „<kluc>: NOT VERIFIED" — v klientskom reporte to musí byť veta.
+              const key = u.text.split(":")[0].trim();
+              const label = CRIT_LABEL[key];
+              return (
+                <li key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
+                  <span>{label ? `Nepodarilo sa overiť: ${label.charAt(0).toLowerCase()}${label.slice(1)}` : u.text}</span>
+                  <span className="shrink-0 tabular-nums text-muted">{u.n}×</span>
+                </li>
+              );
+            })}
           </ul>
         )}
         <p className="mt-2 text-xs text-muted">

@@ -1348,9 +1348,12 @@ export const getClientReport = createServerFn({ method: "POST" })
     type Parsed = { criteria?: ClientReportCriterion[]; uncertainties?: string[] };
     const parse = (s: string | null): Parsed => { try { return s ? JSON.parse(s) as Parsed : {}; } catch { return {}; } };
 
-    // B — brief = kľúče a efekty kritérií tak, ako ich beh reálne použil (nie prepis z dokumentácie)
+    // B — brief = kľúče a efekty kritérií tak, ako ich beh reálne použil (nie prepis z dokumentácie).
+    // POZOR: `note` jednotlivého kandidáta sa sem NEdáva — je to jeho konkrétna hodnota („zóna:
+    // bývanie/rekreácia“, „422 €“) a v zadaní by vyzerala ako požiadavka klienta. Kontrakt §3 B
+    // žiada oddeliť podmienky od hodnôt.
     const brief: ClientReportCriterion[] = (parse(rows[0]?.criteria_json ?? null).criteria ?? [])
-      .map((c) => ({ key: c.key, effect: c.effect, outcome: "", note: c.note ?? null }));
+      .map((c) => ({ key: c.key, effect: c.effect, outcome: "", note: null }));
 
     // G — neistoty naprieč kandidátmi (čo treba doveriť), zoradené podľa početnosti
     const unc = new Map<string, number>();
@@ -1359,8 +1362,10 @@ export const getClientReport = createServerFn({ method: "POST" })
     const zs = new Map<string, number>();
     for (const r of rows) if (r.zoning_src) zs.set(r.zoning_src, (zs.get(r.zoning_src) ?? 0) + 1);
 
+    // ku_code nemajú vyplnené všetky datasety (staršie importy) → fallback na id `kn-<kod>`
     const ds = (await q<{ updated_at: string }>(
-      "SELECT updated_at FROM datasets WHERE ku_code = ? LIMIT 1", [data.kodKu]).catch(() => []))[0] ?? null;
+      "SELECT updated_at FROM datasets WHERE ku_code = ? OR id = ? LIMIT 1",
+      [data.kodKu, `kn-${data.kodKu}`]).catch(() => []))[0] ?? null;
 
     return {
       scenario: data.scenario, kodKu: data.kodKu,
