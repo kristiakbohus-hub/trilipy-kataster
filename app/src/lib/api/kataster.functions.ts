@@ -20,7 +20,7 @@ import type {
   ZoningFinding,
   ZoningSource,
 } from "../domain";
-import { canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, type OwnerAccess, type Role } from "../domain";
+import { canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode } from "../development";
 
 const roleSchema = z.enum([
@@ -1382,11 +1382,11 @@ export const getClientReport = createServerFn({ method: "POST" })
       rows = src.map((x, i) => ({
         id: `${data.kodKu}-${i + 1}`,
         title: x.building_desc ?? x.building_id ?? "stavba",
-        subtitle: `pozemok ${x.parcel_no ?? "—"} (${x.register ?? "?"}) · LV ${x.land_lv_no ?? "—"}`
+        subtitle: `pozemok ${parcelLabel(x.parcel_no)} (${x.register ?? "?"}) · LV ${x.land_lv_no ?? "—"}`
           + (x.has_spf ? " · SPF/štát" : "") + (x.minority_share ? " · menšinový podiel" : ""),
         cols: [
           { label: "Stavba", value: x.building_desc ?? "—" },
-          { label: "Pozemok", value: x.parcel_no ?? "—" },
+          { label: "Pozemok", value: parcelLabel(x.parcel_no) },
           { label: "Register", value: x.register ?? "—" },
           { label: "Vlastníkov", value: x.n_land_owners == null ? "—" : String(x.n_land_owners) },
           { label: "Odkup", value: eurTxt(x.buyout_eur) },

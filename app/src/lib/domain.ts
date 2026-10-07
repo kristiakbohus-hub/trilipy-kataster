@@ -372,3 +372,15 @@ export const TASK_STATE: Record<string, { label: string; color: string }> = {
   declined: { label: "Odmietol", color: "#9c4a40" },
 };
 export const TASK_STATE_ORDER = ["pending", "contacted", "agreed", "signed", "declined"] as const;
+
+/** SPI kód parcely (PARCIS) → čitateľné číslo. Posledné 4 číslice sú podlomenie:
+ *  "10000" → "1", "49660003" → "4966/3", "134720470" → "13472/470".
+ *  Scenár vysporiadania posiela surový kód, ktorý je pri práci nepoužiteľný. */
+export function parcelLabel(code: string | null | undefined): string {
+  if (!code) return "—";
+  const s = String(code).trim();
+  if (!/^\d{5,}$/.test(s)) return s;          // už naformátované (napr. "4966/3") alebo neznámy tvar
+  const base = s.slice(0, -4).replace(/^0+/, "") || "0";
+  const sub = Number(s.slice(-4));
+  return sub ? `${base}/${sub}` : base;
+}
