@@ -77,6 +77,13 @@ function ClientReportPage() {
           Najdôležitejšie obmedzenie: výsledok platí pre deklarované územie a snapshot dát uvedený vyššie.
           Nejde o právny ani znalecký záver.
         </p>
+        {!r.hasDataset ? (
+          <p className="mt-1 text-xs" style={{ color: "#a4553a" }}>
+            Toto k.ú. <b>nie je v appke importované ako dataset</b> (parcely, LV, vlastníci). Kandidáti
+            vyššie pochádzajú z analýzy nad lokálnymi dátami, ale nedajú sa otvoriť v dossieri ani z nich
+            založiť deal, a snapshot dát sa nedá uviesť.
+          </p>
+        ) : null}
       </Sec>
 
       <Sec id="B." title="Zadanie a interpretácia">

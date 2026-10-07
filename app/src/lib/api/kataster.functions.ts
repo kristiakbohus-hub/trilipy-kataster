@@ -1317,6 +1317,7 @@ export const getZACases = createServerFn({ method: "POST" })
 export type ClientReportCriterion = { key: string; effect: string; outcome: string; note: string | null };
 export type ClientReport = {
   scenario: string; kodKu: string; kuName: string | null; asOf: string | null;
+  hasDataset: boolean;                     // k.ú. má v appke importovaný dataset (parcely/LV/vlastníci)
   run: ScenarioRun | null;
   nMatch: number; nProvisional: number;
   brief: ClientReportCriterion[];          // B — normalizovaný brief (MUST / MUST_NOT / PREFER / AVOID)
@@ -1371,6 +1372,7 @@ export const getClientReport = createServerFn({ method: "POST" })
       scenario: data.scenario, kodKu: data.kodKu,
       kuName: rows[0]?.ku_name ?? run?.ku_name ?? null,
       asOf: ds?.updated_at ?? run?.as_of ?? null,
+      hasDataset: !!ds,
       run,
       nMatch: rows.filter((r) => r.classification === "MATCH").length,
       nProvisional: rows.filter((r) => r.classification === "PROVISIONAL").length,
