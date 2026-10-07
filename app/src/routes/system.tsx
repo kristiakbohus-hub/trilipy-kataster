@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { exportBackup, getSystemStatus, egressSelfTest } from "../lib/api/kataster.functions";
 import { Badge, Card, Disclaimer, Icon, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
 // cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
@@ -12,6 +13,7 @@ export const Route = createFileRoute("/system")({
 });
 
 function SystemPage() {
+  const { token } = useAuth();
   const [s, setS] = useState<Awaited<ReturnType<typeof getSystemStatus>> | null>(null);
   useEffect(() => { getSystemStatus().then(setS).catch(() => {}); }, []);
   const { role } = useRole();
@@ -24,7 +26,7 @@ function SystemPage() {
   const [egRes, setEgRes] = useState<EgRes | null>(null);
   async function runEgress() {
     setEgBusy(true); setEgRes(null);
-    try { setEgRes(await egressSelfTest({ data: { role } })); }
+    try { setEgRes(await egressSelfTest({ data: { token: token ?? undefined, role } })); }
     catch (e) { setEgRes({ allowed: true, anyOk: false, probes: [{ id: "err", label: "Chyba volania", ok: false, status: null, ms: 0, sample: null, error: e instanceof Error ? e.message : String(e) }] }); }
     finally { setEgBusy(false); }
   }

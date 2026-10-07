@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, searchDataset, geocodePlace, type GeoPlace } from "../lib/api/kataster.functions";
 import { STATUS_META, canRunPipeline, type Dataset, type MapText, type Parcel, type Role } from "../lib/domain";
+import { useAuth } from "../lib/auth-context";
 import { MapView, type WmsDef } from "../components/map-view";
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
@@ -21,6 +22,7 @@ export const Route = createFileRoute("/mapa")({
 });
 
 function MapPage() {
+  const { token } = useAuth();
   const [datasets, setDatasets] = useState<Dataset[]>([]);
   const { role } = useRole();
   const [datasetId, setDatasetId] = useState<string | null>(null);
@@ -110,7 +112,7 @@ function MapPage() {
     }
     setWBusy(true); setWMsg(null);
     try {
-      const r = await addWmsSource({ data: { datasetId, name: wName.trim(), url: wUrl.trim(), layers: wLayers.trim(), role } });
+      const r = await addWmsSource({ data: { token: token ?? undefined, datasetId, name: wName.trim(), url: wUrl.trim(), layers: wLayers.trim(), role } });
       setWMsg(r.ok ? "WMS pridaná — nájdeš ju vo Vrstvách." : r.message ?? "Neúspešné.");
       if (r.ok) {
         setWName(""); setWUrl(""); setWLayers("");
@@ -226,6 +228,7 @@ const NATIONAL_WMS = [
 
 // ——— ZBGIS-style vyhľadávanie na mape: k.ú. / parcela / LV / vlastník → skok / fokus ———
 function MapSearch({ datasetId, datasets, role, onPick, onPickDataset, onPickPlace }: { datasetId: string; datasets: Dataset[]; role: Role; onPick: (id: string) => void; onPickDataset: (id: string) => void; onPickPlace: (lat: number, lng: number) => void }) {
+  const { token } = useAuth();
   const [q, setQ] = useState("");
   const [res, setRes] = useState<Awaited<ReturnType<typeof searchDataset>> | null>(null);
   const [places, setPlaces] = useState<GeoPlace[]>([]);
@@ -243,7 +246,7 @@ function MapSearch({ datasetId, datasets, role, onPick, onPickDataset, onPickPla
     if (gRef.current) clearTimeout(gRef.current);
     if (v.trim().length < 1) { setRes(null); setPlaces([]); return; }
     tRef.current = setTimeout(async () => {
-      try { setRes(await searchDataset({ data: { datasetId, q: v.trim(), role } })); } catch { setRes(null); }
+      try { setRes(await searchDataset({ data: { token: token ?? undefined, datasetId, q: v.trim(), role } })); } catch { setRes(null); }
     }, 220);
     // národné geokódovanie (ZBGIS-style našepkávač) — dlhší debounce (Nominatim policy)
     if (v.trim().length >= 3) {

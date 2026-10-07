@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { addZoningFinding, getDatasets, listZoning } from "../lib/api/kataster.functions";
 import { ZONING_STATUS_META, canRunPipeline } from "../lib/domain";
+import { useAuth } from "../lib/auth-context";
 import { Badge, Card, Disclaimer, Icon, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
@@ -22,6 +23,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 function ZoningPage() {
+  const { token } = useAuth();
   const [zoning, setZoning] = useState<Awaited<ReturnType<typeof listZoning>>>({ sources: [], findings: [] });
   const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
   const reload = useCallback(() => {
@@ -47,7 +49,7 @@ function ZoningPage() {
     if (!datasetId || label.trim().length < 3) { setNote("Zadaj dataset a popis (min. 3 znaky)."); return; }
     setBusy(true); setNote(null);
     try {
-      const r = await addZoningFinding({ data: { datasetId, category, label: label.trim(), status, target: target.trim() || undefined, role } });
+      const r = await addZoningFinding({ data: { token: token ?? undefined, datasetId, category, label: label.trim(), status, target: target.trim() || undefined, role } });
       setNote(r.ok ? "Screening finding pridaný." : r.message ?? "Neúspešné.");
       if (r.ok) { setLabel(""); setTarget(""); }
       reload();

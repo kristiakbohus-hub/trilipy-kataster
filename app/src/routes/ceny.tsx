@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities, refreshMarketData, refreshMarketListings, refreshMarketPriceHistory, getMarketListings, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 import { Card, Disclaimer, SectionHeader, Badge } from "../components/kit";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
@@ -21,6 +22,7 @@ type OkresNode = { okres: string; median: number | null; cnt: number; obce: Obec
 type KrajNode = { kraj: string; median: number | null; cnt: number; okresy: OkresNode[] };
 
 function CenyPage() {
+  const { token } = useAuth();
 
   const { role } = useRole();
   const [stats, setStats] = useState<Awaited<ReturnType<typeof getMarketStats>>>({ meta: {}, latest: null, overview: [] });
@@ -104,20 +106,20 @@ function CenyPage() {
   async function refresh() {
     setBusy(true); setMsg(null);
     try {
-      const r = await refreshMarketData({ data: { role, url: url.trim() || undefined } });
+      const r = await refreshMarketData({ data: { token: token ?? undefined, role, url: url.trim() || undefined } });
       if (!r.ok) { setMsg(r.message ?? "Zlyhalo."); return; }
       let ing = 0;
       const base = (url.trim() || stats.meta.source_url || "");
       for (let i = 0; i < (r.chunks ?? 0); i++) {
         const chunkUrl = base.replace("market-data.json", `market-listings-${i}.json`);
-        const rr = await refreshMarketListings({ data: { role, url: chunkUrl } }).catch(() => ({ ok: false, count: 0 }));
+        const rr = await refreshMarketListings({ data: { token: token ?? undefined, role, url: chunkUrl } }).catch(() => ({ ok: false, count: 0 }));
         if (rr.ok) ing += rr.count;
         setMsg(`Načítavam inzeráty… ${i + 1}/${r.chunks} (${ing})`);
       }
       let ph = 0;
       for (let i = 0; i < (r.phChunks ?? 0); i++) {
         const phUrl = base.replace("market-data.json", `market-pricehistory-${i}.json`);
-        const rr = await refreshMarketPriceHistory({ data: { role, url: phUrl } }).catch(() => ({ ok: false, count: 0 }));
+        const rr = await refreshMarketPriceHistory({ data: { token: token ?? undefined, role, url: phUrl } }).catch(() => ({ ok: false, count: 0 }));
         if (rr.ok) ph += rr.count;
         setMsg(`Načítavam cenové krivky… ${i + 1}/${r.phChunks} (${ph})`);
       }

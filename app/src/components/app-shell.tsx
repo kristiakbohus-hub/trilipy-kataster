@@ -1,10 +1,9 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { Icon } from "./kit";
-import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
 import { NotifBell } from "./collab";
-import { ROLES, type AppPath, type Role } from "../lib/domain";
+import { ROLES, type AppPath } from "../lib/domain";
 
 type NavItem = { to: AppPath; label: string; icon: string };
 type NavGroup = { title?: string; collapsible?: boolean; items: NavItem[] };
@@ -109,22 +108,20 @@ function NavList({ pathname, onNavigate }: { pathname: string; onNavigate?: () =
   );
 }
 
+// Prepínač roly tu bol dovtedy, kým serverové funkcie verili role od klienta. Odkedy si ju server
+// berie zo session (roleFromToken), prepínanie na prístup k dátam nemá vplyv — ponechať ho by
+// znamenalo tvrdiť používateľovi niečo, čo nie je pravda. Zobrazujeme teda skutočnú rolu účtu.
 function RoleSwitcher() {
-  const { role, setRole } = useRole();
-  const current = ROLES.find((r) => r.id === role);
+  const { user } = useAuth();
+  const current = ROLES.find((r) => r.id === user?.role);
+  if (!user) return null;
   return (
-    <label className="flex items-center gap-2" title={current?.desc}>
+    <span className="flex items-center gap-2" title={current?.desc}>
       <span className="hidden text-xs text-muted sm:inline">Rola</span>
-      <select
-        value={role}
-        onChange={(e) => setRole(e.target.value as Role)}
-        className="rounded-md border border-line bg-paper px-2.5 py-1.5 text-sm text-fg outline-none focus:border-ink"
-      >
-        {ROLES.map((r) => (
-          <option key={r.id} value={r.id}>{r.label}</option>
-        ))}
-      </select>
-    </label>
+      <span className="rounded-md border border-line bg-paper px-2.5 py-1.5 text-sm text-fg">
+        {current?.label ?? user.role}
+      </span>
+    </span>
   );
 }
 

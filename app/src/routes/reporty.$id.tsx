@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getReportContent } from "../lib/api/kataster.functions";
 import { REPORT_KIND_LABEL, REPORT_STATUS_META, canExport } from "../lib/domain";
+import { useAuth } from "../lib/auth-context";
 import { Badge, Card, Disclaimer, Icon } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
@@ -15,6 +16,7 @@ export const Route = createFileRoute("/reporty/$id")({
 });
 
 function ReportDetail() {
+  const { token } = useAuth();
   const params = Route.useParams();
   const id = Number(params.id);
   const { role } = useRole();
@@ -22,7 +24,7 @@ function ReportDetail() {
 
   useEffect(() => {
     let alive = true;
-    getReportContent({ data: { id, role } }).then((c) => alive && setContent(c));
+    getReportContent({ data: { token: token ?? undefined, id, role } }).then((c) => alive && setContent(c));
     return () => { alive = false; };
   }, [id, role]);
 

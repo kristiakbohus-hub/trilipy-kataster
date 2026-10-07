@@ -195,11 +195,11 @@ export const addWmsSource = createServerFn({ method: "POST" })
       url: z.string().url(),
       layers: z.string().min(1),
       format: z.string().optional(),
-      role: roleSchema,
+      role: roleSchema, token: z.string().optional(),
     }),
   )
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie pridať WMS." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -226,9 +226,9 @@ export const getMapData = createServerFn({ method: "POST" })
 
 // ——— ZBGIS search bar: parcela / LV / vlastník v rámci datasetu → parcel_id na fokus mapy ———
 export const searchDataset = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), q: z.string(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), q: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     const query = data.q.trim();
     const empty = { parcels: [] as SearchParcel[], lvs: [] as SearchLv[], owners: [] as SearchOwner[] };
     if (query.length < 1) return empty;
@@ -635,9 +635,9 @@ export const nlQuery = createServerFn({ method: "POST" })
 
 // ——— Owners pre jednu parcelu (identify, rolovo gatované) ———
 export const getParcelOwners = createServerFn({ method: "POST" })
-  .validator(z.object({ parcelId: z.string(), role: roleSchema }))
+  .validator(z.object({ parcelId: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     const count =
       (await q<{ n: number }>("SELECT COUNT(*) AS n FROM owners WHERE parcel_id = ?", [
         data.parcelId,
@@ -652,9 +652,9 @@ export const getParcelOwners = createServerFn({ method: "POST" })
 
 // Owners pre celý dataset (rolovo gatované) — doťahuje sa klientsky podľa roly.
 export const getDatasetOwners = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     const count =
       (await q<{ n: number }>("SELECT COUNT(*) AS n FROM owners WHERE dataset_id = ?", [
         data.datasetId,
@@ -710,10 +710,10 @@ export const generateReport = createServerFn({ method: "POST" })
 
 export const setReportStatus = createServerFn({ method: "POST" })
   .validator(
-    z.object({ id: z.number(), status: z.enum(["draft", "review", "signed"]), role: roleSchema }),
+    z.object({ id: z.number(), status: z.enum(["draft", "review", "signed"]), role: roleSchema, token: z.string().optional() }),
   )
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (data.status === "signed" && !canSign(role))
       return { ok: false, message: "Rola nemá oprávnenie podpísať report." };
     if (data.status === "review" && !canExport(role))
@@ -726,9 +726,9 @@ export const setReportStatus = createServerFn({ method: "POST" })
   });
 
 export const runReadinessRecheck = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie spustiť pipeline." };
     const ds = (await q<Dataset>("SELECT * FROM datasets WHERE id = ?", [data.datasetId]))[0];
     if (!ds) return { ok: false, message: "Dataset neexistuje." };
@@ -1855,7 +1855,7 @@ export const importDataset = createServerFn({ method: "POST" })
       code: z.string().min(3),
       name: z.string().min(2),
       region: z.string().optional(),
-      role: roleSchema,
+      role: roleSchema, token: z.string().optional(),
       parcels: z
         .array(
           z.object({
@@ -1871,7 +1871,7 @@ export const importDataset = createServerFn({ method: "POST" })
     }),
   )
   .handler(async ({ data }): Promise<{ ok: boolean; datasetId?: string; count?: number; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie importovať dataset." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -1947,9 +1947,9 @@ async function refreshDatasetStatsCore(datasetId?: string): Promise<void> {
   );
 }
 export const refreshDatasetStats = createServerFn({ method: "POST" })
-  .validator(z.object({ role: roleSchema, datasetId: z.string().optional() }))
+  .validator(z.object({ role: roleSchema, token: z.string().optional(), datasetId: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    if (!canRunPipeline(data.role as Role)) return { ok: false, message: "Rola nemá oprávnenie." };
+    if (!canRunPipeline(await roleFromToken(data.token))) return { ok: false, message: "Rola nemá oprávnenie." };
     try { await refreshDatasetStatsCore(data.datasetId); return { ok: true }; }
     catch (e) { return { ok: false, message: String((e as Error)?.message ?? e) }; }
   });
@@ -1959,7 +1959,7 @@ export const refreshDatasetStats = createServerFn({ method: "POST" })
 export const importEknParcels = createServerFn({ method: "POST" })
   .validator(z.object({
     datasetId: z.string(),
-    role: roleSchema,
+    role: roleSchema, token: z.string().optional(),
     append: z.boolean().optional(),   // false = najprv zmaž existujúce E-KN (prvý chunk); true = pridaj (ďalšie chunky)
     parcels: z.array(z.object({
       parcel_no: z.string(), area_m2: z.number(),
@@ -1968,7 +1968,7 @@ export const importEknParcels = createServerFn({ method: "POST" })
     })).min(1).max(2000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; count?: number; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nedostupná." };
@@ -2034,9 +2034,9 @@ export const getSystemStatus = createServerFn({ method: "GET" }).handler(async (
 
 // ——— Fáza 4: Report Builder obsah + Export Safety (9.20) ———
 export const getReportContent = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.number(), role: roleSchema }))
+  .validator(z.object({ id: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     const access = ownerAccess(role);
     const report = (await q<ReportRow & { ku_name: string }>(
       `SELECT r.*, d.ku_name AS ku_name FROM reports r JOIN datasets d ON d.id = r.dataset_id WHERE r.id = ?`,
@@ -2110,11 +2110,11 @@ export const addZoningFinding = createServerFn({ method: "POST" })
       label: z.string().min(3),
       status: z.enum(["screening", "possible", "unclear", "review", "unknown"]),
       note: z.string().optional(),
-      role: roleSchema,
+      role: roleSchema, token: z.string().optional(),
     }),
   )
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie pridať screening finding." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2273,10 +2273,10 @@ export const uploadRaster = createServerFn({ method: "POST" })
     width: z.number().int().positive(),
     height: z.number().int().positive(),
     dataBase64: z.string().min(16).max(12_000_000), // ~9 MB binárne
-    role: roleSchema,
+    role: roleSchema, token: z.string().optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; id?: string; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie nahrať podklad." };
     const { DB, STORAGE } = bindings();
     if (!DB || !STORAGE) return { ok: false, message: "Úložisko (R2) nie je dostupné." };
@@ -2297,10 +2297,10 @@ export const saveGeoref = createServerFn({ method: "POST" })
     id: z.string(),
     transform: z.object({ a: z.number(), b: z.number(), c: z.number(), d: z.number(), e: z.number(), f: z.number() }),
     points: z.array(z.object({ px: z.number(), py: z.number(), lng: z.number(), lat: z.number() })).min(3).max(20),
-    role: roleSchema,
+    role: roleSchema, token: z.string().optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie georeferencovať." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2322,9 +2322,9 @@ export const updateRaster = createServerFn({ method: "POST" })
   });
 
 export const deleteRaster = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string(), role: roleSchema }))
+  .validator(z.object({ id: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie mazať podklad." };
     const { DB, STORAGE } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2355,10 +2355,10 @@ export const uploadDocument = createServerFn({ method: "POST" })
     datasetId: z.string(), caseId: z.number().optional(), subjectType: z.string().optional(), subjectRef: z.string().optional(),
     name: z.string().min(1).max(200), kind: z.enum(["vypis", "GP", "ZPMZ", "zmluva", "foto", "ine"]).default("ine"), mime: z.string(), sizeBytes: z.number().int().nonnegative(),
     dataBase64: z.string().min(8).max(13_000_000), // ~9,7 MB binárne
-    role: roleSchema,
+    role: roleSchema, token: z.string().optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; id?: string; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie nahrať dokument." };
     const { DB, STORAGE } = bindings();
     if (!DB || !STORAGE) return { ok: false, message: "Úložisko (R2) nie je dostupné." };
@@ -2389,9 +2389,9 @@ export const getDocumentData = createServerFn({ method: "POST" })
     return { ok: true, name: row.name, mime: row.mime ?? "application/octet-stream", dataUrl: `data:${row.mime ?? "application/octet-stream"};base64,${bytesToB64(buf)}` };
   });
 export const deleteDocument = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string(), role: roleSchema }))
+  .validator(z.object({ id: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie mazať dokument." };
     const { DB, STORAGE } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2434,10 +2434,10 @@ export const listUpInfo = createServerFn({ method: "POST" })
 export const addUpInfo = createServerFn({ method: "POST" })
   .validator(z.object({
     datasetId: z.string(), lat: z.number(), lng: z.number(),
-    parcelNo: z.string().optional(), functionalArea: z.string().min(1), regulativ: z.string().optional(), note: z.string().optional(), role: roleSchema,
+    parcelNo: z.string().optional(), functionalArea: z.string().min(1), regulativ: z.string().optional(), note: z.string().optional(), role: roleSchema, token: z.string().optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; id?: string; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie zapisovať ÚP info." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2451,9 +2451,9 @@ export const addUpInfo = createServerFn({ method: "POST" })
     return { ok: true, id };
   });
 export const deleteUpInfo = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string(), role: roleSchema }))
+  .validator(z.object({ id: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false };
     const { DB } = bindings();
     if (!DB) return { ok: false };
@@ -2510,9 +2510,9 @@ export const searchOwnersGlobal = createServerFn({ method: "POST" })
 // ——— Živý lookup do RPO (Register právnických osôb, ŠÚ SR) — obohatenie firemných vlastníkov ———
 type RpoHit = { name: string | null; ico: string | null; address: string | null; legal_form: string | null; established: string | null; terminated: string | null; statutory: { role: string; name: string }[]; source: string };
 export const lookupRpo = createServerFn({ method: "POST" })
-  .validator(z.object({ q: z.string().min(2), role: roleSchema }))
+  .validator(z.object({ q: z.string().min(2), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; results: RpoHit[]; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canSeeOwners(role)) return { ok: false, results: [], message: "Rola nemá oprávnenie k owner detailu." };
     const query = data.q.trim();
     const isIco = /^\d{5,8}$/.test(query);
@@ -2974,9 +2974,9 @@ export const getBpejCennik = createServerFn({ method: "GET" }).handler(async () 
 // ——— Bod B: egress self-test — overí, či Worker dokáže outbound fetch na verejné registre ———
 type EgressProbe = { id: string; label: string; ok: boolean; status: number | null; ms: number; sample: string | null; error: string | null };
 export const egressSelfTest = createServerFn({ method: "POST" })
-  .validator(z.object({ role: roleSchema }))
+  .validator(z.object({ role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ allowed: boolean; anyOk: boolean; probes: EgressProbe[] }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canSign(role)) return { allowed: false, anyOk: false, probes: [] };
     const targets: { id: string; label: string; url: string }[] = [
       { id: "rpo", label: "RPO — Register právnických osôb (ŠÚ SR)", url: "https://api.statistics.sk/rpo/v1/search?identifier=17335345" },
@@ -3043,9 +3043,9 @@ type RpvsResult = { found: boolean; name: string | null; ico: string | null; vlo
 
 // RPVS — Register partnerov verejného sektora: koneční užívatelia výhod (KÚV) + PEP + štruktúra.
 export const lookupRpvs = createServerFn({ method: "POST" })
-  .validator(z.object({ ico: z.string().min(5), role: roleSchema, refresh: z.boolean().optional() }))
+  .validator(z.object({ ico: z.string().min(5), role: roleSchema, token: z.string().optional(), refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<RpvsResult> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canSeeOwners(role)) return { found: false, name: null, ico: null, vlozka: null, kuv: [], funkcionari: [], message: "Rola nemá owner prístup." };
     const ico = data.ico.replace(/\D/g, "");
     if (ico.length < 5) return { found: false, name: null, ico, vlozka: null, kuv: [], funkcionari: [], message: "Neplatné IČO." };
@@ -3116,9 +3116,9 @@ export const getParcelZone = createServerFn({ method: "POST" })
 
 // importUpZones — GeoJSON FeatureCollection → up_zones (regulatív z properties alebo z číselníka podľa kódu).
 export const importUpZones = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), geojson: z.string(), role: roleSchema, replace: z.boolean().optional() }))
+  .validator(z.object({ datasetId: z.string(), geojson: z.string(), role: roleSchema, token: z.string().optional(), replace: z.boolean().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; count: number; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie importovať ÚP." };
     const { DB } = bindings();
     if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
@@ -3187,9 +3187,9 @@ const normOkres = (okresRow: unknown, obec: unknown): string | null => {
   return OKRES_ALIAS[o] ?? o;
 };
 export const refreshMarketData = createServerFn({ method: "POST" })
-  .validator(z.object({ role: roleSchema, url: z.string().url().optional() }))
+  .validator(z.object({ role: roleSchema, token: z.string().optional(), url: z.string().url().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; index: number; opps: number; generated?: string; chunks?: number; phChunks?: number; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, index: 0, opps: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, index: 0, opps: 0, message: "Databáza nedostupná." };
@@ -3225,9 +3225,9 @@ export const refreshMarketData = createServerFn({ method: "POST" })
 
 // Chunkovaný ingest inzerátov (market-listings-<i>.json) — Worker fetchne chunk a upsertne (história navždy).
 export const refreshMarketListings = createServerFn({ method: "POST" })
-  .validator(z.object({ url: z.string().url(), role: roleSchema }))
+  .validator(z.object({ url: z.string().url(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; count: number; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
@@ -3252,9 +3252,9 @@ export const refreshMarketListings = createServerFn({ method: "POST" })
 
 // ——— Per-inzerát história ceny: ingest chunku (market-pricehistory-<i>.json) + fetch krivky ———
 export const refreshMarketPriceHistory = createServerFn({ method: "POST" })
-  .validator(z.object({ url: z.string().url(), role: roleSchema }))
+  .validator(z.object({ url: z.string().url(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; count: number; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
@@ -4465,9 +4465,9 @@ async function syncUpDocs(DB: UpDb, datasetId: string, kuCode: string | null, pa
 }
 
 export const importUpDocs = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), pageUrl: z.string().url().optional(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), pageUrl: z.string().url().optional(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; count: number; changed?: number; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
@@ -4501,9 +4501,9 @@ export const getUpRegulativ = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<UpRegulativ[]> =>
     await q<UpRegulativ>("SELECT id,zone_code,funkcia,izp,kz,ipp,max_vyska,max_podlazi,note FROM up_regulativ WHERE dataset_id=? ORDER BY zone_code", [data.datasetId]));
 export const setUpRegulativ = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), zoneCode: z.string().min(1), funkcia: z.string().optional(), izp: z.number().optional(), kz: z.number().optional(), ipp: z.number().optional(), maxVyska: z.number().optional(), maxPodlazi: z.number().optional(), note: z.string().optional(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), zoneCode: z.string().min(1), funkcia: z.string().optional(), izp: z.number().optional(), kz: z.number().optional(), ipp: z.number().optional(), maxVyska: z.number().optional(), maxPodlazi: z.number().optional(), note: z.string().optional(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie." };
     const { DB } = bindings(); if (!DB) return { ok: false, message: "Databáza nedostupná." };
     await DB.prepare("DELETE FROM up_regulativ WHERE dataset_id=? AND zone_code=?").bind(data.datasetId, data.zoneCode).run();
@@ -4513,9 +4513,9 @@ export const setUpRegulativ = createServerFn({ method: "POST" })
     return { ok: true };
   });
 export const deleteUpRegulativ = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.number(), role: roleSchema }))
+  .validator(z.object({ id: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false };
     const { DB } = bindings(); if (!DB) return { ok: false };
     await DB.prepare("DELETE FROM up_regulativ WHERE id=?").bind(data.id).run();
@@ -4524,9 +4524,9 @@ export const deleteUpRegulativ = createServerFn({ method: "POST" })
 
 // Sync číselníka obec→ÚP URL z Mac-master publikovaného up-registry.json (denný monitor).
 export const refreshUpRegistry = createServerFn({ method: "POST" })
-  .validator(z.object({ url: z.string().url().optional(), role: roleSchema }))
+  .validator(z.object({ url: z.string().url().optional(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; count: number; message?: string }> => {
-    const role = data.role as Role;
+    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
     if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings(); if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
     const url = data.url ?? "https://raw.githubusercontent.com/kristiakbohus-hub/tri-lipy-market/main/up-registry.json";

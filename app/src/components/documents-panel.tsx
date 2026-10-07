@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { listDocuments, uploadDocument, getDocumentData, deleteDocument, DOC_KINDS, type DocRow } from "../lib/api/kataster.functions";
 import { canRunPipeline, type Role } from "../lib/domain";
+import { useAuth } from "../lib/auth-context";
 
 const KIND_LABEL: Record<string, string> = { vypis: "Výpis", GP: "Geom. plán", ZPMZ: "ZPMZ", zmluva: "Zmluva", foto: "Foto", ine: "Iné" };
 const MAX_BYTES = 9_500_000; // ~9,5 MB (server strop ~9,7 MB base64)
@@ -10,6 +11,7 @@ const fmtSize = (n: number | null) => (n == null ? "" : n < 1024 ? `${n} B` : n 
 export function DocumentsPanel({ datasetId, subjectType, subjectRef, caseId, role, compact }: {
   datasetId: string; subjectType?: "lv" | "parcel" | "owner" | "case"; subjectRef?: string; caseId?: number; role: Role; compact?: boolean;
 }) {
+  const { token } = useAuth();
   const [docs, setDocs] = useState<DocRow[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -29,7 +31,7 @@ export function DocumentsPanel({ datasetId, subjectType, subjectRef, caseId, rol
     try {
       const dataUrl: string = await new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.onerror = rej; fr.readAsDataURL(file); });
       const b64 = dataUrl.split(",")[1] ?? "";
-      const r = await uploadDocument({ data: { datasetId, caseId, subjectType, subjectRef, name: file.name.slice(0, 200), kind, mime: file.type || "application/octet-stream", sizeBytes: file.size, dataBase64: b64, role } });
+      const r = await uploadDocument({ data: { token: token ?? undefined, datasetId, caseId, subjectType, subjectRef, name: file.name.slice(0, 200), kind, mime: file.type || "application/octet-stream", sizeBytes: file.size, dataBase64: b64, role } });
       setMsg(r.ok ? `Nahraté: ${file.name}` : (r.message ?? "Nahranie zlyhalo."));
       if (r.ok) refresh();
     } catch { setMsg("Nahranie zlyhalo."); } finally { setBusy(false); if (fileRef.current) fileRef.current.value = ""; }
@@ -49,7 +51,7 @@ export function DocumentsPanel({ datasetId, subjectType, subjectRef, caseId, rol
   async function remove(d: DocRow) {
     if (!window.confirm(`Zmazať dokument „${d.name}"?`)) return;
     setBusy(true);
-    try { const r = await deleteDocument({ data: { id: d.id, role } }); setMsg(r.ok ? "Zmazané." : (r.message ?? "Mazanie zlyhalo.")); if (r.ok) refresh(); }
+    try { const r = await deleteDocument({ data: { token: token ?? undefined, id: d.id, role } }); setMsg(r.ok ? "Zmazané." : (r.message ?? "Mazanie zlyhalo.")); if (r.ok) refresh(); }
     finally { setBusy(false); }
   }
 

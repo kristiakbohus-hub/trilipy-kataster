@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { getDatasets, importDataset, importEknParcels, runReadinessRecheck } from "../lib/api/kataster.functions";
 import { STATUS_META, canRunPipeline } from "../lib/domain";
+import { useAuth } from "../lib/auth-context";
 import type { ImportParcel } from "../lib/vgi-import";
 import { Badge, Card, Disclaimer, Icon, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
@@ -31,6 +32,7 @@ const PIPELINE = [
 ];
 
 function ImportPage() {
+  const { token } = useAuth();
   const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
   const reload = useCallback(() => { getDatasets().then(setDatasets).catch(() => setDatasets([])); }, []);
   useEffect(() => { reload(); }, [reload]);
@@ -41,7 +43,7 @@ function ImportPage() {
   async function recheck(id: string) {
     setBusy(id);
     try {
-      const r = await runReadinessRecheck({ data: { datasetId: id, role } });
+      const r = await runReadinessRecheck({ data: { token: token ?? undefined, datasetId: id, role } });
       setMsg((m) => ({ ...m, [id]: r.message ?? (r.ok ? "Hotovo." : "Neúspešné.") }));
       reload();
     } finally {
@@ -87,7 +89,7 @@ function ImportPage() {
     setImporting(true); setImpMsg(null);
     try {
       const r = await importDataset({
-        data: { code: code.trim(), name: kuName.trim(), region: region.trim() || undefined, role, parcels: parsed.parcels },
+        data: { token: token ?? undefined, code: code.trim(), name: kuName.trim(), region: region.trim() || undefined, role, parcels: parsed.parcels },
       });
       if (r.ok) {
         setImpMsg(`Dataset vytvorený — ${r.count} parciel. Geometria georeferencovaná (Krovák→WGS84).`);
@@ -127,7 +129,7 @@ function ImportPage() {
       const all = eknParsed.parcels; const CH = 1500; let done = 0;
       for (let i = 0; i < all.length; i += CH) {
         const chunk = all.slice(i, i + CH);
-        const r = await importEknParcels({ data: { datasetId: eknDs, role, append: i > 0, parcels: chunk } });
+        const r = await importEknParcels({ data: { token: token ?? undefined, datasetId: eknDs, role, append: i > 0, parcels: chunk } });
         if (!r.ok) { setEknMsg(r.message ?? "Import E-KN zlyhal."); setEknBusy(false); return; }
         done += r.count ?? 0; setEknMsg(`Importujem E-KN… ${done}/${all.length}`);
       }

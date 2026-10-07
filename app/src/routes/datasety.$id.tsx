@@ -14,6 +14,7 @@ import {
 } from "../lib/domain";
 import { Badge, Card, Disclaimer, Icon, Meter, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek (toto bola
 // najväčšia diera: 18 MB parciel k.ú.). Viď pamäť cf_app_ssr_loader_leak.
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/datasety/$id")({
 });
 
 function DatasetDetail() {
+  const { token } = useAuth();
   const { id } = Route.useParams();
   const [data, setData] = useState<Awaited<ReturnType<typeof getDataset>> | null>(null);
   const { role } = useRole();
@@ -42,7 +44,7 @@ function DatasetDetail() {
     setBusy(true);
     setRecheck(null);
     try {
-      const r = await runReadinessRecheck({ data: { datasetId: d.id, role } });
+      const r = await runReadinessRecheck({ data: { token: token ?? undefined, datasetId: d.id, role } });
       setRecheck(r.message ?? (r.ok ? "Hotovo." : "Neúspešné."));
       reload();
     } finally {

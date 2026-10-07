@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { searchOwnersGlobal, lookupRpo, lookupRpvs } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
 
 type SearchRes = Awaited<ReturnType<typeof searchOwnersGlobal>>;
@@ -37,6 +38,7 @@ export const Route = createFileRoute("/vlastnici")({
 });
 
 function VlastniciPage() {
+  const { token } = useAuth();
   const { role } = useRole();
   const [q, setQ] = useState("");
   const [res, setRes] = useState<SearchRes | null>(null);
@@ -48,7 +50,7 @@ function VlastniciPage() {
   const [rpvsBusy, setRpvsBusy] = useState<string | null>(null);
   async function enrichRpvs(ico: string, refresh = false) {
     setRpvsBusy(ico);
-    try { const r = await lookupRpvs({ data: { ico, role, refresh } }); setRpvs((m) => ({ ...m, [ico]: r })); }
+    try { const r = await lookupRpvs({ data: { token: token ?? undefined, ico, role, refresh } }); setRpvs((m) => ({ ...m, [ico]: r })); }
     finally { setRpvsBusy(null); }
   }
 
@@ -60,7 +62,7 @@ function VlastniciPage() {
   }
   async function enrich(ico: string) {
     setRpoBusy(ico);
-    try { const r = await lookupRpo({ data: { q: ico, role } }); setRpo((m) => ({ ...m, [ico]: r })); }
+    try { const r = await lookupRpo({ data: { token: token ?? undefined, q: ico, role } }); setRpo((m) => ({ ...m, [ico]: r })); }
     finally { setRpoBusy(null); }
   }
 

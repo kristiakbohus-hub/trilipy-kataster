@@ -614,6 +614,7 @@ function shareFrac(share: string | null | undefined): number | null {
 }
 
 function CompanyRegistry({ ico, name, role }: { ico: string; name: string; role: string }) {
+  const { token } = useAuth();
   const [rpo, setRpo] = useState<Awaited<ReturnType<typeof lookupRpo>> | null>(null);
   const [rpvs, setRpvs] = useState<Awaited<ReturnType<typeof lookupRpvs>> | null>(null);
   const [busy, setBusy] = useState(false);
@@ -621,8 +622,8 @@ function CompanyRegistry({ ico, name, role }: { ico: string; name: string; role:
     setBusy(true);
     try {
       const [a, b] = await Promise.all([
-        lookupRpo({ data: { q: ico, role: role as Role } }).catch(() => null),
-        lookupRpvs({ data: { ico, role: role as Role } }).catch(() => null),
+        lookupRpo({ data: { token: token ?? undefined, q: ico, role: role as Role } }).catch(() => null),
+        lookupRpvs({ data: { token: token ?? undefined, ico, role: role as Role } }).catch(() => null),
       ]);
       setRpo(a); setRpvs(b);
     } finally { setBusy(false); }

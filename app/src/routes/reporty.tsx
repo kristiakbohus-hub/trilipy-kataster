@@ -7,6 +7,7 @@ import {
   setReportStatus,
 } from "../lib/api/kataster.functions";
 import { REPORT_KIND_LABEL, REPORT_STATUS_META, canExport, canSign } from "../lib/domain";
+import { useAuth } from "../lib/auth-context";
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
 
@@ -20,6 +21,7 @@ export const Route = createFileRoute("/reporty")({
 });
 
 function ReportsPage() {
+  const { token } = useAuth();
   const [reports, setReports] = useState<Awaited<ReturnType<typeof listReports>>>([]);
   const [datasets, setDatasets] = useState<Awaited<ReturnType<typeof getDatasets>>>([]);
   const reload = useCallback(() => {
@@ -54,7 +56,7 @@ function ReportsPage() {
   }
 
   async function changeStatus(id: number, status: "review" | "signed") {
-    const r = await setReportStatus({ data: { id, status, role } });
+    const r = await setReportStatus({ data: { token: token ?? undefined, id, status, role } });
     if (!r.ok) setNote(r.message ?? "Neúspešné.");
     reload();
   }

@@ -464,7 +464,7 @@ export function MapView({
         im.src = dataUrl;
       });
       if (!dim.w || !dim.h) { pushEvent("Neplatný obrázok."); return; }
-      const r = await uploadRaster({ data: { datasetId, name: file.name, kind: "up", mime, width: dim.w, height: dim.h, dataBase64: base64, role } });
+      const r = await uploadRaster({ data: { token: token ?? undefined, datasetId, name: file.name, kind: "up", mime, width: dim.w, height: dim.h, dataBase64: base64, role } });
       if (r.ok && r.id) {
         const id = r.id;
         setRasterData((m) => ({ ...m, [id]: dataUrl }));
@@ -479,7 +479,7 @@ export function MapView({
     if (!georefId) return;
     const t = fitAffine(gcps);
     if (!t) { pushEvent("Potrebné aspoň 3 nekolineárne kontrolné body."); return; }
-    const r = await saveGeoref({ data: { id: georefId, transform: t, points: gcps, role } });
+    const r = await saveGeoref({ data: { token: token ?? undefined, id: georefId, transform: t, points: gcps, role } });
     if (r.ok) {
       setRasterOn((m) => ({ ...m, [georefId]: true }));
       await reloadRasters();
@@ -517,7 +517,7 @@ export function MapView({
     setUpImportBusy(true); setUpImportMsg(null);
     try {
       const text = await file.text();
-      const r = await importUpZones({ data: { datasetId, geojson: text, role, replace: true } });
+      const r = await importUpZones({ data: { token: token ?? undefined, datasetId, geojson: text, role, replace: true } });
       setUpImportMsg(r.ok ? `Naimportované ${r.count} ÚP zón.` : (r.message ?? "Import zlyhal."));
       if (r.ok) { reloadUpZones(); pushEvent(`ÚP zóny importované (${r.count}).`); }
     } catch (e) { setUpImportMsg(e instanceof Error ? e.message : "Chyba importu."); }
@@ -562,7 +562,7 @@ export function MapView({
   useEffect(() => { void reloadUpInfo(); }, [reloadUpInfo]);
   async function saveUpInfo() {
     if (!datasetId || !upForm || upForm.fa.trim().length < 1) { pushEvent("Zadaj funkčnú plochu."); return; }
-    const r = await addUpInfo({ data: { datasetId, lat: upForm.lat, lng: upForm.lng, parcelNo: upForm.parcel_no ?? undefined, functionalArea: upForm.fa.trim(), regulativ: upForm.reg.trim() || undefined, note: upForm.note.trim() || undefined, role } });
+    const r = await addUpInfo({ data: { token: token ?? undefined, datasetId, lat: upForm.lat, lng: upForm.lng, parcelNo: upForm.parcel_no ?? undefined, functionalArea: upForm.fa.trim(), regulativ: upForm.reg.trim() || undefined, note: upForm.note.trim() || undefined, role } });
     if (r.ok) { setUpForm(null); await reloadUpInfo(); pushEvent(`ÚP info „${upForm.fa.trim()}" uložené.`); }
     else pushEvent(r.message ?? "Uloženie zlyhalo.");
   }
@@ -692,18 +692,18 @@ export function MapView({
     setRegBusy(true);
     const numOf = (s: string) => { const n = Number(s.replace(",", ".")); return isFinite(n) && s.trim() !== "" ? n : undefined; };
     try {
-      await setUpRegulativ({ data: { datasetId, zoneCode: regForm.zone.trim(), funkcia: regForm.funkcia.trim() || undefined, izp: numOf(regForm.izp), kz: numOf(regForm.kz), ipp: numOf(regForm.ipp), maxVyska: numOf(regForm.vyska), maxPodlazi: numOf(regForm.podlazi), role } });
+      await setUpRegulativ({ data: { token: token ?? undefined, datasetId, zoneCode: regForm.zone.trim(), funkcia: regForm.funkcia.trim() || undefined, izp: numOf(regForm.izp), kz: numOf(regForm.kz), ipp: numOf(regForm.ipp), maxVyska: numOf(regForm.vyska), maxPodlazi: numOf(regForm.podlazi), role } });
       setRegForm({ zone: "", funkcia: "", izp: "", kz: "", ipp: "", vyska: "", podlazi: "" });
       setUpReg(await getUpRegulativ({ data: { datasetId } }));
     } catch { /* noop */ } finally { setRegBusy(false); }
   }
   async function delReg(id: number) {
-    try { await deleteUpRegulativ({ data: { id, role } }); if (datasetId) setUpReg(await getUpRegulativ({ data: { datasetId } })); } catch { /* noop */ }
+    try { await deleteUpRegulativ({ data: { token: token ?? undefined, id, role } }); if (datasetId) setUpReg(await getUpRegulativ({ data: { datasetId } })); } catch { /* noop */ }
   }
   async function syncUpRegistry() {
     setUpDocBusy(true); setUpDocMsg(null);
     try {
-      const r = await refreshUpRegistry({ data: { role } });
+      const r = await refreshUpRegistry({ data: { token: token ?? undefined, role } });
       setUpDocMsg(r.ok ? `Číselník synchronizovaný z Macu: ${r.count} obcí.` : r.message ?? "Neúspešné.");
     } catch (e) { setUpDocMsg(e instanceof Error ? e.message : "Chyba."); }
     finally { setUpDocBusy(false); }
@@ -719,7 +719,7 @@ export function MapView({
     if (!useRegistry && !upDocUrl.trim()) { setUpDocMsg("Vlož URL stránky obce, alebo použi Auto z číselníka."); return; }
     setUpDocBusy(true); setUpDocMsg(null);
     try {
-      const r = await importUpDocs({ data: { datasetId, pageUrl: useRegistry ? undefined : upDocUrl.trim(), role } });
+      const r = await importUpDocs({ data: { token: token ?? undefined, datasetId, pageUrl: useRegistry ? undefined : upDocUrl.trim(), role } });
       setUpDocMsg(r.ok ? `Načítaných ${r.count} dokumentov${r.changed ? ` · ${r.changed} zmien` : ""}.` : r.message ?? "Neúspešné.");
       if (r.ok) {
         if (!useRegistry) setUpDocUrl("");
@@ -1846,7 +1846,7 @@ export function MapView({
                             <button onClick={() => { setGeorefId(r.id); setGcps(r.points_json ? (JSON.parse(r.points_json) as GCP[]) : []); setPendingPx(null); setCatalogOpen(false); }} className="text-fg underline hover:opacity-70">
                               {r.transform_json ? "Upraviť georef" : "Georeferencovať"}
                             </button>
-                            <button onClick={async () => { await deleteRaster({ data: { id: r.id, role } }); setRasterOn((m) => { const n = { ...m }; delete n[r.id]; return n; }); if (georefId === r.id) setGeorefId(null); await reloadRasters(); }} style={{ color: "#9c4a40" }} className="underline hover:opacity-70">
+                            <button onClick={async () => { await deleteRaster({ data: { token: token ?? undefined, id: r.id, role } }); setRasterOn((m) => { const n = { ...m }; delete n[r.id]; return n; }); if (georefId === r.id) setGeorefId(null); await reloadRasters(); }} style={{ color: "#9c4a40" }} className="underline hover:opacity-70">
                               Zmazať
                             </button>
                           </div>
