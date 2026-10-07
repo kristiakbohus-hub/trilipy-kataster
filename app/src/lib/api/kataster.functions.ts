@@ -1315,13 +1315,21 @@ export const getZACases = createServerFn({ method: "POST" })
 // NEvymýšľa — odvodzuje sa z `criteria` prvého kandidáta, čo sú reálne pravidlá, podľa ktorých beh
 // klasifikoval. Ak niečo nemáme, sekcia to povie, nedopĺňa sa odhadom (§4).
 export type ClientReportCriterion = { key: string; effect: string; outcome: string; note: string | null };
+// Normalizovaný riadok shortlistu — UI je spoločné pre všetky scenáre, líšia sa len stĺpce.
+export type ClientReportItem = {
+  id: string; title: string; subtitle: string | null;
+  cols: { label: string; value: string }[];
+  classification: string; reason: string | null; criteriaJson: string | null;
+  datasetId: string | null; lvNo: number | null; parcelNo: string | null;
+};
 export type ClientReport = {
   scenario: string; kodKu: string; kuName: string | null; asOf: string | null;
   hasDataset: boolean;                     // k.ú. má v appke importovaný dataset (parcely/LV/vlastníci)
   run: ScenarioRun | null;
   nMatch: number; nProvisional: number;
   brief: ClientReportCriterion[];          // B — normalizovaný brief (MUST / MUST_NOT / PREFER / AVOID)
-  shortlist: UPRow[];                      // D + E
+  colLabels: string[];                     // D — hlavička tabuľky podľa scenára
+  shortlist: ClientReportItem[];           // D + E
   uncertainties: { text: string; n: number }[];  // G — agregované neistoty z kandidátov
   zoningSources: { src: string; n: number }[];   // C + H — z čoho pochádza funkčné využitie
 };
@@ -1332,19 +1340,86 @@ export const getClientReport = createServerFn({ method: "POST" })
       "SELECT * FROM scenario_runs WHERE scenario = ? AND kod_ku = ?", [data.scenario, data.kodKu],
     ).catch(() => []))[0] ?? null;
 
-    // zatiaľ implementovaný scenár „up" (Pôda na bývanie); ostatné sa dopoja rovnakým vzorom
-    const rows = data.scenario === "up"
-      ? await q<UPRow>(
-          `SELECT uc.kod_ku, COALESCE(uc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
-                  uc.parcels, uc.n_parcels, uc.area_m2, uc.zone, uc.zoning_src, uc.druh, uc.build,
-                  uc.classification, uc.score, uc.base_verdict, uc.bpej_skupina, uc.odvod_eur_m2,
-                  uc.naklad_vynatie_eur, uc.chranena, uc.lv_no, uc.n_owners, uc.reason, uc.criteria_json
-           FROM up_cases uc LEFT JOIN datasets ds ON ds.ku_code = uc.kod_ku
-           WHERE uc.kod_ku = ? AND uc.classification IN ('MATCH','PROVISIONAL')
-           ORDER BY COALESCE(uc.chranena,0),
-                    CASE WHEN uc.naklad_vynatie_eur IS NULL THEN 1 ELSE 0 END,
-                    uc.naklad_vynatie_eur`, [data.kodKu]).catch(() => [])
-      : [];
+    const eurTxt = (n: number | null) => (n == null ? "—" : `${n.toLocaleString("sk-SK")} €`);
+    const m2Txt = (n: number | null) => (n == null ? "—" : `${n.toLocaleString("sk-SK")} m²`);
+    let colLabels: string[] = [];
+    let rows: ClientReportItem[] = [];
+    let criteriaSample: string | null = null;
+    let kuName: string | null = null;
+    const zs = new Map<string, number>();
+
+    if (data.scenario === "up") {
+      const src = await q<UPRow>(
+        `SELECT uc.*, COALESCE(uc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id
+         FROM up_cases uc LEFT JOIN datasets ds ON ds.ku_code = uc.kod_ku
+         WHERE uc.kod_ku = ? AND uc.classification IN ('MATCH','PROVISIONAL')
+         ORDER BY COALESCE(uc.chranena,0),
+                  CASE WHEN uc.naklad_vynatie_eur IS NULL THEN 1 ELSE 0 END,
+                  uc.naklad_vynatie_eur`, [data.kodKu]).catch(() => []);
+      colLabels = ["Parcely", "Výmera", "Druh", "Zóna", "Vyňatie"];
+      rows = src.map((x, i) => ({
+        id: `${data.kodKu}-${i + 1}`,
+        title: `${m2Txt(x.area_m2)} · ${x.druh ?? "—"}`,
+        subtitle: `zóna ${x.zone ?? "—"} · BPEJ skup. ${x.bpej_skupina ?? "—"}${x.chranena ? " · chránená pôda" : ""}`,
+        cols: [
+          { label: "Parcely", value: x.parcels ?? "—" }, { label: "Výmera", value: m2Txt(x.area_m2) },
+          { label: "Druh", value: x.druh ?? "—" }, { label: "Zóna", value: x.zone ?? "—" },
+          { label: "Vyňatie", value: eurTxt(x.naklad_vynatie_eur) },
+        ],
+        classification: x.classification, reason: x.reason, criteriaJson: x.criteria_json,
+        datasetId: x.dataset_id, lvNo: x.lv_no, parcelNo: (x.parcels ?? "").split(",")[0].trim() || null,
+      }));
+      for (const x of src) if (x.zoning_src) zs.set(x.zoning_src, (zs.get(x.zoning_src) ?? 0) + 1);
+      criteriaSample = src[0]?.criteria_json ?? null;
+      kuName = src[0]?.ku_name ?? null;
+    } else if (data.scenario === "settlement") {
+      const src = await q<SettlementRow>(
+        `SELECT sc.*, COALESCE(sc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id
+         FROM settlement_cases sc LEFT JOIN datasets ds ON ds.ku_code = sc.kod_ku
+         WHERE sc.kod_ku = ? AND sc.classification IN ('MATCH','PROVISIONAL')
+         ORDER BY sc.classification, sc.score DESC`, [data.kodKu]).catch(() => []);
+      colLabels = ["Stavba", "Pozemok", "Register", "Vlastníkov", "Odkup"];
+      rows = src.map((x, i) => ({
+        id: `${data.kodKu}-${i + 1}`,
+        title: x.building_desc ?? x.building_id ?? "stavba",
+        subtitle: `pozemok ${x.parcel_no ?? "—"} (${x.register ?? "?"}) · LV ${x.land_lv_no ?? "—"}`
+          + (x.has_spf ? " · SPF/štát" : "") + (x.minority_share ? " · menšinový podiel" : ""),
+        cols: [
+          { label: "Stavba", value: x.building_desc ?? "—" },
+          { label: "Pozemok", value: x.parcel_no ?? "—" },
+          { label: "Register", value: x.register ?? "—" },
+          { label: "Vlastníkov", value: x.n_land_owners == null ? "—" : String(x.n_land_owners) },
+          { label: "Odkup", value: eurTxt(x.buyout_eur) },
+        ],
+        classification: x.classification, reason: x.reason, criteriaJson: x.criteria_json,
+        datasetId: x.dataset_id, lvNo: x.land_lv_no, parcelNo: x.parcel_no,
+      }));
+      criteriaSample = src[0]?.criteria_json ?? null;
+      kuName = src[0]?.ku_name ?? null;
+    } else if (data.scenario === "za") {
+      const src = await q<ZARow>(
+        `SELECT zc.*, COALESCE(zc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id
+         FROM za_cases zc LEFT JOIN datasets ds ON ds.ku_code = zc.kod_ku
+         WHERE zc.kod_ku = ? AND zc.classification IN ('MATCH','PROVISIONAL')
+         ORDER BY zc.classification, zc.instrument_year DESC`, [data.kodKu]).catch(() => []);
+      colLabels = ["Byt (podlažie)", "Budova", "LV", "Dedičstvo", "Vlastník mimo"];
+      rows = src.map((x, i) => ({
+        id: `${data.kodKu}-${i + 1}`,
+        title: `Byt, podlažie ${x.floor ?? "—"}`,
+        subtitle: `budova ${x.building_min_floor ?? "—"}..${x.building_max_floor ?? "—"} · LV ${x.lv_no ?? "—"}`,
+        cols: [
+          { label: "Byt (podlažie)", value: x.floor == null ? "—" : String(x.floor) },
+          { label: "Budova", value: `${x.building_min_floor ?? "—"}..${x.building_max_floor ?? "—"}` },
+          { label: "LV", value: x.lv_no == null ? "—" : String(x.lv_no) },
+          { label: "Dedičstvo", value: x.instrument_year == null ? "—" : String(x.instrument_year) },
+          { label: "Vlastník mimo", value: x.owner_obec ?? "—" },
+        ],
+        classification: x.classification, reason: x.reason, criteriaJson: x.criteria_json,
+        datasetId: x.dataset_id, lvNo: x.lv_no, parcelNo: null,
+      }));
+      criteriaSample = src[0]?.criteria_json ?? null;
+      kuName = src[0]?.ku_name ?? null;
+    }
 
     type Parsed = { criteria?: ClientReportCriterion[]; uncertainties?: string[] };
     const parse = (s: string | null): Parsed => { try { return s ? JSON.parse(s) as Parsed : {}; } catch { return {}; } };
@@ -1353,15 +1428,12 @@ export const getClientReport = createServerFn({ method: "POST" })
     // POZOR: `note` jednotlivého kandidáta sa sem NEdáva — je to jeho konkrétna hodnota („zóna:
     // bývanie/rekreácia“, „422 €“) a v zadaní by vyzerala ako požiadavka klienta. Kontrakt §3 B
     // žiada oddeliť podmienky od hodnôt.
-    const brief: ClientReportCriterion[] = (parse(rows[0]?.criteria_json ?? null).criteria ?? [])
+    const brief: ClientReportCriterion[] = (parse(criteriaSample).criteria ?? [])
       .map((c) => ({ key: c.key, effect: c.effect, outcome: "", note: null }));
 
     // G — neistoty naprieč kandidátmi (čo treba doveriť), zoradené podľa početnosti
     const unc = new Map<string, number>();
-    for (const r of rows) for (const u of parse(r.criteria_json).uncertainties ?? []) unc.set(u, (unc.get(u) ?? 0) + 1);
-
-    const zs = new Map<string, number>();
-    for (const r of rows) if (r.zoning_src) zs.set(r.zoning_src, (zs.get(r.zoning_src) ?? 0) + 1);
+    for (const r of rows) for (const u of parse(r.criteriaJson).uncertainties ?? []) unc.set(u, (unc.get(u) ?? 0) + 1);
 
     // ku_code nemajú vyplnené všetky datasety (staršie importy) → fallback na id `kn-<kod>`
     const ds = (await q<{ updated_at: string }>(
@@ -1370,13 +1442,14 @@ export const getClientReport = createServerFn({ method: "POST" })
 
     return {
       scenario: data.scenario, kodKu: data.kodKu,
-      kuName: rows[0]?.ku_name ?? run?.ku_name ?? null,
+      kuName: kuName ?? run?.ku_name ?? null,
       asOf: ds?.updated_at ?? run?.as_of ?? null,
       hasDataset: !!ds,
       run,
       nMatch: rows.filter((r) => r.classification === "MATCH").length,
       nProvisional: rows.filter((r) => r.classification === "PROVISIONAL").length,
       brief,
+      colLabels,
       shortlist: rows,
       uncertainties: [...unc].map(([text, n]) => ({ text, n })).sort((a, b) => b.n - a.n),
       zoningSources: [...zs].map(([src, n]) => ({ src, n })).sort((a, b) => b.n - a.n),

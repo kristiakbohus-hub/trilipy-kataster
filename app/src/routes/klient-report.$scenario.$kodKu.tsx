@@ -11,6 +11,8 @@ export const Route = createFileRoute("/klient-report/$scenario/$kodKu")({
 
 const SCENARIO_LABEL: Record<string, string> = {
   up: "Pôda na bývanie — územný plán dovoľuje bývanie, kataster vedie poľnohospodársku pôdu",
+  settlement: "Vysporiadanie pozemkov pod stavbami — vlastník stavby nie je vlastníkom pozemku",
+  za: "Zdedené byty — podiel zdedený v rokoch 2025–2026, vlastník má inú evidovanú adresu",
 };
 const EFFECT_LABEL: Record<string, string> = {
   MUST: "Povinná podmienka", MUST_NOT: "Zákaz", PREFER: "Preferencia", AVOID: "Nežiaduce", INFO: "Informatívne",
@@ -22,6 +24,14 @@ const CRIT_LABEL: Record<string, string> = {
   already_built: "Na pozemku stojí stavba",
   protected_soil: "Chránená pôda (vyňatie je podstatne ťažšie)",
   cheap_withdrawal: "Nízky náklad vyňatia z poľnohospodárskeho fondu",
+  // vysporiadanie
+  building_on_foreign_land: "Stavba stojí na pozemku iného vlastníka",
+  owners_disjoint: "Vlastník stavby a vlastník pozemku sú rôzne osoby",
+  land_owner_known: "Vlastník pozemku je známy a dohľadateľný",
+  // zdedené byty
+  inherited_recent: "Podiel bol zdedený v sledovanom období",
+  not_first_or_last_floor: "Byt nie je na prvom ani poslednom podlaží",
+  owner_address_differs: "Vlastník má evidovanú adresu mimo obce bytu",
 };
 const num = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("sk-SK"));
 
@@ -124,18 +134,14 @@ function ClientReportPage() {
         {match.length === 0 ? <M>Žiadne preukázané zhody.</M> : (
           <table className="w-full text-xs"><thead>
             <tr className="border-b border-line text-left text-muted">
-              <th className="py-1 pr-2">ID</th><th className="pr-2">Parcely</th><th className="pr-2">Výmera</th>
-              <th className="pr-2">Druh</th><th className="pr-2">Zóna</th><th className="pr-2 text-right">Vyňatie</th>
+              <th className="py-1 pr-2">ID</th>
+              {r.colLabels.map((l) => <th key={l} className="pr-2">{l}</th>)}
             </tr></thead>
             <tbody>
-              {match.slice(0, 60).map((x, i) => (
-                <tr key={i} className="border-b border-line/40">
-                  <td className="py-1 pr-2 tabular-nums text-muted">{r.kodKu}-{i + 1}</td>
-                  <td className="pr-2">{x.parcels ?? "—"}</td>
-                  <td className="pr-2 tabular-nums">{num(x.area_m2)} m²</td>
-                  <td className="pr-2">{x.druh ?? "—"}</td>
-                  <td className="pr-2">{x.zone ?? "—"}</td>
-                  <td className="pr-2 text-right tabular-nums">{x.naklad_vynatie_eur == null ? "—" : `${num(x.naklad_vynatie_eur)} €`}</td>
+              {match.slice(0, 60).map((x) => (
+                <tr key={x.id} className="border-b border-line/40">
+                  <td className="py-1 pr-2 tabular-nums text-muted">{x.id}</td>
+                  {x.cols.map((c, j) => <td key={j} className="pr-2">{c.value}</td>)}
                 </tr>
               ))}
             </tbody>
@@ -148,20 +154,22 @@ function ClientReportPage() {
       <Sec id="E." title="Detail kandidátov">
         {match.length === 0 ? <M>—</M> : (
           <div className="space-y-3">
-            {match.slice(0, 3).map((x, i) => (
-              <div key={i} className="border border-line p-2">
-                <div className="text-sm font-medium">{r.kodKu}-{i + 1} · {num(x.area_m2)} m² · {x.druh ?? "—"}</div>
-                <div className="text-xs text-muted">
-                  Parcely {x.parcels ?? "—"} · LV {x.lv_no ?? "—"} · {x.n_owners ?? "?"} vlastník(ov) ·
-                  zóna {x.zone ?? "—"} · BPEJ skup. {x.bpej_skupina ?? "—"}
-                  {x.chranena ? " · chránená pôda" : ""}
-                </div>
+            {match.slice(0, 3).map((x) => (
+              <div key={x.id} className="border border-line p-2">
+                <div className="text-sm font-medium">{x.id} · {x.title}</div>
+                {x.subtitle ? <div className="text-xs text-muted">{x.subtitle}</div> : null}
                 {x.reason ? <p className="mt-1 text-xs leading-relaxed text-muted">{x.reason}</p> : null}
-                <CriteriaMatrix json={x.criteria_json} />
-                {x.dataset_id ? (
-                  <Link to="/report/$datasetId/$parcelNo" params={{ datasetId: x.dataset_id, parcelNo: (x.parcels ?? "").split(",")[0].trim() }}
+                <CriteriaMatrix json={x.criteriaJson} />
+                {x.datasetId && x.parcelNo ? (
+                  <Link to="/report/$datasetId/$parcelNo" params={{ datasetId: x.datasetId, parcelNo: x.parcelNo }}
                     className="mt-1 inline-block text-xs text-green hover:underline print:hidden">
                     Otvoriť dossier parcely →
+                  </Link>
+                ) : x.datasetId && x.lvNo ? (
+                  <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: x.datasetId, lvNo: String(x.lvNo) }}
+                    search={{ typ: "vypis" }}
+                    className="mt-1 inline-block text-xs text-green hover:underline print:hidden">
+                    Otvoriť výpis LV →
                   </Link>
                 ) : null}
               </div>

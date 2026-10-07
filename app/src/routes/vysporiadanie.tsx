@@ -135,6 +135,14 @@ function SettlementPage() {
             <option value="">Všetky k.ú.</option>
             {katastre.map((k) => <option key={k.kod} value={k.kod}>{k.name}</option>)}
           </select>
+          {/* Klientsky report (dok. 16 §3) sa robí vždy za JEDNO k.ú. */}
+          {kuFilter ? (
+            <Link
+              to="/klient-report/$scenario/$kodKu"
+              params={{ scenario: "settlement", kodKu: kuFilter }}
+              className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2"
+            >Klientsky report</Link>
+          ) : null}
         </div>
       </div>
 
