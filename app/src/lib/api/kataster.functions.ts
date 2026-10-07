@@ -1207,7 +1207,7 @@ export const getSettlementCases = createServerFn({ method: "POST" })
     const where = data.kodKu ? "AND sc.kod_ku = ?" : "";
     const args = data.kodKu ? [data.kodKu] : [];
     return await q<SettlementRow>(
-      `SELECT sc.kod_ku, COALESCE(sc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
+      `SELECT sc.kod_ku, COALESCE(ds.ku_name, sc.ku_name) AS ku_name, ds.id AS dataset_id,
               sc.building_id, sc.building_desc, sc.parcel_no, sc.register, sc.land_lv_no,
               sc.classification, sc.score, sc.n_land_owners, sc.has_spf, sc.has_unknown, sc.via_e, sc.reason,
               sc.minority_share, sc.land_area_m2, sc.land_druh, sc.buyout_eur, sc.outreach_json, sc.criteria_json
@@ -1298,7 +1298,7 @@ export const getZACases = createServerFn({ method: "POST" })
     const where = data.kodKu ? "AND zc.kod_ku = ?" : "";
     const args = data.kodKu ? [data.kodKu] : [];
     return await q<ZARow>(
-      `SELECT zc.kod_ku, COALESCE(zc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
+      `SELECT zc.kod_ku, COALESCE(ds.ku_name, zc.ku_name) AS ku_name, ds.id AS dataset_id,
               zc.flat_id, zc.lv_no, zc.floor, zc.building_min_floor, zc.building_max_floor,
               zc.classification, zc.score, zc.instrument_year, zc.registration_year, zc.owner_obec, zc.reason,
               zc.criteria_json
@@ -1350,7 +1350,7 @@ export const getClientReport = createServerFn({ method: "POST" })
 
     if (data.scenario === "up") {
       const src = await q<UPRow>(
-        `SELECT uc.*, COALESCE(uc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id
+        `SELECT uc.*, COALESCE(ds.ku_name, uc.ku_name) AS ku_name, ds.id AS dataset_id
          FROM up_cases uc LEFT JOIN datasets ds ON ds.ku_code = uc.kod_ku
          WHERE uc.kod_ku = ? AND uc.classification IN ('MATCH','PROVISIONAL')
          ORDER BY COALESCE(uc.chranena,0),
@@ -1374,7 +1374,7 @@ export const getClientReport = createServerFn({ method: "POST" })
       kuName = src[0]?.ku_name ?? null;
     } else if (data.scenario === "settlement") {
       const src = await q<SettlementRow>(
-        `SELECT sc.*, COALESCE(sc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id
+        `SELECT sc.*, COALESCE(ds.ku_name, sc.ku_name) AS ku_name, ds.id AS dataset_id
          FROM settlement_cases sc LEFT JOIN datasets ds ON ds.ku_code = sc.kod_ku
          WHERE sc.kod_ku = ? AND sc.classification IN ('MATCH','PROVISIONAL')
          ORDER BY sc.classification, sc.score DESC`, [data.kodKu]).catch(() => []);
@@ -1398,7 +1398,7 @@ export const getClientReport = createServerFn({ method: "POST" })
       kuName = src[0]?.ku_name ?? null;
     } else if (data.scenario === "za") {
       const src = await q<ZARow>(
-        `SELECT zc.*, COALESCE(zc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id
+        `SELECT zc.*, COALESCE(ds.ku_name, zc.ku_name) AS ku_name, ds.id AS dataset_id
          FROM za_cases zc LEFT JOIN datasets ds ON ds.ku_code = zc.kod_ku
          WHERE zc.kod_ku = ? AND zc.classification IN ('MATCH','PROVISIONAL')
          ORDER BY zc.classification, zc.instrument_year DESC`, [data.kodKu]).catch(() => []);
@@ -1589,7 +1589,7 @@ export const getUPCases = createServerFn({ method: "POST" })
     const where = data.kodKu ? "AND uc.kod_ku = ?" : "";
     const args = data.kodKu ? [data.kodKu] : [];
     return await q<UPRow>(
-      `SELECT uc.kod_ku, COALESCE(uc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
+      `SELECT uc.kod_ku, COALESCE(ds.ku_name, uc.ku_name) AS ku_name, ds.id AS dataset_id,
               uc.parcels, uc.n_parcels, uc.area_m2, uc.zone, uc.zoning_src, uc.druh, uc.build,
               uc.classification, uc.score, uc.base_verdict, uc.bpej_skupina, uc.odvod_eur_m2,
               uc.naklad_vynatie_eur, uc.chranena, uc.lv_no, uc.n_owners, uc.reason, uc.criteria_json
