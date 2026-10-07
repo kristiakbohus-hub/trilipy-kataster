@@ -1309,6 +1309,73 @@ export const getZACases = createServerFn({ method: "POST" })
     ).catch(() => []);
   });
 
+// ——— Klientsky report A–H (dok. 16 §3) ———
+// Jeden dopyt = jeden report. Skladá sa z toho, čo už v D1 je: kandidáti (up_cases), štatistika
+// behu (scenario_runs) a matica kritérií uložená pri kandidátovi. Normalizovaný brief v sekcii B sa
+// NEvymýšľa — odvodzuje sa z `criteria` prvého kandidáta, čo sú reálne pravidlá, podľa ktorých beh
+// klasifikoval. Ak niečo nemáme, sekcia to povie, nedopĺňa sa odhadom (§4).
+export type ClientReportCriterion = { key: string; effect: string; outcome: string; note: string | null };
+export type ClientReport = {
+  scenario: string; kodKu: string; kuName: string | null; asOf: string | null;
+  run: ScenarioRun | null;
+  nMatch: number; nProvisional: number;
+  brief: ClientReportCriterion[];          // B — normalizovaný brief (MUST / MUST_NOT / PREFER / AVOID)
+  shortlist: UPRow[];                      // D + E
+  uncertainties: { text: string; n: number }[];  // G — agregované neistoty z kandidátov
+  zoningSources: { src: string; n: number }[];   // C + H — z čoho pochádza funkčné využitie
+};
+export const getClientReport = createServerFn({ method: "POST" })
+  .validator(z.object({ scenario: z.string(), kodKu: z.string() }))
+  .handler(async ({ data }): Promise<ClientReport> => {
+    const run = (await q<ScenarioRun>(
+      "SELECT * FROM scenario_runs WHERE scenario = ? AND kod_ku = ?", [data.scenario, data.kodKu],
+    ).catch(() => []))[0] ?? null;
+
+    // zatiaľ implementovaný scenár „up" (Pôda na bývanie); ostatné sa dopoja rovnakým vzorom
+    const rows = data.scenario === "up"
+      ? await q<UPRow>(
+          `SELECT uc.kod_ku, COALESCE(uc.ku_name, ds.ku_name) AS ku_name, ds.id AS dataset_id,
+                  uc.parcels, uc.n_parcels, uc.area_m2, uc.zone, uc.zoning_src, uc.druh, uc.build,
+                  uc.classification, uc.score, uc.base_verdict, uc.bpej_skupina, uc.odvod_eur_m2,
+                  uc.naklad_vynatie_eur, uc.chranena, uc.lv_no, uc.n_owners, uc.reason, uc.criteria_json
+           FROM up_cases uc LEFT JOIN datasets ds ON ds.ku_code = uc.kod_ku
+           WHERE uc.kod_ku = ? AND uc.classification IN ('MATCH','PROVISIONAL')
+           ORDER BY COALESCE(uc.chranena,0),
+                    CASE WHEN uc.naklad_vynatie_eur IS NULL THEN 1 ELSE 0 END,
+                    uc.naklad_vynatie_eur`, [data.kodKu]).catch(() => [])
+      : [];
+
+    type Parsed = { criteria?: ClientReportCriterion[]; uncertainties?: string[] };
+    const parse = (s: string | null): Parsed => { try { return s ? JSON.parse(s) as Parsed : {}; } catch { return {}; } };
+
+    // B — brief = kľúče a efekty kritérií tak, ako ich beh reálne použil (nie prepis z dokumentácie)
+    const brief: ClientReportCriterion[] = (parse(rows[0]?.criteria_json ?? null).criteria ?? [])
+      .map((c) => ({ key: c.key, effect: c.effect, outcome: "", note: c.note ?? null }));
+
+    // G — neistoty naprieč kandidátmi (čo treba doveriť), zoradené podľa početnosti
+    const unc = new Map<string, number>();
+    for (const r of rows) for (const u of parse(r.criteria_json).uncertainties ?? []) unc.set(u, (unc.get(u) ?? 0) + 1);
+
+    const zs = new Map<string, number>();
+    for (const r of rows) if (r.zoning_src) zs.set(r.zoning_src, (zs.get(r.zoning_src) ?? 0) + 1);
+
+    const ds = (await q<{ updated_at: string }>(
+      "SELECT updated_at FROM datasets WHERE ku_code = ? LIMIT 1", [data.kodKu]).catch(() => []))[0] ?? null;
+
+    return {
+      scenario: data.scenario, kodKu: data.kodKu,
+      kuName: rows[0]?.ku_name ?? run?.ku_name ?? null,
+      asOf: ds?.updated_at ?? run?.as_of ?? null,
+      run,
+      nMatch: rows.filter((r) => r.classification === "MATCH").length,
+      nProvisional: rows.filter((r) => r.classification === "PROVISIONAL").length,
+      brief,
+      shortlist: rows,
+      uncertainties: [...unc].map(([text, n]) => ({ text, n })).sort((a, b) => b.n - a.n),
+      zoningSources: [...zs].map(([src, n]) => ({ src, n })).sort((a, b) => b.n - a.n),
+    };
+  });
+
 // ——— Štatistika behu scenára (dok. 16 §3 F: „Prečo iné kandidáty neprešli") ———
 // Jeden riadok na (scenár, k.ú.). Scenárové pushe posielajú len MATCH+PROVISIONAL, takže počty
 // zamietnutých a dôvody vylúčenia musia prísť samostatne, inak by sekcia F bola len odhad.

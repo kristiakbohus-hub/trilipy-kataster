@@ -37,6 +37,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportyIdRouteImport } from './routes/reporty.$id'
 import { Route as VypisDatasetIdLvNoRouteImport } from './routes/vypis.$datasetId.$lvNo'
 import { Route as ReportDatasetIdParcelNoRouteImport } from './routes/report.$datasetId.$parcelNo'
+import { Route as KlientReportScenarioKodKuRouteImport } from './routes/klient-report.$scenario.$kodKu'
 import { Route as ElDatasetIdCelokRouteImport } from './routes/el.$datasetId.$celok'
 import { Route as DatasetyIndexRouteImport } from './routes/datasety.index'
 import { Route as DatasetyIdRouteImport } from './routes/datasety.$id'
@@ -199,6 +200,11 @@ const ReportDatasetIdParcelNoRoute = ReportDatasetIdParcelNoRouteImport.update({
   path: '/report/$datasetId/$parcelNo',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KlientReportScenarioKodKuRoute = KlientReportScenarioKodKuRouteImport.update({
+  id: '/klient-report/$scenario/$kodKu',
+  path: '/klient-report/$scenario/$kodKu',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ElDatasetIdCelokRoute = ElDatasetIdCelokRouteImport.update({
   id: '/el/$datasetId/$celok',
   path: '/el/$datasetId/$celok',
@@ -351,6 +357,7 @@ export interface FileRoutesByFullPath {
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
   '/report/$datasetId/$parcelNo': typeof ReportDatasetIdParcelNoRoute
+  '/klient-report/$scenario/$kodKu': typeof KlientReportScenarioKodKuRoute
   '/el/$datasetId/$celok': typeof ElDatasetIdCelokRoute
   '/upinfo/$id': typeof UpInfoIdRoute
   '/datasety/$id': typeof DatasetyIdRoute
@@ -402,6 +409,7 @@ export interface FileRoutesByTo {
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
   '/report/$datasetId/$parcelNo': typeof ReportDatasetIdParcelNoRoute
+  '/klient-report/$scenario/$kodKu': typeof KlientReportScenarioKodKuRoute
   '/el/$datasetId/$celok': typeof ElDatasetIdCelokRoute
   '/upinfo/$id': typeof UpInfoIdRoute
   '/datasety/$id': typeof DatasetyIdRoute
@@ -454,6 +462,7 @@ export interface FileRoutesById {
   '/reporty/$id': typeof ReportyIdRoute
   '/vypis/$datasetId/$lvNo': typeof VypisDatasetIdLvNoRoute
   '/report/$datasetId/$parcelNo': typeof ReportDatasetIdParcelNoRoute
+  '/klient-report/$scenario/$kodKu': typeof KlientReportScenarioKodKuRoute
   '/el/$datasetId/$celok': typeof ElDatasetIdCelokRoute
   '/upinfo/$id': typeof UpInfoIdRoute
   '/datasety/$id': typeof DatasetyIdRoute
@@ -507,6 +516,7 @@ export interface FileRouteTypes {
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
     | '/report/$datasetId/$parcelNo'
+    | '/klient-report/$scenario/$kodKu'
     | '/el/$datasetId/$celok'
     | '/upinfo/$id'
     | '/datasety/$id'
@@ -558,6 +568,7 @@ export interface FileRouteTypes {
     | '/reporty/$id'
     | '/vypis/$datasetId/$lvNo'
     | '/report/$datasetId/$parcelNo'
+    | '/klient-report/$scenario/$kodKu'
     | '/el/$datasetId/$celok'
     | '/upinfo/$id'
     | '/datasety/$id'
@@ -658,6 +669,7 @@ export interface RootRouteChildren {
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
   ReportDatasetIdParcelNoRoute: typeof ReportDatasetIdParcelNoRoute
+  KlientReportScenarioKodKuRoute: typeof KlientReportScenarioKodKuRoute
   ElDatasetIdCelokRoute: typeof ElDatasetIdCelokRoute
   UpInfoIdRoute: typeof UpInfoIdRoute
   DatasetyIdRoute: typeof DatasetyIdRoute
@@ -974,6 +986,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportDatasetIdParcelNoRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/klient-report/$scenario/$kodKu': {
+      id: '/klient-report/$scenario/$kodKu'
+      path: '/klient-report/$scenario/$kodKu'
+      fullPath: '/klient-report/$scenario/$kodKu'
+      preLoaderRoute: typeof KlientReportScenarioKodKuRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vypis/$datasetId/$lvNo': {
       id: '/vypis/$datasetId/$lvNo'
       path: '/vypis/$datasetId/$lvNo'
@@ -1058,6 +1077,7 @@ const rootRouteChildren: RootRouteChildren = {
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,
   ReportDatasetIdParcelNoRoute: ReportDatasetIdParcelNoRoute,
+  KlientReportScenarioKodKuRoute: KlientReportScenarioKodKuRoute,
   ElDatasetIdCelokRoute: ElDatasetIdCelokRoute,
   UpInfoIdRoute: UpInfoIdRoute,
   DatasetyIdRoute: DatasetyIdRoute,
