@@ -376,6 +376,37 @@ export const TASK_STATE_ORDER = ["pending", "contacted", "agreed", "signed", "de
 /** SPI kód parcely (PARCIS) → čitateľné číslo. Posledné 4 číslice sú podlomenie:
  *  "10000" → "1", "49660003" → "4966/3", "134720470" → "13472/470".
  *  Scenár vysporiadania posiela surový kód, ktorý je pri práci nepoužiteľný. */
+// „school_car 540s; shop_car 82s" → [{ label: "škola autom", seconds: 540 }, …]
+// POZOR na tvar kľúča: engine skladá `f"{dest}_{profile}"` (gold_li_engine._eval_access), takže cieľ
+// a profil sú spojené PODTRŽNÍKOM, nie medzerou. Pôvodný parser čakal dve slová oddelené medzerou,
+// takže nematchol NIKDY a chipy dostupnosti sa na karte ticho nezobrazovali. Akceptujeme oba tvary.
+const ACCESS_DEST: Record<string, string> = { school: "škola", shop: "obchod", market: "obchod", stop: "zastávka" };
+const ACCESS_PROF: Record<string, string> = { car: "autom", foot: "pešo", walk: "pešo", bike: "bicyklom" };
+export function parseAccessTimes(s: string | null | undefined): { label: string; seconds: number }[] {
+  if (!s) return [];
+  const out: { label: string; seconds: number }[] = [];
+  for (const part of String(s).split(";")) {
+    const m = part.trim().match(/^(\w+?)[_\s]+(\w+)\s+(\d+)\s*s$/);
+    if (!m) continue;
+    const dest = ACCESS_DEST[m[1]] ?? m[1];
+    const prof = ACCESS_PROF[m[2]];
+    out.push({ label: prof ? `${dest} ${prof}` : dest, seconds: Number(m[3]) });
+  }
+  return out;
+}
+
+// Sekundy sú strojový údaj — „540s" si nikto neprevedie v hlave. Pod minútu necháme sekundy.
+export function durationSk(seconds: number): string {
+  if (seconds < 60) return `${seconds} s`;
+  const min = seconds / 60;
+  return `${min < 10 ? min.toFixed(1).replace(".", ",").replace(",0", "") : Math.round(min)} min`;
+}
+
+export function accessTimesLabel(s: string | null | undefined): string {
+  const t = parseAccessTimes(s);
+  return t.length ? t.map((x) => `${x.label} ${durationSk(x.seconds)}`).join(" · ") : "—";
+}
+
 export function parcelLabel(code: string | null | undefined): string {
   if (!code) return "—";
   const s = String(code).trim();

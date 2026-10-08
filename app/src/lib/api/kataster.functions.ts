@@ -20,7 +20,7 @@ import type {
   ZoningFinding,
   ZoningSource,
 } from "../domain";
-import { canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
+import { accessTimesLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode } from "../development";
 
 const roleSchema = z.enum([
@@ -1331,6 +1331,7 @@ export const getZACases = createServerFn({ method: "POST" })
 // behu (scenario_runs) a matica kritérií uložená pri kandidátovi. Normalizovaný brief v sekcii B sa
 // NEvymýšľa — odvodzuje sa z `criteria` prvého kandidáta, čo sú reálne pravidlá, podľa ktorých beh
 // klasifikoval. Ak niečo nemáme, sekcia to povie, nedopĺňa sa odhadom (§4).
+const PURPOSE_SK: Record<string, string> = { residential: "bývanie", retail: "retail", industrial: "priemysel" };
 export type ClientReportCriterion = { key: string; effect: string; outcome: string; note: string | null };
 // Normalizovaný riadok shortlistu — UI je spoločné pre všetky scenáre, líšia sa len stĺpce.
 export type ClientReportItem = {
@@ -1412,6 +1413,34 @@ export const getClientReport = createServerFn({ method: "POST" })
         datasetId: x.dataset_id, lvNo: x.land_lv_no, parcelNo: x.parcel_no,
       }));
       criteriaSample = src[0]?.criteria_json ?? null;
+      kuName = src[0]?.ku_name ?? null;
+    } else if (data.scenario === "landsearch") {
+      // POZOR: landsearch_results nesie REÁLNE mená vlastníkov a tento report nemá rolu ani token —
+      // mená sa preto do neho zámerne neberú, len ich počet.
+      const src = await q<Omit<LandsearchRow, "owners"> & { dataset_id: string | null }>(
+        `SELECT lr.kod_ku, COALESCE(ds.ku_name, lr.ku_name) AS ku_name, lr.purpose, lr.verdict,
+                lr.quality, lr.area_m2, lr.n_parcels, lr.parcels, lr.shape, lr.zone, lr.build,
+                lr.slope, lr.frontage, lr.ppf, lr.existing_use, lr.druh, lr.access_times,
+                lr.n_owners, lr.reason, ds.id AS dataset_id
+         FROM landsearch_results lr LEFT JOIN datasets ds ON ds.ku_code = lr.kod_ku
+         WHERE lr.kod_ku = ? AND lr.verdict IN ('MATCH','PROVISIONAL')
+         ORDER BY (lr.verdict='MATCH') DESC, lr.quality DESC`, [data.kodKu]).catch(() => []);
+      colLabels = ["Parcely", "Výmera", "Účel", "Zóna", "Vlastníkov", "Dostupnosť"];
+      rows = src.map((x, i) => ({
+        id: `${data.kodKu}-${i + 1}`,
+        title: `${m2Txt(x.area_m2)} · ${PURPOSE_SK[x.purpose ?? ""] ?? x.purpose ?? "—"}`,
+        subtitle: `zóna ${x.zone ?? "—"} · ${x.n_parcels ?? "?"} parciel · tvar ${x.shape ?? "—"}`
+          + (x.ppf ? " · záber poľnohospodárskeho fondu" : ""),
+        cols: [
+          { label: "Parcely", value: x.parcels ?? "—" }, { label: "Výmera", value: m2Txt(x.area_m2) },
+          { label: "Účel", value: PURPOSE_SK[x.purpose ?? ""] ?? x.purpose ?? "—" },
+          { label: "Zóna", value: x.zone ?? "—" },
+          { label: "Vlastníkov", value: x.n_owners == null ? "—" : String(x.n_owners) },
+          { label: "Dostupnosť", value: accessTimesLabel(x.access_times) },
+        ],
+        classification: x.verdict ?? "PROVISIONAL", reason: x.reason, criteriaJson: null,
+        datasetId: x.dataset_id, lvNo: null, parcelNo: (x.parcels ?? "").split(",")[0].trim() || null,
+      }));
       kuName = src[0]?.ku_name ?? null;
     } else if (data.scenario === "za") {
       const src = await q<ZARow>(

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getClientReport, type ClientReport } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer } from "../components/kit";
+import type { AppPath } from "../lib/domain";
 
 // Klientsky report A–H podľa dok. 16 §3. BEZ `loader` (viď pamäť cf_app_ssr_loader_leak).
 export const Route = createFileRoute("/klient-report/$scenario/$kodKu")({
@@ -13,6 +14,7 @@ const SCENARIO_LABEL: Record<string, string> = {
   up: "Pôda na bývanie — územný plán dovoľuje bývanie, kataster vedie poľnohospodársku pôdu",
   settlement: "Vysporiadanie pozemkov pod stavbami — vlastník stavby nie je vlastníkom pozemku",
   za: "Zdedené byty — podiel zdedený v rokoch 2025–2026, vlastník má inú evidovanú adresu",
+  landsearch: "Stavebné pozemky — súvislé zastavateľné celky v zadanej výmere a dostupnosti",
 };
 const EFFECT_LABEL: Record<string, string> = {
   MUST: "Povinná podmienka", MUST_NOT: "Zákaz", PREFER: "Preferencia", AVOID: "Nežiaduce", INFO: "Informatívne",
@@ -33,6 +35,45 @@ const CRIT_LABEL: Record<string, string> = {
   not_first_or_last_floor: "Byt nie je na prvom ani poslednom podlaží",
   owner_address_differs: "Vlastník má evidovanú adresu mimo obce bytu",
 };
+// Metodika a poznámky boli písané pre scenár „pôda na bývanie" a zobrazovali sa aj pri ostatných —
+// klient tak čítal o náklade vyňatia aj v reporte o zdedených bytoch. Každý scenár má svoje vlastné.
+type ScenarioMeta = { back: AppPath; method: [string, string][]; scope: string; sortNote: string };
+const SCENARIO_META: Record<string, ScenarioMeta> = {
+  up: {
+    back: "/poda-na-byvanie",
+    method: [["Vlastníctvo a druh pozemku", "SPI import (register C/E)"],
+             ["Náklad vyňatia", "sadzba BPEJ × výmera podľa NV 58/2013"]],
+    scope: "Prehľadané bolo celé uvedené k.ú. v rozsahu dostupných dát. Katastre bez zdroja územného plánu sa v tomto scenári nedajú vyhodnotiť vôbec.",
+    sortNote: "zoradené podľa nákladu vyňatia",
+  },
+  settlement: {
+    back: "/vysporiadanie",
+    method: [["Vlastníctvo a druh pozemku", "SPI import (register C/E)"],
+             ["Párovanie stavba ↔ pozemok", "zhodné parcelné číslo C↔E (geometria E-parciel nie je k dispozícii)"],
+             ["Odhad odkupu", "trhová cena obce × výmera podielu"]],
+    scope: "Prehľadané boli stavby evidované v uvedenom k.ú. Pozemky pod stavbami bez dohľadateľnej E-parcely sa spárovať nedajú.",
+    sortNote: "zoradené podľa skóre",
+  },
+  za: {
+    back: "/zdedene-byty",
+    method: [["Vlastníctvo a nadobudnutie", "SPI import — titul nadobudnutia (dedičstvo) a rok"],
+             ["Podlažie", "z popisu bytu a rozsahu podlaží budovy"],
+             ["Adresa vlastníka", "obec evidovaná pri vlastníkovi vs. obec bytu"]],
+    scope: "Prehľadané boli byty evidované v uvedenom k.ú. Byty bez uvedeného podlažia alebo bez roku nadobudnutia sa vyhodnotiť nedajú.",
+    sortNote: "zoradené podľa roku dedičstva",
+  },
+  landsearch: {
+    back: "/stavebne-pozemky",
+    method: [["Vlastníctvo a druh pozemku", "SPI import (register C/E)"],
+             ["Súvislosť a tvar celku", "zlučovanie susedných parciel cez bounding-boxy S-JTSK"],
+             ["Zastavanosť a využitie", "OSM budovy a existujúce využitie v mieste celku"],
+             ["Dostupnosť", "cestná sieť OSM — čas jazdy k zadanému cieľu"],
+             ["Svahovitosť", "digitálny model terénu"]],
+    scope: "Prehľadané boli celky poskladané zo susediacich parciel uvedeného k.ú. Celky bez geometrie v spracovaní nie sú.",
+    sortNote: "zoradené podľa skóre kvality",
+  },
+};
+const DEFAULT_META: ScenarioMeta = { back: "/prilezitosti", method: [["Vlastníctvo a druh pozemku", "SPI import (register C/E)"]], scope: "Prehľadané bolo celé uvedené k.ú. v rozsahu dostupných dát.", sortNote: "zoradené podľa poradia behu" };
 const num = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("sk-SK"));
 
 function Sec({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
@@ -62,13 +103,14 @@ function ClientReportPage() {
   const reasons: { reason: string; n: number }[] = (() => {
     try { return run?.reasons_json ? JSON.parse(run.reasons_json) : []; } catch { return []; }
   })();
+  const meta = SCENARIO_META[r.scenario] ?? DEFAULT_META;
   const match = r.shortlist.filter((x) => x.classification === "MATCH");
   const prov = r.shortlist.filter((x) => x.classification === "PROVISIONAL");
 
   return (
     <div className="mx-auto max-w-[900px] space-y-7 print:max-w-none">
       <div className="flex items-start justify-between gap-3 print:hidden">
-        <Link to="/poda-na-byvanie" className="text-xs text-muted hover:text-fg">← Späť na kartu</Link>
+        <Link to={meta.back} className="text-xs text-muted hover:text-fg">← Späť na kartu</Link>
         <button onClick={() => window.print()} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
           Tlačiť / uložiť PDF
         </button>
@@ -120,13 +162,13 @@ function ClientReportPage() {
               z.src === "WMS" ? `presný WMS výkres (${z.n})` : `georeferencovaný raster — orientačný (${z.n})`
             )).join(" · ")}
           </td></tr>
-          <tr><td className="py-0.5 pr-3 text-muted">Vlastníctvo a druh pozemku</td><td>SPI import (register C/E)</td></tr>
-          <tr><td className="py-0.5 pr-3 text-muted">Náklad vyňatia</td><td>sadzba BPEJ × výmera podľa NV 58/2013</td></tr>
+          {meta.method.map(([k, v]) => (
+            <tr key={k}><td className="py-0.5 pr-3 text-muted">{k}</td><td>{v}</td></tr>
+          ))}
           {run?.params_json ? <tr><td className="py-0.5 pr-3 text-muted">Parametre behu</td><td className="break-all text-xs">{run.params_json}</td></tr> : null}
         </tbody></table>
         <p className="mt-2 text-xs text-muted">
-          Úplnosť: prehľadané bolo celé uvedené k.ú. v rozsahu dostupných dát. Katastre bez zdroja
-          územného plánu sa v tomto scenári nedajú vyhodnotiť vôbec.
+          Úplnosť: {meta.scope}
         </p>
       </Sec>
 
@@ -147,7 +189,7 @@ function ClientReportPage() {
             </tbody>
           </table>
         )}
-        {match.length > 60 ? <p className="mt-1 text-xs text-muted">Zobrazených prvých 60 z {match.length} — zoradené podľa nákladu vyňatia.</p> : null}
+        {match.length > 60 ? <p className="mt-1 text-xs text-muted">Zobrazených prvých 60 z {match.length} — {meta.sortNote}.</p> : null}
         {prov.length > 0 ? <p className="mt-2 text-xs text-muted">Podmienených kandidátov (na preskúmanie): {prov.length} — uvedené oddelene, nie sú zamieňané so zhodami.</p> : null}
       </Sec>
 

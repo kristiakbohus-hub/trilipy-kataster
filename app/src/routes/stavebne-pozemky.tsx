@@ -1,7 +1,7 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { getLandsearchBrowse, type LandsearchRow } from "../lib/api/kataster.functions";
-import { m2 } from "../lib/domain";
+import { m2, parseAccessTimes, durationSk } from "../lib/domain";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -12,21 +12,8 @@ export const Route = createFileRoute("/stavebne-pozemky")({
 });
 
 const PURPOSE_LABEL: Record<string, string> = { residential: "bývanie", retail: "retail", industrial: "priemysel" };
-const PURPOSE_LIMITS: Record<string, string> = { residential: "škola ≤600 s · obchod ≤300 s autom" };
+const PURPOSE_LIMITS: Record<string, string> = { residential: "škola ≤10 min · obchod ≤5 min autom" };
 
-function parseAccessTimes(s: string | null): { label: string; seconds: number }[] {
-  if (!s) return [];
-  // formát "school car 69s; shop car 82s"
-  const out: { label: string; seconds: number }[] = [];
-  for (const part of s.split(";")) {
-    const m = part.trim().match(/^(\w+)\s+\w+\s+(\d+)s$/);
-    if (m) {
-      const key = m[1] === "school" ? "škola" : m[1] === "shop" ? "obchod" : m[1];
-      out.push({ label: key, seconds: Number(m[2]) });
-    }
-  }
-  return out;
-}
 
 function LandPage() {
   const { role } = useRole();
@@ -112,6 +99,14 @@ function LandPage() {
             <option value="">Všetky k.ú.</option>
             {katastre.map((k) => <option key={k.kod} value={k.kod}>{k.name}</option>)}
           </select>
+          {/* Klientsky report (dok. 16 §3 A–H) sa robí vždy za JEDNO k.ú. — bez filtra nie je čo zadať. */}
+          {kuFilter ? (
+            <Link
+              to="/klient-report/$scenario/$kodKu"
+              params={{ scenario: "landsearch", kodKu: kuFilter }}
+              className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2"
+            >Klientsky report</Link>
+          ) : null}
         </div>
       </div>
 
@@ -143,7 +138,7 @@ function LandPage() {
                   ) : null}
                   {times.map((t) => (
                     <span key={t.label} className="rounded-full border border-line px-2 py-0.5 text-[11px]" style={{ color: "#5b7a58" }}>
-                      {t.label} {t.seconds}s
+                      {t.label} {durationSk(t.seconds)}
                     </span>
                   ))}
                   {r.ppf ? (
