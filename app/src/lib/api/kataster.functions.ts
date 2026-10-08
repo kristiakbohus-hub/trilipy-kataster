@@ -1665,15 +1665,19 @@ export type LandsearchRow = {
 export const getLandsearchBrowse = createServerFn({ method: "POST" })
   .validator(z.object({ purpose: z.string().optional(), kodKu: z.string().optional(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<LandsearchRow[]> => {
-    const where: string[] = ["verdict IN ('MATCH','PROVISIONAL')"];
+    const where: string[] = ["lr.verdict IN ('MATCH','PROVISIONAL')"];
     const args: unknown[] = [];
-    if (data.purpose) { where.push("purpose = ?"); args.push(data.purpose); }
-    if (data.kodKu) { where.push("kod_ku = ?"); args.push(data.kodKu); }
+    if (data.purpose) { where.push("lr.purpose = ?"); args.push(data.purpose); }
+    if (data.kodKu) { where.push("lr.kod_ku = ?"); args.push(data.kodKu); }
     const rows = await q<LandsearchRow>(
-      `SELECT kod_ku, ku_name, purpose, verdict, quality, area_m2, n_parcels, parcels, shape, zone,
-              build, slope, frontage, ppf, existing_use, druh, access_times, owners, n_owners, reason
-       FROM landsearch_results WHERE ${where.join(" AND ")}
-       ORDER BY (verdict='MATCH') DESC, quality DESC LIMIT 300`, args,
+      // ku_name z pushu je u časti k.ú. prázdne (manifest nesie mesto, nie k.ú.) a karta potom
+      // zobrazovala holý kód. Prednosť má názov z datasetu, ktorý ide z ÚGKK.
+      `SELECT lr.kod_ku, COALESCE(ds.ku_name, lr.ku_name, lr.kod_ku) AS ku_name, lr.purpose, lr.verdict,
+              lr.quality, lr.area_m2, lr.n_parcels, lr.parcels, lr.shape, lr.zone, lr.build, lr.slope,
+              lr.frontage, lr.ppf, lr.existing_use, lr.druh, lr.access_times, lr.owners, lr.n_owners, lr.reason
+       FROM landsearch_results lr LEFT JOIN datasets ds ON ds.ku_code = lr.kod_ku
+       WHERE ${where.join(" AND ")}
+       ORDER BY (lr.verdict='MATCH') DESC, lr.quality DESC LIMIT 300`, args,
     ).catch(() => []);
     // rola zo session, nie od klienta — landsearch_results nesú REÁLNE mená vlastníkov
     const full = ownerAccess(await roleFromToken(data.token)) === "full";

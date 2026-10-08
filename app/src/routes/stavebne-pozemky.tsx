@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { getLandsearchBrowse, type LandsearchRow } from "../lib/api/kataster.functions";
-import { m2, parseAccessTimes, durationSk } from "../lib/domain";
+import { m2, parseAccessTimes, durationSk, reasonSk, decSk } from "../lib/domain";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -155,7 +155,7 @@ function LandPage() {
                   {r.slope != null ? (
                     <span className="rounded-full border border-line px-2 py-0.5 text-[11px]"
                       style={r.slope > 12 ? { color: "#9a7b3e" } : { color: "#5b7a58" }}>
-                      svah {r.slope} %
+                      svah {decSk(r.slope)} %
                     </span>
                   ) : null}
                   {r.frontage === 0 ? (
@@ -171,7 +171,7 @@ function LandPage() {
                 </div>
 
                 {r.owners ? <p className="mt-2 text-xs text-muted">{r.owners}</p> : null}
-                {r.reason ? <p className="mt-3 text-xs leading-relaxed text-muted">{r.reason}</p> : null}
+                {r.reason ? <p className="mt-3 text-xs leading-relaxed text-muted">{reasonSk(r.reason)}</p> : null}
                 {r.parcels ? <p className="mt-2 border-t border-line pt-2 text-[11px] text-muted">parcely: {r.parcels}</p> : null}
               </Card>
             );

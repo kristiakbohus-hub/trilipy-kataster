@@ -454,6 +454,23 @@ export function accessTimesLabel(s: string | null | undefined): string {
   return t.length ? t.map((x) => `${x.label} ${durationSk(x.seconds)}`).join(" · ") : "—";
 }
 
+// Engine skladá odôvodnenie z anglických kľúčov kritérií („dostupnosť school car 81s✓") — v DB to
+// už je, takže sa to pre zobrazenie prepíše tu. Push odvtedy posiela slovenské labely, toto je
+// pre staršie riadky a pre istotu.
+export function reasonSk(s: string | null | undefined): string | null {
+  if (!s) return null;
+  return String(s).replace(/\b(school|shop|stop)[_ ](car|foot|walk|bike)\s+(\d+)\s*s/gi,
+    (_m, dest: string, prof: string, sec: string) => {
+      const d = ACCESS_DEST[dest.toLowerCase()] ?? dest;
+      const p = ACCESS_PROF[prof.toLowerCase()] ?? prof;
+      return `${d} ${p} ${durationSk(Number(sec))}`;
+    });
+}
+
+// 4.4 → „4,4" (slovenské desatinné znamienko je čiarka)
+export const decSk = (n: number, digits = 1) =>
+  n.toLocaleString("sk-SK", { minimumFractionDigits: 0, maximumFractionDigits: digits });
+
 export function parcelLabel(code: string | null | undefined): string {
   if (!code) return "—";
   const s = String(code).trim();

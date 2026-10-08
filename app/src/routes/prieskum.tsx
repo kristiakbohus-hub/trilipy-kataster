@@ -4,7 +4,7 @@ import { nlQuery, saveSearch, listSavedSearches, deleteSavedSearch, setSavedAler
 import { Card, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
-import { verdictLabel, type Role } from "../lib/domain";
+import { accessTimesLabel, decSk, verdictLabel, type Role } from "../lib/domain";
 
 export const Route = createFileRoute("/prieskum")({
   head: () => ({ meta: [{ title: "NL prieskum — TRI LIPY KATASTER CORE" }] }),
@@ -241,7 +241,7 @@ function PrieskumPage() {
                       {o.area_m2 ? `${o.area_m2.toLocaleString("sk-SK")} m²` : ""} · {o.parcels ?? ""} · {o.ku_name ?? o.kod_ku}
                     </div>
                     <div className="truncate text-[12px] text-muted">
-                      {o.zone ?? ""}{o.shape ? ` · ${o.shape}` : ""}{o.access != null ? ` · prístup ${o.access}` : ""}{o.slope != null ? ` · svah ${o.slope} %` : ""}{o.access_times ? ` · ${o.access_times}` : ""}{o.ppf ? " · ⚠ PPF" : ""}
+                      {o.zone ?? ""}{o.shape ? ` · ${o.shape}` : ""}{o.access != null ? ` · prístup ${o.access}/100` : ""}{o.slope != null ? ` · svah ${decSk(o.slope)} %` : ""}{o.access_times ? ` · ${accessTimesLabel(o.access_times)}` : ""}{o.ppf ? " · ⚠ PPF" : ""}
                     </div>
                     {o.market_ppm2 != null ? (
                       <div className="text-[12px] text-fg/75">

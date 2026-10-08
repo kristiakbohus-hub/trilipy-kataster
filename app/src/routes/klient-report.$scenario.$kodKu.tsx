@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getClientReport, type ClientReport } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer } from "../components/kit";
-import { critLabel, critLabelKnown, type AppPath } from "../lib/domain";
+import { critLabel, critLabelKnown, reasonSk, type AppPath } from "../lib/domain";
 
 // Klientsky report A–H podľa dok. 16 §3. BEZ `loader` (viď pamäť cf_app_ssr_loader_leak).
 export const Route = createFileRoute("/klient-report/$scenario/$kodKu")({
@@ -184,7 +184,7 @@ function ClientReportPage() {
               <div key={x.id} className="border border-line p-2">
                 <div className="text-sm font-medium">{x.id} · {x.title}</div>
                 {x.subtitle ? <div className="text-xs text-muted">{x.subtitle}</div> : null}
-                {x.reason ? <p className="mt-1 text-xs leading-relaxed text-muted">{x.reason}</p> : null}
+                {x.reason ? <p className="mt-1 text-xs leading-relaxed text-muted">{reasonSk(x.reason)}</p> : null}
                 <CriteriaMatrix json={x.criteriaJson} />
                 {x.datasetId && x.parcelNo ? (
                   <Link to="/report/$datasetId/$parcelNo" params={{ datasetId: x.datasetId, parcelNo: x.parcelNo }}
