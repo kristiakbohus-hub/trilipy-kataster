@@ -3377,7 +3377,7 @@ export type ChangeFeedRow = {
   dataset_id: string | null; ku_name: string | null;
   label: string | null;     // názov dokumentu / entita+pole
   url: string | null;
-  change: string | null;    // new | changed | removed | added
+  change_kind: string | null;   // new | changed | removed | added
   importance: string | null;
   lv_no: number | null; parcel_no: string | null;
   old_value: string | null; new_value: string | null;
@@ -3391,7 +3391,7 @@ export const getChangeFeed = createServerFn({ method: "POST" })
     const out: ChangeFeedRow[] = [];
     if (want !== "kataster") {
       const up = await q<ChangeFeedRow>(
-        `SELECT 'up' AS src, c.dataset_id, ds.ku_name, c.title AS label, c.url, c.change,
+        `SELECT 'up' AS src, c.dataset_id, ds.ku_name, c.title AS label, c.url, c.change AS change_kind,
                 NULL AS importance, NULL AS lv_no, NULL AS parcel_no,
                 NULL AS old_value, NULL AS new_value, c.detected_at
          FROM up_changes c LEFT JOIN datasets ds ON ds.id = c.dataset_id
@@ -3403,7 +3403,7 @@ export const getChangeFeed = createServerFn({ method: "POST" })
       const kn = await q<ChangeFeedRow>(
         `SELECT 'kataster' AS src, c.dataset_id, ds.ku_name,
                 (c.entity || CASE WHEN c.field IS NULL THEN '' ELSE ' · ' || c.field END) AS label,
-                NULL AS url, c.change_type AS change, c.importance, c.lv_no, c.parcel_no,
+                NULL AS url, c.change_type AS change_kind, c.importance, c.lv_no, c.parcel_no,
                 c.old_value, c.new_value, c.detected_at
          FROM change_log c LEFT JOIN datasets ds ON ds.id = c.dataset_id
          WHERE c.detected_at >= datetime('now', ?) ORDER BY c.detected_at DESC, c.id DESC LIMIT 200`,

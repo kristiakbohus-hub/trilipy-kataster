@@ -98,7 +98,7 @@ function ZmenyPage() {
       ) : (
         <Card className="divide-y divide-line">
           {zmeny.map((r, i) => {
-            const col = CHANGE_COLOR[r.change ?? ""] ?? "#8a8a8a";
+            const col = CHANGE_COLOR[r.change_kind ?? ""] ?? "#8a8a8a";
             return (
               <div key={i} className="flex flex-wrap items-start gap-3 p-3">
                 <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: col }} />
@@ -108,7 +108,7 @@ function ZmenyPage() {
                       {SRC_LABEL[r.src] ?? r.src}
                     </span>
                     <span className="text-[11px]" style={{ color: col }}>
-                      {CHANGE_LABEL[r.change ?? ""] ?? r.change ?? "—"}
+                      {CHANGE_LABEL[r.change_kind ?? ""] ?? r.change_kind ?? "—"}
                     </span>
                     {r.importance === "high" ? (
                       <span className="rounded-full border px-2 py-0.5 text-[11px]"
@@ -168,7 +168,7 @@ function ZmenyPage() {
                 <div className="min-w-0">
                   <span className="text-fg">{kuLabel(r.ku_name, r.dataset_id)}</span>
                   <span className="ml-2 text-xs text-muted">
-                    {META_LABEL[r.change ?? ""] ?? r.change ?? "—"}
+                    {META_LABEL[r.change_kind ?? ""] ?? r.change_kind ?? "—"}
                   </span>
                   <div className="mt-0.5 text-xs text-muted">
                     {r.old_value ? `${r.old_value} → ` : ""}{r.new_value ?? ""}
