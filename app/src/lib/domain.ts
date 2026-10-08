@@ -464,8 +464,15 @@ export function reasonSk(s: string | null | undefined): string | null {
       const d = ACCESS_DEST[dest.toLowerCase()] ?? dest;
       const p = ACCESS_PROF[prof.toLowerCase()] ?? prof;
       return `${d} ${p} ${durationSk(Number(sec))}`;
-    });
+    })
+    .replace(/(\d+)\.(\d+)(\s*%)/g, "$1,$2$3");   // „svah 4.4 %" → „svah 4,4 %"
 }
+
+// Časť zdrojov nesie názov s predponou („k.ú. Budatín"), časť bez nej („Staškov"). V jednom
+// zozname sa potom miešajú a abecedné radenie ide podľa „k". Zobrazujeme jednotne bez predpony —
+// kontext („Katastre", „Všetky k.ú.") ju aj tak nesie.
+export const kuLabel = (n: string | null | undefined, kod?: string | null) =>
+  (n ? n.replace(/^k\.\s*[úu]\.\s*/i, "").trim() : "") || kod || "—";
 
 // 4.4 → „4,4" (slovenské desatinné znamienko je čiarka)
 export const decSk = (n: number, digits = 1) =>

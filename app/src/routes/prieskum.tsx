@@ -4,7 +4,7 @@ import { nlQuery, saveSearch, listSavedSearches, deleteSavedSearch, setSavedAler
 import { Card, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
-import { accessTimesLabel, decSk, verdictLabel, type Role } from "../lib/domain";
+import { accessTimesLabel, decSk, kuLabel, verdictLabel, type Role } from "../lib/domain";
 
 export const Route = createFileRoute("/prieskum")({
   head: () => ({ meta: [{ title: "NL prieskum — TRI LIPY KATASTER CORE" }] }),
@@ -181,7 +181,7 @@ function PrieskumPage() {
               <div key={`${f.kod_ku}-${f.lv_number}-${i}`} className="flex items-center gap-3 py-2">
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium text-fg">
-                    Byt · LV {f.lv_number ?? "—"} · {f.ku_name ?? f.kod_ku}
+                    Byt · LV {f.lv_number ?? "—"} · {kuLabel(f.ku_name, f.kod_ku)}
                     {f.classification === "MATCH" ? (
                       <span className="ml-2 rounded-full border border-line px-1.5 py-0.5 text-[10px]" style={{ color: "#5b7a58" }}>kandidát</span>
                     ) : (
@@ -211,7 +211,7 @@ function PrieskumPage() {
               return (
                 <div key={`${f.kod_ku}-${f.lv_number}-${i}`} className="flex items-center gap-3 py-2">
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-fg">{typSk[f.asset_type ?? ""] ?? f.asset_type} · LV {f.lv_number ?? "—"} · {f.ku_name ?? f.kod_ku}</div>
+                    <div className="text-sm font-medium text-fg">{typSk[f.asset_type ?? ""] ?? f.asset_type} · LV {f.lv_number ?? "—"} · {kuLabel(f.ku_name, f.kod_ku)}</div>
                     <div className="truncate text-[12px] text-muted">
                       {kindSk[f.acquisition_kind ?? ""] ?? f.acquisition_kind}{f.registration_year ? ` ${f.registration_year}` : ""}
                       {f.area_m2 ? ` · ${Math.round(f.area_m2).toLocaleString("sk-SK")} m²` : ""}
@@ -238,7 +238,7 @@ function PrieskumPage() {
                   <div className="text-sm font-bold tabular-nums text-fg">{o.quality ?? "—"}</div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-fg">
-                      {o.area_m2 ? `${o.area_m2.toLocaleString("sk-SK")} m²` : ""} · {o.parcels ?? ""} · {o.ku_name ?? o.kod_ku}
+                      {o.area_m2 ? `${o.area_m2.toLocaleString("sk-SK")} m²` : ""} · {o.parcels ?? ""} · {kuLabel(o.ku_name, o.kod_ku)}
                     </div>
                     <div className="truncate text-[12px] text-muted">
                       {o.zone ?? ""}{o.shape ? ` · ${o.shape}` : ""}{o.access != null ? ` · prístup ${o.access}/100` : ""}{o.slope != null ? ` · svah ${decSk(o.slope)} %` : ""}{o.access_times ? ` · ${accessTimesLabel(o.access_times)}` : ""}{o.ppf ? " · ⚠ PPF" : ""}

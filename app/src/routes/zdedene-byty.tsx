@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getZACases, type ZARow } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { kuLabel } from "../lib/domain";
 
 // ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
 // by vložil celý dataset do HTML pre KOHOKOĽVEK, kto pozná URL. Dáta sa ťahajú až v efekte.
@@ -37,7 +38,7 @@ function InheritedFlatsPage() {
 
   const katastre = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of rows) m.set(r.kod_ku, r.ku_name ?? r.kod_ku);
+    for (const r of rows) m.set(r.kod_ku, kuLabel(r.ku_name, r.kod_ku));
     return Array.from(m, ([kod, name]) => ({ kod, name })).sort((a, b) => a.name.localeCompare(b.name, "sk"));
   }, [rows]);
 
@@ -114,7 +115,7 @@ function InheritedFlatsPage() {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-sm font-semibold text-fg">Byt, podlažie {r.floor ?? "—"}</div>
-                  <div className="text-xs text-muted">{r.ku_name ?? r.kod_ku}</div>
+                  <div className="text-xs text-muted">{kuLabel(r.ku_name, r.kod_ku)}</div>
                 </div>
                 <span className="shrink-0 rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] tabular-nums text-fg">
                   budova {r.building_min_floor ?? "—"}..{r.building_max_floor ?? "—"}

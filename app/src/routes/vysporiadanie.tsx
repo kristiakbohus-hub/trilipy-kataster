@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getSettlementCases, type SettlementRow } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
-import { eur, parcelLabel } from "../lib/domain";
+import { kuLabel, eur, parcelLabel } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 
 // ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
@@ -63,7 +63,7 @@ function SettlementPage() {
 
   const katastre = useMemo(() => {
     const m = new Map<string, string>();
-    for (const r of rows) m.set(r.kod_ku, r.ku_name ?? r.kod_ku);
+    for (const r of rows) m.set(r.kod_ku, kuLabel(r.ku_name, r.kod_ku));
     return Array.from(m, ([kod, name]) => ({ kod, name })).sort((a, b) => a.name.localeCompare(b.name, "sk"));
   }, [rows]);
 
@@ -166,7 +166,7 @@ function SettlementPage() {
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <div className="text-sm font-semibold text-fg">{r.building_desc ?? "stavba"}</div>
-                  <div className="text-xs text-muted">{r.ku_name ?? r.kod_ku}</div>
+                  <div className="text-xs text-muted">{kuLabel(r.ku_name, r.kod_ku)}</div>
                 </div>
                 <span className="shrink-0 rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] tabular-nums text-fg">
                   parc. {parcelLabel(r.parcel_no)} · {r.register}-KN
