@@ -15,7 +15,7 @@ type Kind = "evidence_list" | "parcel_pack" | "map_sheet";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
 // Viď pamäť cf_app_ssr_loader_leak.
-export const Route = createFileRoute("/reporty")({
+export const Route = createFileRoute("/reporty/")({
   head: () => ({ meta: [{ title: "Reporty — TRI LIPY KATASTER CORE" }] }),
   component: ReportsPage,
 });
