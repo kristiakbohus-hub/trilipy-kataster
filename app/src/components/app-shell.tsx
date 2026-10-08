@@ -28,6 +28,7 @@ const NAV_GROUPS: NavGroup[] = [
     { to: "/vlastnici", label: "Vlastníci", icon: "target" },
     { to: "/datasety", label: "Datasety", icon: "database" },
     { to: "/zoning", label: "Územný plán", icon: "zone" },
+    { to: "/zmeny", label: "Čo sa zmenilo", icon: "report" },
   ] },
   { title: "Trh", items: [
     { to: "/ceny", label: "Trhové ceny", icon: "target" },

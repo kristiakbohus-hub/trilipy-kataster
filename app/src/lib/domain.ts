@@ -24,6 +24,7 @@ export type AppPath =
   | "/trhova-historia"
   | "/deal-radar"
   | "/watchlist"
+  | "/zmeny"
   | "/aktivita"
   | "/deals"
   | "/pravny-referent"

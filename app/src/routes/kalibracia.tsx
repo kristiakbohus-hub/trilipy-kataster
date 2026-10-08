@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { getCalib, setCalib, resetCalib, type CalibRow } from "../lib/api/kataster.functions";
+import { getCalib, setCalib, resetCalib, getAvmIndex, type CalibRow, type AvmIndexRow } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
 import { useAuth } from "../lib/auth-context";
 
@@ -22,12 +22,14 @@ function KalibraciaPage() {
   const { user, token } = useAuth();
   const isAdmin = user?.role === "admin";
   const [rows, setRows] = useState<CalibRow[]>([]);
+  const [avm, setAvm] = useState<AvmIndexRow[]>([]);
   const [vals, setVals] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     getCalib().then((r) => { setRows(r); setVals(Object.fromEntries(r.map((x) => [x.key, String(x.value)]))); }).catch(() => {});
+    getAvmIndex().then(setAvm).catch(() => {});
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -77,6 +79,57 @@ function KalibraciaPage() {
       ) : null}
 
       {msg ? <div className="rounded-md border border-line bg-surface/60 px-3 py-2 text-sm text-fg">{msg}</div> : null}
+
+      {/* NA ČOM ODHAD STOJÍ — bez tohto sa koeficienty nižšie ladia naslepo. */}
+      <Card className="p-4">
+        <SectionHeader title="Na čom odhad stojí" hint="podklad AVM pre stavebné pozemky podľa okresu" />
+        {avm.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">Index zatiaľ nie je naplnený — prepočítava sa pri dennom ingeste trhových dát.</p>
+        ) : (
+          <>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
+                    <th className="py-1 pr-3 font-medium">Okres</th>
+                    <th className="pr-3 font-medium">Podklad</th>
+                    <th className="pr-3 text-right font-medium">€/m² použité</th>
+                    <th className="pr-3 text-right font-medium">inzerátov</th>
+                    <th className="pr-3 text-right font-medium">„predaných"</th>
+                    <th className="text-right font-medium">€/m² z „predaných"</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {avm.map((r) => (
+                    <tr key={r.okres}>
+                      <td className="py-1 pr-3 text-fg">{r.okres}</td>
+                      <td className="pr-3">
+                        <span className="rounded-full border px-2 py-0.5 text-[11px]"
+                          style={r.basis === "realized" ? { color: "#5b7a58", borderColor: "#5b7a5855" }
+                            : r.basis === "blend" ? { color: "#9a7b3e", borderColor: "#9a7b3e55" }
+                            : { color: "#8a8a8a", borderColor: "#d8d4cc", borderStyle: "dashed" }}>
+                          {r.basis === "realized" ? "realizované" : r.basis === "blend" ? "zmes" : "len inzercia"}
+                        </span>
+                      </td>
+                      <td className="pr-3 text-right tabular-nums text-fg">{r.ppm2_stavebny == null ? "—" : Math.round(r.ppm2_stavebny)}</td>
+                      <td className="pr-3 text-right tabular-nums text-muted">{r.n_asking ?? 0}</td>
+                      <td className="pr-3 text-right tabular-nums text-muted">{r.n_realized ?? 0}</td>
+                      <td className="text-right tabular-nums text-muted">{r.ppm2_realized == null ? "—" : Math.round(r.ppm2_realized)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted">
+              „Predané" je <b>odhad, nie záznam z katastra</b> — inzerát zmizol do 14 dní od posledného
+              videnia. Môže byť aj stiahnutý alebo preradený, takže to je horná hranica. Slovensko
+              nemá verejný register realizovaných cien, takže presnejší podklad k dispozícii nie je.
+              Kde je podklad „len inzercia", je odhad systematicky <b>nadhodnotený</b> o vyjednávaciu
+              rezervu — to je dôvod na zľavu nižšie, nie na zmenu základu.
+            </p>
+          </>
+        )}
+      </Card>
 
       {CAT_META.map((cat) => {
         const catRows = rows.filter((r) => r.category === cat.key);

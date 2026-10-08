@@ -3368,6 +3368,67 @@ async function computeObecMarket(): Promise<number> {
   return stmts.length;
 }
 
+// ——— História zmien naprieč k.ú. (čo sa zmenilo od minule) ———
+// `up_changes` (dokumenty ÚP) aj `change_log` (katastrálne polia) sa PLNILI, ale v appke sa dali
+// vidieť len po jednom datasete — takže „čo je nové" sa nedalo zistiť bez preklikania 30 k.ú.
+// Ranný brífing ukazuje len posledné 2 dni a len ÚP. Toto je spoločný prúd oboch zdrojov.
+export type ChangeFeedRow = {
+  src: string;              // 'up' = dokument územného plánu, 'kataster' = zmena v evidencii
+  dataset_id: string | null; ku_name: string | null;
+  label: string | null;     // názov dokumentu / entita+pole
+  url: string | null;
+  change: string | null;    // new | changed | removed | added
+  importance: string | null;
+  lv_no: number | null; parcel_no: string | null;
+  old_value: string | null; new_value: string | null;
+  detected_at: string | null;
+};
+export const getChangeFeed = createServerFn({ method: "POST" })
+  .validator(z.object({ days: z.number().min(1).max(365).optional(), src: z.string().optional() }).optional())
+  .handler(async ({ data }): Promise<ChangeFeedRow[]> => {
+    const d = data?.days ?? 30;
+    const want = data?.src ?? "";
+    const out: ChangeFeedRow[] = [];
+    if (want !== "kataster") {
+      const up = await q<ChangeFeedRow>(
+        `SELECT 'up' AS src, c.dataset_id, ds.ku_name, c.title AS label, c.url, c.change,
+                NULL AS importance, NULL AS lv_no, NULL AS parcel_no,
+                NULL AS old_value, NULL AS new_value, c.detected_at
+         FROM up_changes c LEFT JOIN datasets ds ON ds.id = c.dataset_id
+         WHERE c.detected_at >= datetime('now', ?) ORDER BY c.detected_at DESC, c.id DESC LIMIT 200`,
+        [`-${d} days`]).catch(() => []);
+      out.push(...up);
+    }
+    if (want !== "up") {
+      const kn = await q<ChangeFeedRow>(
+        `SELECT 'kataster' AS src, c.dataset_id, ds.ku_name,
+                (c.entity || CASE WHEN c.field IS NULL THEN '' ELSE ' · ' || c.field END) AS label,
+                NULL AS url, c.change_type AS change, c.importance, c.lv_no, c.parcel_no,
+                c.old_value, c.new_value, c.detected_at
+         FROM change_log c LEFT JOIN datasets ds ON ds.id = c.dataset_id
+         WHERE c.detected_at >= datetime('now', ?) ORDER BY c.detected_at DESC, c.id DESC LIMIT 200`,
+        [`-${d} days`]).catch(() => []);
+      out.push(...kn);
+    }
+    out.sort((a, b) => String(b.detected_at ?? "").localeCompare(String(a.detected_at ?? "")));
+    return out.slice(0, 300);
+  });
+
+// ——— Na čom AVM stojí: stav avm_index per okres (podklad pre kalibráciu) ———
+// Doteraz bola „kalibrácia" panel ~20 ručne nastaviteľných koeficientov a používateľ NEVIDEL, či
+// odhad stojí na realizovaných cenách alebo len na inzerátoch. `avm_index.basis` to vie, len to
+// nebolo nikde zobrazené. Bez tohto čísla sa koeficienty ladia naslepo.
+export type AvmIndexRow = {
+  okres: string; ppm2_stavebny: number | null; n_asking: number | null;
+  ppm2_realized: number | null; n_realized: number | null; basis: string | null; updated: string | null;
+};
+export const getAvmIndex = createServerFn({ method: "POST" })
+  .validator(z.object({}).optional())
+  .handler(async (): Promise<AvmIndexRow[]> =>
+    await q<AvmIndexRow>(
+      `SELECT okres, ppm2_stavebny, n_asking, ppm2_realized, n_realized, basis, updated
+       FROM avm_index ORDER BY (basis='realized') DESC, n_realized DESC, okres`).catch(() => []));
+
 export type AvmEstimate = { okres: string | null; category: string; ppm2AsIs: number; valueAsIs: number | null; ppm2Stavebny: number | null; valuePotential: number | null; marginPct: number | null; basis: string; nComps: number };
 // Odhad hodnoty parcely: ako-je (podľa druhu) vs potenciál (ak stavebné) → dev margin.
 export const getParcelAvm = createServerFn({ method: "POST" })
