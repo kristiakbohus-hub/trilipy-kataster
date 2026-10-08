@@ -10,6 +10,7 @@ import { LegalRef } from "../components/legal-ref";
 import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, type Regulativ, type DevCalc } from "../lib/development";
 import { useCalibDev, calibDevSync, preloadCalib } from "../lib/calib";
 import { DocumentsPanel } from "../components/documents-panel";
+import { ContactPanel } from "../components/contact-panel";
 
 type Content = Awaited<ReturnType<typeof getLvVypis>>;
 type DocType = "vypis" | "el";
@@ -444,6 +445,12 @@ function VypisPage() {
             <LvHistorySection datasetId={datasetId} lvNo={lvNo} />
             <Section title="Dokumenty (interné — PDF/GP/ZPMZ/zmluvy)">
               <DocumentsPanel datasetId={datasetId} subjectType="lv" subjectRef={String(lvNo)} role={role} />
+            </Section>
+            {/* Most medzi „našli sme príležitosť" a „niečo sa s ňou stalo" — bez neho sa dá volať
+                dvakrát tomu istému a zabudnúť na toho, kto povedal „o rok". */}
+            <Section title="Záznam kontaktu (interné)">
+              <ContactPanel datasetId={datasetId} lvNo={lvNo} role={role}
+                ownerNames={cc.owners.map((o) => o.name).filter(Boolean)} />
             </Section>
             {parts.A ? (
               <Section title="Časť A — Majetková podstata">

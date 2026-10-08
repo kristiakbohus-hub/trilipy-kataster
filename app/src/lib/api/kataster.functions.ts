@@ -3368,6 +3368,70 @@ async function computeObecMarket(): Promise<number> {
   return stmts.length;
 }
 
+// ——— Záznam kontaktu s vlastníkom (od nálezu k osloveniu) ———
+// Appka príležitosť našla a tam to skončilo. Nikde nebolo, komu sa už volalo, čo odpovedal a kedy
+// sa ozvať znova — pri 117 zhodách naprieč 30 k.ú. sa to v hlave neudrží a dá sa volať dvakrát
+// tomu istému alebo zabudnúť na toho, kto povedal „o rok".
+// `owner_name` je OWNER-SENSITIVE ako lv_owners → čítanie rolovo gatované, zápis cez rolu zo session.
+export const CONTACT_CHANNELS = ["list", "telefon", "email", "osobne", "ine"] as const;
+export const CONTACT_OUTCOMES = ["nezastihnuty", "zaujem", "nezaujem", "rozmysli", "dohoda", "odmietol"] as const;
+export type ContactRow = {
+  id: number; dataset_id: string | null; lv_no: number | null; parcel_no: string | null;
+  owner_name: string | null; channel: string; outcome: string; note: string | null;
+  next_at: string | null; author: string | null; created_at: string;
+};
+
+export const addContact = createServerFn({ method: "POST" })
+  .validator(z.object({
+    token: z.string().optional(),
+    datasetId: z.string().optional(), lvNo: z.number().optional(), parcelNo: z.string().optional(),
+    ownerName: z.string().max(300).optional(),
+    channel: z.enum(CONTACT_CHANNELS), outcome: z.enum(CONTACT_OUTCOMES),
+    note: z.string().max(2000).optional(), nextAt: z.string().max(10).optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = data.token ? await userFromToken(data.token).catch(() => null) : null;
+    if (!u) return { ok: false, message: "Zápis kontaktu vyžaduje prihlásenie." };
+    const role = (u.role ?? "viewer") as Role;
+    if (!canSeeOwners(role)) return { ok: false, message: "Rola nemá prístup k údajom o vlastníkoch." };
+    await q(`INSERT INTO contact_log (dataset_id,lv_no,parcel_no,owner_name,channel,outcome,note,next_at,user_id,author)
+             VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [data.datasetId ?? null, data.lvNo ?? null, data.parcelNo ?? null, data.ownerName ?? null,
+       data.channel, data.outcome, data.note ?? null, data.nextAt || null, u.id, u.name ?? u.email]);
+    await q("INSERT INTO activity (user_id,author,action,subject_type,subject_id,detail) VALUES (?,?,?,?,?,?)",
+      [u.id, u.name ?? u.email, "contact.add", "lv", `${data.datasetId ?? "?"}/${data.lvNo ?? "?"}`,
+       `${data.channel} → ${data.outcome}`]).catch(() => {});
+    return { ok: true };
+  });
+
+export const getContacts = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string().optional(), datasetId: z.string().optional(), lvNo: z.number().optional() }))
+  .handler(async ({ data }): Promise<ContactRow[]> => {
+    const role = await roleFromToken(data.token);
+    if (!canSeeOwners(role)) return [];     // mená vlastníkov sú owner-sensitive
+    const cond: string[] = []; const args: unknown[] = [];
+    if (data.datasetId) { cond.push("dataset_id = ?"); args.push(data.datasetId); }
+    if (data.lvNo != null) { cond.push("lv_no = ?"); args.push(data.lvNo); }
+    const where = cond.length ? `WHERE ${cond.join(" AND ")}` : "";
+    return q<ContactRow>(
+      `SELECT id,dataset_id,lv_no,parcel_no,owner_name,channel,outcome,note,next_at,author,created_at
+       FROM contact_log ${where} ORDER BY id DESC LIMIT 200`, args).catch(() => []);
+  });
+
+// „Koho zavolať" — čo má naplánovaný návrat a termín už nastal alebo sa blíži.
+export const getFollowUps = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string().optional(), days: z.number().min(0).max(365).optional() }))
+  .handler(async ({ data }): Promise<ContactRow[]> => {
+    const role = await roleFromToken(data.token);
+    if (!canSeeOwners(role)) return [];
+    const d = data.days ?? 7;
+    return q<ContactRow>(
+      `SELECT id,dataset_id,lv_no,parcel_no,owner_name,channel,outcome,note,next_at,author,created_at
+       FROM contact_log
+       WHERE next_at IS NOT NULL AND date(next_at) <= date('now', ?)
+       ORDER BY date(next_at) ASC LIMIT 200`, [`+${d} days`]).catch(() => []);
+  });
+
 // ——— Kontrola dát: hľadá miesta, kde si appka protirečí ———
 // Dôvod vzniku (2026-10-08): za jeden deň sa našlo šesť chýb, ktoré mali jedno spoločné — vyzerali
 // ako dáta. Chipy dostupnosti sa nezobrazovali NIKDY (parser čakal iný tvar kľúča), dossier tvrdil
