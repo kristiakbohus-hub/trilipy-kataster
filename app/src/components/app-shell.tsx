@@ -42,6 +42,7 @@ const NAV_GROUPS: NavGroup[] = [
     { to: "/", label: "Mission Control", icon: "mission" },
     { to: "/prehlad", label: "Prehľad / Dashboard", icon: "report" },
     { to: "/gdpr", label: "GDPR", icon: "shield" },
+    { to: "/kontrola", label: "Kontrola dát", icon: "shield" },
     { to: "/system", label: "System Status", icon: "shield" },
   ] },
 ];

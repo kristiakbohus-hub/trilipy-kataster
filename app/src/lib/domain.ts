@@ -25,6 +25,7 @@ export type AppPath =
   | "/deal-radar"
   | "/watchlist"
   | "/zmeny"
+  | "/kontrola"
   | "/aktivita"
   | "/deals"
   | "/pravny-referent"

@@ -26,6 +26,7 @@ import { Route as KalibraciaRouteImport } from './routes/kalibracia'
 import { Route as PoklesyRouteImport } from './routes/poklesy'
 import { Route as RanoRouteImport } from './routes/rano'
 import { Route as WatchlistRouteImport } from './routes/watchlist'
+import { Route as KontrolaRouteImport } from './routes/kontrola'
 import { Route as ZmenyRouteImport } from './routes/zmeny'
 import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
 import { Route as ReportyIndexRouteImport } from './routes/reporty.index'
@@ -149,6 +150,11 @@ const WatchlistRoute = WatchlistRouteImport.update({
 const ZmenyRoute = ZmenyRouteImport.update({
   id: '/zmeny',
   path: '/zmeny',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KontrolaRoute = KontrolaRouteImport.update({
+  id: '/kontrola',
+  path: '/kontrola',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TrhovaHistoriaRoute = TrhovaHistoriaRouteImport.update({
@@ -345,6 +351,7 @@ export interface FileRoutesByFullPath {
   '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
   '/zmeny': typeof ZmenyRoute
+  '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
@@ -398,6 +405,7 @@ export interface FileRoutesByTo {
   '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
   '/zmeny': typeof ZmenyRoute
+  '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
@@ -452,6 +460,7 @@ export interface FileRoutesById {
   '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
   '/zmeny': typeof ZmenyRoute
+  '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
@@ -507,6 +516,7 @@ export interface FileRouteTypes {
     | '/rano'
     | '/watchlist'
     | '/zmeny'
+    | '/kontrola'
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
@@ -560,6 +570,7 @@ export interface FileRouteTypes {
     | '/rano'
     | '/watchlist'
     | '/zmeny'
+    | '/kontrola'
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
@@ -613,6 +624,7 @@ export interface FileRouteTypes {
     | '/rano'
     | '/watchlist'
     | '/zmeny'
+    | '/kontrola'
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
@@ -663,6 +675,7 @@ export interface RootRouteChildren {
   RanoRoute: typeof RanoRoute
   WatchlistRoute: typeof WatchlistRoute
   ZmenyRoute: typeof ZmenyRoute
+  KontrolaRoute: typeof KontrolaRoute
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
   PravnyReferentRoute: typeof PravnyReferentRoute
   CenyRoute: typeof CenyRoute
@@ -909,6 +922,14 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZmenyRouteImport
       parentRoute: typeof rootRouteImport
     }
+
+    '/kontrola': {
+      id: '/kontrola'
+      path: '/kontrola'
+      fullPath: '/kontrola'
+      preLoaderRoute: typeof KontrolaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/trhova-historia': {
       id: '/trhova-historia'
       path: '/trhova-historia'
@@ -1080,6 +1101,7 @@ const rootRouteChildren: RootRouteChildren = {
   RanoRoute: RanoRoute,
   WatchlistRoute: WatchlistRoute,
   ZmenyRoute: ZmenyRoute,
+  KontrolaRoute: KontrolaRoute,
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,
   PravnyReferentRoute: PravnyReferentRoute,
   CenyRoute: CenyRoute,

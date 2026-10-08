@@ -3368,6 +3368,92 @@ async function computeObecMarket(): Promise<number> {
   return stmts.length;
 }
 
+// ——— Kontrola dát: hľadá miesta, kde si appka protirečí ———
+// Dôvod vzniku (2026-10-08): za jeden deň sa našlo šesť chýb, ktoré mali jedno spoločné — vyzerali
+// ako dáta. Chipy dostupnosti sa nezobrazovali NIKDY (parser čakal iný tvar kľúča), dossier tvrdil
+// nulovú zastavateľnosť ako fakt, detektor zmien vrátil pol milióna falošných zmien, počty na
+// kartách ignorovali filter, prázdny výsledok bol prehltnutá SQL chyba a štyri datasety mali
+// nesprávny okres, podľa ktorého sa vyberá trhová cena (Žilina dostávala cenu Čadce).
+// Žiadnu z nich nenahlásilo nič — našli sa náhodou. Tieto kontroly hľadajú ROZPORY, nie chyby:
+// dve miesta v dátach, ktoré sa nemôžu obe zhodovať s pravdou.
+export type SanityCheck = {
+  key: string; title: string; detail: string;
+  level: "ok" | "warn" | "fail";
+  n: number; sample: string | null;
+};
+export const getDataSanity = createServerFn({ method: "POST" })
+  .validator(z.object({}).optional())
+  .handler(async (): Promise<SanityCheck[]> => {
+    const out: SanityCheck[] = [];
+    const one = async <T>(sql: string, args: unknown[] = []) => (await q<T>(sql, args).catch(() => []))[0];
+    const add = (key: string, title: string, n: number, detail: string, sample: string | null,
+                 warnOver = 0) =>
+      out.push({ key, title, n, detail, sample, level: n > warnOver ? (n > warnOver * 10 ? "fail" : "warn") : "ok" });
+
+    // 1) hlavička datasetu vs. skutočné riadky — presne trieda chyby, ktorá dnes unikla
+    const poc = await q<{ id: string; ku_name: string; dek: number; real: number }>(
+      `SELECT d.id, d.ku_name, COALESCE(d.n_parcels,0) AS dek,
+              (SELECT COUNT(*) FROM parcels p WHERE p.dataset_id = d.id) AS real
+       FROM datasets d`).catch(() => []);
+    const rozdiel = poc.filter((r) => r.dek > 0 && Math.abs(r.dek - r.real) > Math.max(5, r.dek * 0.02));
+    add("pocty_datasetu", "Hlavička datasetu nesúhlasí so skutočnými parcelami", rozdiel.length,
+        "Karta datasetu ukazuje počet z hlavičky. Ak nesúhlasí s počtom riadkov, jedno z tých čísel klame.",
+        rozdiel.slice(0, 4).map((r) => `${r.ku_name}: hlavička ${r.dek}, riadkov ${r.real}`).join(" · ") || null);
+
+    // 2) dataset tvrdí 100 % geometrie, ale parcely ju nemajú
+    const geo = await q<{ ku_name: string; n: number }>(
+      `SELECT d.ku_name, COUNT(*) AS n FROM datasets d JOIN parcels p ON p.dataset_id = d.id
+       WHERE d.geometry_coverage >= 100 AND (p.geometry_json IS NULL OR p.geometry_json = '')
+       GROUP BY d.id ORDER BY n DESC`).catch(() => []);
+    add("geometria", "Dataset tvrdí 100 % geometrie, ale parcely ju nemajú", geo.length,
+        "Pokrytie geometriou je v hlavičke napevno 100 %. Ak parcely geometriu nemajú, mapa aj dossier to nemajú z čoho vykresliť.",
+        geo.slice(0, 4).map((r) => `${r.ku_name}: ${r.n} parciel`).join(" · ") || null);
+
+    // 3) okres datasetu bez trhového podkladu → AVM padá na kódové defaulty
+    const bezAvm = await q<{ ku_name: string; okres: string }>(
+      `SELECT d.ku_name,
+              TRIM(REPLACE(SUBSTR(d.region, 1, INSTR(d.region || ' · ', ' · ') - 1), 'okres ', '')) AS okres
+       FROM datasets d
+       WHERE okres NOT IN (SELECT okres FROM avm_index)`).catch(() => []);
+    add("avm_okres", "Okres datasetu nemá trhový podklad", bezAvm.length,
+        "Odhad hodnoty sa vyberá podľa okresu z regiónu datasetu. Bez riadku v trhovom indexe padne na kódový default — a nikde to nie je vidieť.",
+        bezAvm.slice(0, 5).map((r) => `${r.ku_name} → „${r.okres}"`).join(" · ") || null);
+
+    // 4) trhová cena bez porovnateľných
+    const bezComp = await one<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM avm_index WHERE ppm2_stavebny IS NOT NULL AND COALESCE(n_asking,0) + COALESCE(n_realized,0) < 3");
+    add("avm_comps", "Trhová cena opretá o menej než 3 porovnateľné", bezComp?.n ?? 0,
+        "Medián z jednej či dvoch ponúk nie je trh. Cena sa použije, ale nemá váhu.", null);
+
+    // 5) príležitosti pre k.ú., ktoré v appke nie je ako dataset
+    const sirotyLs = await one<{ n: number }>(
+      "SELECT COUNT(*) AS n FROM landsearch_results WHERE kod_ku NOT IN (SELECT ku_code FROM datasets WHERE ku_code IS NOT NULL)");
+    add("siroty_landsearch", "Príležitosti pre k.ú. bez datasetu", sirotyLs?.n ?? 0,
+        "Celok sa zobrazí, ale nedá sa z neho otvoriť dossier ani založiť deal — chýba dataset, na ktorý by sa napojil.", null);
+
+    // 6) scenár narazil na strop profilu → zoznam je odrezaný, nie úplný
+    const strop = await q<{ kod_ku: string; purpose: string; n: number }>(
+      `SELECT kod_ku, purpose, COUNT(*) AS n FROM landsearch_results
+       GROUP BY kod_ku, purpose HAVING n >= 25 ORDER BY n DESC`).catch(() => []);
+    add("strop_profilu", "Scenár narazil na strop počtu výsledkov", strop.length,
+        "Push posiela najviac 25–40 celkov na profil. Kde sa strop dosiahol, zoznam je odrezaný podľa skóre — nie je to všetko, čo v k.ú. je.",
+        strop.slice(0, 4).map((r) => `${r.kod_ku}/${r.purpose}: ${r.n}`).join(" · ") || null);
+
+    // 7) LV bez jediného vlastníka
+    const lvBez = await one<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM lvs l
+       WHERE NOT EXISTS (SELECT 1 FROM lv_owners o WHERE o.dataset_id = l.dataset_id AND o.lv_no = l.lv_no)`);
+    add("lv_bez_vlastnika", "List vlastníctva bez jediného vlastníka", lvBez?.n ?? 0,
+        "Každé LV má mať vlastníka. Ak nemá, prepojenie sa pri importe nechytilo a výpis bude prázdny.", null, 10);
+
+    // 8) parcely bez LV
+    const pBez = await one<{ n: number }>("SELECT COUNT(*) AS n FROM parcels WHERE lv_no IS NULL");
+    add("parcely_bez_lv", "Parcely bez priradeného LV", pBez?.n ?? 0,
+        "Bez LV sa k parcele nedá dohľadať vlastník ani ťarchy — scenáre ju preskočia.", null, 50);
+
+    return out;
+  });
+
 // ——— História zmien naprieč k.ú. (čo sa zmenilo od minule) ———
 // `up_changes` (dokumenty ÚP) aj `change_log` (katastrálne polia) sa PLNILI, ale v appke sa dali
 // vidieť len po jednom datasete — takže „čo je nové" sa nedalo zistiť bez preklikania 30 k.ú.
