@@ -86,9 +86,14 @@ export function proxyZone(useType: string | null | undefined, placement: string 
   const inTown = /v zastavanom/i.test(placement ?? "");
   if (/lesn/.test(t)) return "LP";
   if (/vodn/.test(t)) return "PP";
-  if (/orná|orna|trvalé trávne|trvale travne|ttp|chmeľ|vinic|ovocn|záhrad|zahrad/.test(t) && !inTown) return "PP";
-  if (/zastavan|nádvor|nadvor/.test(t) && inTown) return "ZM";
-  if (/záhrad|zahrad/.test(t) && inTown) return "OB";
+  // „zastavaná plocha a nádvorie" je zastavaná UŽ PODĽA DRUHU — nepotrebuje potvrdenie umiestnením.
+  // Dovtedy to bolo podmienené `inTown`, a keď umiestnenie chýbalo (čo je väčšina riadkov), spadlo
+  // to až na „PP = poľnohospodárska, nezastavateľné". Zastavaný pozemok teda appka hlásila ako
+  // poľnohospodársku pôdu. Umiestnenie ostáva rozhodujúce len tam, kde druh sám nestačí (záhrada).
+  if (/zastavan|nádvor|nadvor/.test(t)) return "ZM";
+  if (/orná|orna|trvalé trávne|trvale travne|ttp|chmeľ|vinic|ovocn/.test(t)) return "PP";
+  if (/záhrad|zahrad/.test(t)) return inTown ? "OB" : "PP";
+  if (/ostatná|ostatna/.test(t)) return inTown ? "ZM" : "PP";
   if (inTown) return "OB";
   return "PP";
 }
