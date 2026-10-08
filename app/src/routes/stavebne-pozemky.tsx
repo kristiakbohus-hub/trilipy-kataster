@@ -39,11 +39,15 @@ function LandPage() {
     return Array.from(m, ([kod, name]) => ({ kod, name })).sort((a, b) => a.name.localeCompare(b.name, "sk"));
   }, [rows]);
 
-  const nMatch = rows.filter((r) => r.verdict === "MATCH").length;
+  // Počty MUSIA ctiť filter k.ú. Dovtedy sa počítalo cez všetky `rows`, takže pri vybranej obci
+  // gombíky aj štatistiky tvrdili globálne čísla — „Vyhovuje (65)" nad Skalitým, ktoré malo 0.
+  // Pri meraní stavu pred prepočtom to vyzeralo, že každá obec má rovnaký počet príležitostí.
+  const vKu = useMemo(() => (kuFilter ? rows.filter((r) => r.kod_ku === kuFilter) : rows), [rows, kuFilter]);
+  const nMatch = vKu.filter((r) => r.verdict === "MATCH").length;
   // koľko celkov nemá preverené funkčné využitie — bez tohto čísla sa nedá odhadnúť, nakoľko je zoznam podložený ÚP
-  const nBezUp = rows.filter((r) => zoneUnknown(r.zone)).length;
-  const nProv = rows.filter((r) => r.verdict === "PROVISIONAL").length;
-  const nPpf = rows.filter((r) => r.verdict === "MATCH" && r.ppf).length;
+  const nBezUp = vKu.filter((r) => zoneUnknown(r.zone)).length;
+  const nProv = vKu.filter((r) => r.verdict === "PROVISIONAL").length;
+  const nPpf = vKu.filter((r) => r.verdict === "MATCH" && r.ppf).length;
 
   const shownAll = useMemo(
     () => rows.filter((r) => r.verdict === verdict && (!kuFilter || r.kod_ku === kuFilter)),
@@ -67,7 +71,7 @@ function LandPage() {
         <Stat label="Na preskúmanie" value={nProv} />
         <Stat label="Záber PPF" value={nPpf} />
         <Stat label="Bez ÚP zóny" value={nBezUp} />
-        <Stat label="Katastre" value={katastre.length} />
+        <Stat label={kuFilter ? "Vybrané k.ú." : "Katastre"} value={kuFilter ? 1 : katastre.length} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

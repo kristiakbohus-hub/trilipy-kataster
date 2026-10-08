@@ -67,9 +67,12 @@ function SettlementPage() {
     return Array.from(m, ([kod, name]) => ({ kod, name })).sort((a, b) => a.name.localeCompare(b.name, "sk"));
   }, [rows]);
 
-  const nMatch = rows.filter((r) => r.classification === "MATCH").length;
-  const nProv = rows.filter((r) => r.classification === "PROVISIONAL").length;
-  const nSpf = rows.filter((r) => r.classification === "MATCH" && r.has_spf).length;
+  // Počty musia ctiť filter k.ú. — dovtedy sa počítalo cez všetky `rows`, takže pri vybranej
+  // obci gombíky a štatistiky tvrdili globálne čísla (napr. „Vyhovuje (65)" nad obcou, čo má 0).
+  const vKu = useMemo(() => (kuFilter ? rows.filter((r) => r.kod_ku === kuFilter) : rows), [rows, kuFilter]);
+  const nMatch = vKu.filter((r) => r.classification === "MATCH").length;
+  const nProv = vKu.filter((r) => r.classification === "PROVISIONAL").length;
+  const nSpf = vKu.filter((r) => r.classification === "MATCH" && r.has_spf).length;
 
   const shownAll = useMemo(
     () => rows.filter((r) =>
@@ -100,7 +103,7 @@ function SettlementPage() {
         <Stat label="Kandidáti (MATCH)" value={nMatch} />
         <Stat label="Na preskúmanie" value={nProv} />
         <Stat label="So SPF / štátom" value={nSpf} />
-        <Stat label="Katastre" value={katastre.length} />
+        <Stat label={kuFilter ? "Vybrané k.ú." : "Katastre"} value={kuFilter ? 1 : katastre.length} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">

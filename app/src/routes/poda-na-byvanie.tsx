@@ -45,8 +45,11 @@ function UpzonedFarmlandPage() {
     return Array.from(m, ([kod, name]) => ({ kod, name })).sort((a, b) => a.name.localeCompare(b.name, "sk"));
   }, [rows]);
 
-  const nMatch = rows.filter((r) => r.classification === "MATCH").length;
-  const nProv = rows.filter((r) => r.classification === "PROVISIONAL").length;
+  // Počty musia ctiť filter k.ú. — dovtedy sa počítalo cez všetky `rows`, takže pri vybranej
+  // obci gombíky a štatistiky tvrdili globálne čísla (napr. „Vyhovuje (65)" nad obcou, čo má 0).
+  const vKu = useMemo(() => (kuFilter ? rows.filter((r) => r.kod_ku === kuFilter) : rows), [rows, kuFilter]);
+  const nMatch = vKu.filter((r) => r.classification === "MATCH").length;
+  const nProv = vKu.filter((r) => r.classification === "PROVISIONAL").length;
   const lacne = rows.filter((r) => r.classification === "MATCH" && !r.chranena
     && r.naklad_vynatie_eur !== null && r.naklad_vynatie_eur <= 1000).length;
 
@@ -71,7 +74,7 @@ function UpzonedFarmlandPage() {
         <Stat label="Kandidáti (MATCH)" value={nMatch} />
         <Stat label="Na preskúmanie" value={nProv} />
         <Stat label="Vyňatie do 1000 €" value={lacne} />
-        <Stat label="Katastre" value={katastre.length} />
+        <Stat label={kuFilter ? "Vybrané k.ú." : "Katastre"} value={kuFilter ? 1 : katastre.length} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
