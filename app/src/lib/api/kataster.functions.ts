@@ -3502,9 +3502,26 @@ export const ingestDataset = createServerFn({ method: "POST" })
         DB.prepare("DELETE FROM lv_signals WHERE dataset_id=?").bind(did),
         DB.prepare("DELETE FROM lv_titles WHERE dataset_id=?").bind(did),
       ]);
-      const d = data.dataset ?? {};
-      await DB.prepare("INSERT INTO datasets (id,ku_code,ku_name,region,kn_type,status,geometry_coverage,canonical_confidence,import_version,updated_at,note,n_parcels,n_owners,sum_area_m2) VALUES (?,?,?,?,?,?,?,?,?,date('now'),?,?,?,?) ON CONFLICT(id) DO UPDATE SET ku_name=excluded.ku_name,region=excluded.region,kn_type=excluded.kn_type,updated_at=excluded.updated_at,note=excluded.note,n_parcels=excluded.n_parcels,n_owners=excluded.n_owners,sum_area_m2=excluded.sum_area_m2")
-        .bind(did, data.kodKu, d.kuName ?? data.kodKu, d.region ?? null, d.knType ?? "C-KN", "ready_with_warnings", 100, 0.85, "import_auto", `Auto import ${data.kodKu} (41_IMPORT).`, d.nParcels ?? null, d.nOwners ?? null, d.sumArea ?? null).run();
+    }
+    // Upsert hlavičky datasetu BOL vnútri `if (reset)`, takže opraviť len metadáta (názov, okres)
+    // sa nedalo bez zmazania parciel, LV, vlastníkov, signálov a titulov. Pritom práve okres bol
+    // u 4 datasetov nesprávny (Žilina/Ružomberok mali „okres Čadca", viď _region v dataset pushi),
+    // a podľa okresu appka vyberá trhovú cenu pre AVM. Preto sa upsert robí vždy, keď príde
+    // `dataset` blok, a počty sa pri vynechaní ZACHOVAJÚ (COALESCE) — metadátová oprava nesmie
+    // vynulovať to, čo už v riadku je.
+    if (data.dataset) {
+      const d = data.dataset;
+      // Dva kroky zámerne: `ku_name` aj `region` sú NOT NULL, takže nový riadok potrebuje záložné
+      // hodnoty — ale metadátová oprava existujúceho riadku nesmie prepísať to, čo neposlala.
+      // ON CONFLICT by to nerozlíšilo (excluded by už obsahovalo zálohu), preto INSERT OR IGNORE
+      // na založenie a potom UPDATE s COALESCE na to, čo volajúci naozaj dodal.
+      await DB.prepare("INSERT OR IGNORE INTO datasets (id,ku_code,ku_name,region,kn_type,status,geometry_coverage,canonical_confidence,import_version,updated_at,note,n_parcels,n_owners,sum_area_m2) VALUES (?,?,?,?,?,?,?,?,?,date('now'),?,?,?,?)")
+        .bind(did, data.kodKu, d.kuName ?? data.kodKu, d.region ?? `k.ú. ${data.kodKu}`, d.knType ?? "C-KN",
+              "ready_with_warnings", 100, 0.85, "import_auto", `Auto import ${data.kodKu} (41_IMPORT).`,
+              d.nParcels ?? null, d.nOwners ?? null, d.sumArea ?? null).run();
+      await DB.prepare("UPDATE datasets SET ku_name=COALESCE(?,ku_name), region=COALESCE(?,region), kn_type=COALESCE(?,kn_type), n_parcels=COALESCE(?,n_parcels), n_owners=COALESCE(?,n_owners), sum_area_m2=COALESCE(?,sum_area_m2), updated_at=date('now') WHERE id=?")
+        .bind(d.kuName ?? null, d.region ?? null, d.knType ?? null,
+              d.nParcels ?? null, d.nOwners ?? null, d.sumArea ?? null, did).run();
     }
     try {
       const slug = (s: string) => s.replace(/\//g, "-");
