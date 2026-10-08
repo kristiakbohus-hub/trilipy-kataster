@@ -11,6 +11,7 @@ import {
   canRunPipeline,
   eur,
   m2,
+  decSk,
 } from "../lib/domain";
 import { Badge, Card, Disclaimer, Icon, Meter, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
@@ -193,7 +194,7 @@ function DatasetDetail() {
                   <div key={"o" + o.id} className="flex items-center justify-between gap-2 p-3">
                     <div className="min-w-0">
                       <div className="truncate text-sm text-fg">{o.kind}</div>
-                      <div className="text-xs text-muted">score {o.score.toFixed(2)} · {eur(o.est_price_eur)}</div>
+                      <div className="text-xs text-muted">score {decSk(o.score, 2)} · {eur(o.est_price_eur)}</div>
                     </div>
                     <Badge color={(OPP_META[o.status] ?? { color: "#8a8a8a" }).color}>
                       {(OPP_META[o.status] ?? { label: o.status }).label}

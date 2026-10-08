@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { decSk } from "../lib/domain";
 import { useEffect, useMemo, useState } from "react";
 import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities, refreshMarketData, refreshMarketListings, refreshMarketPriceHistory, getMarketListings, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
@@ -225,7 +226,7 @@ function CenyPage() {
           <Card>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold text-fg">Trend — {okres ?? "—"}</div>
-              {trend != null ? <Badge color={trend >= 0 ? "#5b7a58" : "#a05252"}>{trend >= 0 ? "▲" : "▼"} {Math.abs(trend).toFixed(1)} %</Badge> : null}
+              {trend != null ? <Badge color={trend >= 0 ? "#5b7a58" : "#a05252"}>{trend >= 0 ? "▲" : "▼"} {decSk(Math.abs(trend))} %</Badge> : null}
             </div>
             {series.length >= 2 ? (
               <svg viewBox="0 0 300 120" className="w-full" preserveAspectRatio="none" style={{ height: 120 }}>

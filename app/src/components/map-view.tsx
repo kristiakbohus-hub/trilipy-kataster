@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import type { PointerEvent as RPointerEvent, WheelEvent as RWheelEvent, ReactNode } from "react";
+import { decSk } from "../lib/domain";
 import type { LvOwner, Parcel, Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
@@ -1982,7 +1983,7 @@ export function MapView({
               <input type="checkbox" checked={snap} onChange={() => setSnap((v) => !v)} className="accent-brand" /> Snapping na vrcholy
             </label>
             <div className="mt-1 text-muted">
-              {measure.length < 2 ? "Klikaj body…" : `Dĺžka: ${measureTotal.toFixed(1)} m`}
+              {measure.length < 2 ? "Klikaj body…" : `Dĺžka: ${decSk(measureTotal)} m`}
               {measure.length > 0 ? <button onClick={() => setMeasure([])} className="ml-2 underline hover:text-fg">reset</button> : null}
             </div>
           </div>

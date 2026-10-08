@@ -1,3 +1,4 @@
+import { decSk } from "../lib/domain";
 type PoiHit = { name: string | null; dist: number; drive_min: number } | null;
 type Access = { transport: Record<string, PoiHit>; amenities: Record<string, PoiHit>; infra: Record<string, PoiHit> };
 
@@ -15,7 +16,7 @@ function distColor(m: number): string {
   return m <= 600 ? "#5b7a58" : m <= 1500 ? "#c9a45c" : "#a05252";
 }
 function fmtDist(m: number): string {
-  return m < 1000 ? `${m} m` : `${(m / 1000).toFixed(1)} km`;
+  return m < 1000 ? `${m} m` : `${decSk(m / 1000)} km`;
 }
 
 function Row({ k, hit }: { k: string; hit: PoiHit }) {

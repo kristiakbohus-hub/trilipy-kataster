@@ -11,7 +11,7 @@ import {
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
 import { CriteriaMatrix } from "../components/kit";
-import { QUALITY_META } from "../lib/domain";
+import { QUALITY_META, decSk } from "../lib/domain";
 import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "../lib/development";
 import { useCalibDev } from "../lib/calib";
 import { DocumentsPanel } from "../components/documents-panel";
@@ -384,7 +384,7 @@ function ReportPage() {
               .filter(([, v]) => v).slice(0, 12).map(([k, v]) => (
                 <div key={k} className="flex justify-between border-b border-line/40 py-0.5">
                   <span className="text-muted">{k}</span>
-                  <span className="tabular-nums">{v ? `${v.dist < 1000 ? v.dist + " m" : (v.dist / 1000).toFixed(1) + " km"}` : "—"}</span>
+                  <span className="tabular-nums">{v ? `${v.dist < 1000 ? v.dist + " m" : decSk(v.dist / 1000) + " km"}` : "—"}</span>
                 </div>
               ))}
           </div>
