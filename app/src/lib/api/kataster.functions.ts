@@ -266,7 +266,7 @@ type NlHit = {
   dataset_id: string; ku_name: string; lv_no: number; co_owners: number; has_spf: number;
   dedic: number; buildable: number; clean_title: number; absenter_ratio: number; total_area: number; oldest_birth_year: number | null;
 };
-// ——— LLM vrstva NL prieskumu (Haiku): NL dopyt → štruktúrovaný filter cez forced tool ———
+// ——— LLM vrstva NL prieskumu (Haiku 5.5): NL dopyt → štruktúrovaný filter cez forced tool ———
 // Bezpečné: beží LEN keď je nastavený ANTHROPIC_API_KEY (secret). Pri chýbajúcom kľúči / chybe → null → padne späť na pravidlá.
 // LLM NEgeneruje SQL — vráti len whitelist polia, ktoré ja preložím na parametrizované SQL.
 type LlmNlFilter = {
@@ -306,7 +306,12 @@ async function llmParseNl(query: string, apiKey: string): Promise<LlmNlFilter | 
     },
   };
   const body = {
-    model: "claude-haiku-4-5", max_tokens: 1024,
+    // Haiku 5.5 je podľa dokumentácie cielený práve na „classification, extraction, routing" —
+    // čo je presne táto vrstva (NL → whitelist filter jedným vynúteným tool callom, žiadne SQL).
+    // effort "low": táto úloha nepotrebuje uvažovanie, len preklad; Haiku 5.5 má default "medium",
+    // takže bez tohto by platil tokeny za thinking, ktoré tu nič nepridá.
+    model: "claude-haiku-5-5", max_tokens: 1024,
+    output_config: { effort: "low" },
     system: "Si prekladač dopytov pre slovenský kataster nehnuteľností. Používateľ zadá dopyt v prirodzenej reči (slovensky) a ty zavoláš nástroj filter_lv s poľami, ktoré dopyt vyjadruje. Vyplň LEN spomenuté polia; nič si nevymýšľaj. Roky sú 4-ciferné (napr. 2025).",
     tools: [tool], tool_choice: { type: "tool", name: "filter_lv" },
     messages: [{ role: "user", content: query }],
@@ -392,7 +397,7 @@ export const nlQuery = createServerFn({ method: "POST" })
       else cond.push(`${mx} IS NOT NULL`);
     } else if (/dedič|dedic/.test(s)) { cond.push("sig.dedic = 1"); } // spätná kompat
     if (/s\s*[tť]arch|bremen|nečist|necist/.test(s) && !legalEv) cond.push("sig.clean_title = 0");
-    // ——— LLM vrstva (Haiku): ak je secret ANTHROPIC_API_KEY, nahraď regex-filter presnejším štruktúrovaným. Fallback = regex vyššie. ———
+    // ——— LLM vrstva (Haiku 5.5): ak je secret ANTHROPIC_API_KEY, nahraď regex-filter presnejším štruktúrovaným. Fallback = regex vyššie. ———
     let llmUsed = false; let llmReason: string | null = null;
     const _apiKey = bindings().ANTHROPIC_API_KEY;
     if (_apiKey && data.llm !== false && raw.length >= 3) {
