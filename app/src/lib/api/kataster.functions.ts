@@ -20,7 +20,7 @@ import type {
   ZoningFinding,
   ZoningSource,
 } from "../domain";
-import { accessTimesLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
+import { accessTimesLabel, plural, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode } from "../development";
 
 const roleSchema = z.enum([
@@ -1429,7 +1429,7 @@ export const getClientReport = createServerFn({ method: "POST" })
       rows = src.map((x, i) => ({
         id: `${data.kodKu}-${i + 1}`,
         title: `${m2Txt(x.area_m2)} · ${PURPOSE_SK[x.purpose ?? ""] ?? x.purpose ?? "—"}`,
-        subtitle: `zóna ${x.zone ?? "—"} · ${x.n_parcels ?? "?"} parciel · tvar ${x.shape ?? "—"}`
+        subtitle: `zóna ${x.zone ?? "—"} · ${x.n_parcels == null ? "? parciel" : plural(x.n_parcels, "parcela", "parcely", "parciel")} · tvar ${x.shape ?? "—"}`
           + (x.ppf ? " · záber poľnohospodárskeho fondu" : ""),
         cols: [
           { label: "Parcely", value: x.parcels ?? "—" }, { label: "Výmera", value: m2Txt(x.area_m2) },

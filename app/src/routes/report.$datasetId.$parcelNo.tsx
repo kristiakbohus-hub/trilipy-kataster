@@ -34,11 +34,27 @@ const LEGAL_LABEL: Record<string, string> = {
 };
 // „zalozne_pravo 2019“ → „Záložné právo 2019“; neznámy kód nechá tak, nech sa nič nestratí.
 const legalLabel = (raw: string) => raw.replace(/^([a-z_]+)/, (m) => LEGAL_LABEL[m] ?? m);
-// 9 rovnakých riadkov pod sebou je šum → zoskupiť na „Záložné právo ×8“.
-function groupLegal(items: string[]): { label: string; n: number }[] {
-  const m = new Map<string, number>();
-  for (const it of items) { const l = legalLabel(it.trim()); m.set(l, (m.get(l) ?? 0) + 1); }
-  return [...m].map(([label, n]) => ({ label, n })).sort((a, b) => b.n - a.n);
+// Zoskupenie bežalo podľa typu AJ ROKU, takže jedno LV vyrobilo 60+ riadkov „Iné 1959", „Iné 1960"…
+// a dossier sa nedal prečítať. Zoskupujeme podľa TYPU a rok zhrnieme do rozsahu — nič sa nestratí,
+// len to nie je vysypané po riadkoch. „Iné" ide naspodok, je najmenej výpovedné.
+function groupLegal(items: string[]): { label: string; n: number; span: string | null }[] {
+  const m = new Map<string, { n: number; years: number[] }>();
+  for (const it of items) {
+    const raw = it.trim();
+    const ym = raw.match(/\b(1[89]\d{2}|20\d{2})\b/);
+    const type = legalLabel(raw.replace(/\s*\b(1[89]\d{2}|20\d{2})\b\s*/, " ").trim()) || "Iné";
+    const g = m.get(type) ?? { n: 0, years: [] };
+    g.n += 1;
+    if (ym) g.years.push(Number(ym[1]));
+    m.set(type, g);
+  }
+  return [...m]
+    .map(([label, g]) => {
+      const ys = g.years.sort((a, b) => a - b);
+      const span = ys.length === 0 ? null : ys[0] === ys[ys.length - 1] ? String(ys[0]) : `${ys[0]}–${ys[ys.length - 1]}`;
+      return { label, n: g.n, span };
+    })
+    .sort((a, b) => (a.label === "Iné" ? 1 : b.label === "Iné" ? -1 : 0) || b.n - a.n);
 }
 
 const eurM2 = (n: number | null | undefined) => (n == null ? "—" : Math.round(n).toLocaleString("sk-SK") + " €/m²");
@@ -208,7 +224,7 @@ function ReportPage() {
             <ul className="space-y-1 text-sm">
               {groupLegal(legal.titles).map((g, i) => (
                 <li key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
-                  <span>{g.label}</span>
+                  <span>{g.label}{g.span ? <span className="text-muted"> · {g.span}</span> : null}</span>
                   {g.n > 1 ? <span className="shrink-0 tabular-nums text-muted">×{g.n}</span> : null}
                 </li>
               ))}
@@ -246,7 +262,7 @@ function ReportPage() {
               <ul className="space-y-1 text-sm">
                 {groupLegal(legal.tarchy).map((g, i) => (
                   <li key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
-                    <span>{g.label}</span>
+                    <span>{g.label}{g.span ? <span className="text-muted"> · {g.span}</span> : null}</span>
                     {g.n > 1 ? <span className="shrink-0 tabular-nums text-muted">×{g.n}</span> : null}
                   </li>
                 ))}

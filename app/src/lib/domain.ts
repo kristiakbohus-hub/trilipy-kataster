@@ -471,6 +471,12 @@ export function reasonSk(s: string | null | undefined): string | null {
 // Časť zdrojov nesie názov s predponou („k.ú. Budatín"), časť bez nej („Staškov"). V jednom
 // zozname sa potom miešajú a abecedné radenie ide podľa „k". Zobrazujeme jednotne bez predpony —
 // kontext („Katastre", „Všetky k.ú.") ju aj tak nesie.
+// Slovenčina má tri tvary (1 parcela / 2–4 parcely / 5+ parciel) — „1 parciel" v reporte bolo vidno.
+export function plural(n: number, one: string, few: string, many: string): string {
+  const a = Math.abs(n);
+  return `${n} ${a === 1 ? one : a >= 2 && a <= 4 ? few : many}`;
+}
+
 export const kuLabel = (n: string | null | undefined, kod?: string | null) =>
   (n ? n.replace(/^k\.\s*[úu]\.\s*/i, "").trim() : "") || kod || "—";
 
