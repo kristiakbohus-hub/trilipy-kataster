@@ -3426,10 +3426,23 @@ export const getDataSanity = createServerFn({ method: "POST" })
         "Medián z jednej či dvoch ponúk nie je trh. Cena sa použije, ale nemá váhu.", null);
 
     // 5) príležitosti pre k.ú., ktoré v appke nie je ako dataset
+    // POZOR na fallback: `datasets.ku_code` nie je vyplnený u starších importov, preto sa dataset
+    // v celom kóde hľadá ako `ku_code = ? OR id = 'kn-' || ?`. Prvá verzia tejto kontroly ho
+    // vynechala a nahlásila 225 „osirelých" príležitostí, ktoré v skutočnosti dataset majú.
+    // Kontrola, ktorá kričí nadarmo, je horšia než žiadna.
     const sirotyLs = await one<{ n: number }>(
-      "SELECT COUNT(*) AS n FROM landsearch_results WHERE kod_ku NOT IN (SELECT ku_code FROM datasets WHERE ku_code IS NOT NULL)");
+      `SELECT COUNT(*) AS n FROM landsearch_results lr
+       WHERE NOT EXISTS (SELECT 1 FROM datasets d
+                         WHERE d.ku_code = lr.kod_ku OR d.id = 'kn-' || lr.kod_ku)`);
     add("siroty_landsearch", "Príležitosti pre k.ú. bez datasetu", sirotyLs?.n ?? 0,
         "Celok sa zobrazí, ale nedá sa z neho otvoriť dossier ani založiť deal — chýba dataset, na ktorý by sa napojil.", null);
+
+    // 5b) dataset bez vyplneného kódu k.ú. — kvôli tomu musí každý dotaz nosiť fallback na id
+    const bezKodu = await q<{ id: string; ku_name: string }>(
+      "SELECT id, ku_name FROM datasets WHERE ku_code IS NULL OR TRIM(ku_code) = ''").catch(() => []);
+    add("dataset_bez_kodu", "Dataset bez vyplneného kódu k.ú.", bezKodu.length,
+        "Kvôli tomu musí každý dotaz hľadať dataset aj podľa id („kn-<kód>\"). Kde sa na ten fallback zabudne, dataset sa „nenájde\" a dáta vyzerajú ako osirelé.",
+        bezKodu.slice(0, 5).map((r) => `${r.ku_name} (${r.id})`).join(" · ") || null);
 
     // 6) scenár narazil na strop profilu → zoznam je odrezaný, nie úplný
     const strop = await q<{ kod_ku: string; purpose: string; n: number }>(
@@ -3447,9 +3460,17 @@ export const getDataSanity = createServerFn({ method: "POST" })
         "Každé LV má mať vlastníka. Ak nemá, prepojenie sa pri importe nechytilo a výpis bude prázdny.", null, 10);
 
     // 8) parcely bez LV
+    const pAll = await one<{ n: number }>("SELECT COUNT(*) AS n FROM parcels");
     const pBez = await one<{ n: number }>("SELECT COUNT(*) AS n FROM parcels WHERE lv_no IS NULL");
-    add("parcely_bez_lv", "Parcely bez priradeného LV", pBez?.n ?? 0,
-        "Bez LV sa k parcele nedá dohľadať vlastník ani ťarchy — scenáre ju preskočia.", null, 50);
+    const podiel = pAll?.n ? Math.round(100 * (pBez?.n ?? 0) / pAll.n) : 0;
+    // Prah je na PODIELE, nie na počte — pri 300 000 parcelách je absolútne číslo neinterpretovateľné
+    // a kontrola by svietila načerveno vždy.
+    out.push({
+      key: "parcely_bez_lv", title: "Parcely bez priradeného LV", n: pBez?.n ?? 0,
+      detail: `Bez LV sa k parcele nedá dohľadať vlastník ani ťarchy — scenáre ju preskočia. Je to ${podiel} % všetkých parciel; časť je normálna (E-parcely a parcely bez zápisu), podozrivé je až to, keď podiel vyskočí.`,
+      sample: `${(pBez?.n ?? 0).toLocaleString("sk-SK")} z ${(pAll?.n ?? 0).toLocaleString("sk-SK")}`,
+      level: podiel >= 50 ? "fail" : podiel >= 30 ? "warn" : "ok",
+    });
 
     return out;
   });
