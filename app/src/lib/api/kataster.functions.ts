@@ -3418,6 +3418,25 @@ export const getContacts = createServerFn({ method: "POST" })
        FROM contact_log ${where} ORDER BY id DESC LIMIT 200`, args).catch(() => []);
   });
 
+// Mazanie: záznam bez možnosti opravy je pasca — preklep by v histórii ostal navždy a pri ďalšom
+// hovore by zavádzal. Mazať smie AUTOR záznamu alebo admin; cudzí záznam nie, aby sa nedala
+// prepisovať história kolegu.
+export const deleteContact = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string().optional(), id: z.number() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = data.token ? await userFromToken(data.token).catch(() => null) : null;
+    if (!u) return { ok: false, message: "Mazanie vyžaduje prihlásenie." };
+    const r = (await q<{ user_id: string | null }>("SELECT user_id FROM contact_log WHERE id = ?", [data.id]).catch(() => []))[0];
+    if (!r) return { ok: false, message: "Záznam neexistuje." };
+    if (r.user_id !== u.id && u.role !== "admin") {
+      return { ok: false, message: "Zmazať môže len autor záznamu alebo admin." };
+    }
+    await q("DELETE FROM contact_log WHERE id = ?", [data.id]);
+    await q("INSERT INTO activity (user_id,author,action,subject_type,subject_id,detail) VALUES (?,?,?,?,?,?)",
+      [u.id, u.name ?? u.email, "contact.delete", "contact", String(data.id), "zmazaný záznam kontaktu"]).catch(() => {});
+    return { ok: true };
+  });
+
 // „Koho zavolať" — čo má naplánovaný návrat a termín už nastal alebo sa blíži.
 export const getFollowUps = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string().optional(), days: z.number().min(0).max(365).optional() }))

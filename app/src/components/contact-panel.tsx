@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  addContact, getContacts, CONTACT_CHANNELS, CONTACT_OUTCOMES, type ContactRow,
+  addContact, getContacts, deleteContact, CONTACT_CHANNELS, CONTACT_OUTCOMES, type ContactRow,
 } from "../lib/api/kataster.functions";
 import { canSeeOwners, type Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
@@ -40,6 +40,17 @@ export function ContactPanel({ datasetId, lvNo, ownerNames, role }: {
       .then(setRows).catch(() => setRows([]));
   }, [token, datasetId, lvNo, smie]);
   useEffect(() => { refresh(); }, [refresh]);
+
+  async function zmaz(id: number) {
+    if (!token) return;
+    if (!window.confirm("Zmazať tento záznam kontaktu?")) return;
+    setBusy(true); setMsg(null);
+    try {
+      const r = await deleteContact({ data: { token, id } });
+      setMsg(r.ok ? "Zmazané." : (r.message ?? "Zlyhalo."));
+      if (r.ok) refresh();
+    } finally { setBusy(false); }
+  }
 
   async function save() {
     if (!token) { setMsg("Zápis vyžaduje prihlásenie."); return; }
@@ -146,8 +157,14 @@ export function ContactPanel({ datasetId, lvNo, ownerNames, role }: {
                   </p>
                 ) : null}
               </div>
-              <span className="shrink-0 text-[11px] tabular-nums text-muted">
-                {r.created_at?.slice(0, 16)}{r.author ? ` · ${r.author}` : ""}
+              <span className="flex shrink-0 items-center gap-2">
+                <span className="text-[11px] tabular-nums text-muted">
+                  {r.created_at?.slice(0, 16)}{r.author ? ` · ${r.author}` : ""}
+                </span>
+                <button
+                  onClick={() => zmaz(r.id)} disabled={busy} title="Zmazať záznam"
+                  className="rounded border border-line px-1.5 text-[11px] text-muted hover:text-fg disabled:opacity-50"
+                >✕</button>
               </span>
             </li>
           ))}
