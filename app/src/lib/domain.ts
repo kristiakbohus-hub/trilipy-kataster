@@ -376,6 +376,21 @@ export const TASK_STATE_ORDER = ["pending", "contacted", "agreed", "signed", "de
 /** SPI kód parcely (PARCIS) → čitateľné číslo. Posledné 4 číslice sú podlomenie:
  *  "10000" → "1", "49660003" → "4966/3", "134720470" → "13472/470".
  *  Scenár vysporiadania posiela surový kód, ktorý je pri práci nepoužiteľný. */
+// ——— Zóna z územného plánu: overená vs. nepreverená ———
+// Engine zapisuje pri chýbajúcom ÚP zdroji zónu ako text („bez ÚP zdroja", „neurčené", „?"), takže
+// karta ju kreslila ROVNAKÝM chipom ako skutočnú zónu z výkresu („hromadné bývanie"). Pre čitateľa
+// to vyzeralo ako overený údaj. Fyzické kritériá (tvar, svah, prístup, zastavanosť) platia aj bez
+// ÚP — nevie sa len funkčné využitie, a presne to musí byť vidieť.
+const ZONE_UNKNOWN = new Set([
+  "?", "bez úp zdroja", "bez up zdroja", "nezónované", "nezonovane",
+  "mimo/nezónované", "mimo/nezonovane", "neurčené", "neurcene",
+  "neurčené (tmavé)", "neurcene (tmave)",
+]);
+export const zoneUnknown = (zone: string | null | undefined) =>
+  !zone || ZONE_UNKNOWN.has(zone.trim().toLowerCase());
+export const zoneLabel = (zone: string | null | undefined) =>
+  zoneUnknown(zone) ? "bez územného plánu — zóna nepreverená" : (zone as string);
+
 // ——— Kritériá kandidátov (candidate.py) ———
 // Kľúče chodia z enginov ako strojové snake_case. Zobrazovali sa surové všade, kde sa renderuje
 // matica kritérií (4 scenárové karty, dossier parcely a klientsky report) — pre klienta nečitateľné.

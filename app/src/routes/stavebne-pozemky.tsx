@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { getLandsearchBrowse, type LandsearchRow } from "../lib/api/kataster.functions";
-import { m2, parseAccessTimes, durationSk, reasonSk, decSk, kuLabel, plural } from "../lib/domain";
+import { m2, parseAccessTimes, durationSk, reasonSk, decSk, kuLabel, plural, zoneUnknown, zoneLabel } from "../lib/domain";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -40,6 +40,8 @@ function LandPage() {
   }, [rows]);
 
   const nMatch = rows.filter((r) => r.verdict === "MATCH").length;
+  // koľko celkov nemá preverené funkčné využitie — bez tohto čísla sa nedá odhadnúť, nakoľko je zoznam podložený ÚP
+  const nBezUp = rows.filter((r) => zoneUnknown(r.zone)).length;
   const nProv = rows.filter((r) => r.verdict === "PROVISIONAL").length;
   const nPpf = rows.filter((r) => r.verdict === "MATCH" && r.ppf).length;
 
@@ -60,10 +62,11 @@ function LandPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Vyhovuje (MATCH)" value={nMatch} />
         <Stat label="Na preskúmanie" value={nProv} />
         <Stat label="Záber PPF" value={nPpf} />
+        <Stat label="Bez ÚP zóny" value={nBezUp} />
         <Stat label="Katastre" value={katastre.length} />
       </div>
 
@@ -134,9 +137,19 @@ function LandPage() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-1.5">
-                  {r.zone ? (
-                    <span className="rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] text-fg">{r.zone}</span>
-                  ) : null}
+                  {/* Zóna bez ÚP zdroja sa kreslila rovnakým chipom ako overená → vyzerala ako
+                      overený údaj. Teraz je vizuálne odlíšená, ale celok z výsledkov nevypadne. */}
+                  <span
+                    className="rounded-full border px-2 py-0.5 text-[11px]"
+                    style={zoneUnknown(r.zone)
+                      ? { color: "#9a7b3e", borderColor: "#9a7b3e55", borderStyle: "dashed" }
+                      : { color: "#1f1f1f", borderColor: "#d8d4cc", background: "rgba(0,0,0,0.03)" }}
+                    title={zoneUnknown(r.zone)
+                      ? "Obec nezverejňuje územný plán — funkčné využitie nie je preverené. Fyzické kritériá (tvar, svah, prístup, zastavanosť) platia."
+                      : "Funkčné využitie z územného plánu"}
+                  >
+                    {zoneLabel(r.zone)}
+                  </span>
                   {times.map((t) => (
                     <span key={t.label} className="rounded-full border border-line px-2 py-0.5 text-[11px]" style={{ color: "#5b7a58" }}>
                       {t.label} {durationSk(t.seconds)}

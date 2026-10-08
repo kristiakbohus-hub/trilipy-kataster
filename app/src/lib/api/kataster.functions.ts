@@ -20,7 +20,7 @@ import type {
   ZoningFinding,
   ZoningSource,
 } from "../domain";
-import { accessTimesLabel, plural, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
+import { accessTimesLabel, plural, zoneLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode } from "../development";
 
 const roleSchema = z.enum([
@@ -1434,12 +1434,12 @@ export const getClientReport = createServerFn({ method: "POST" })
       rows = src.map((x, i) => ({
         id: `${data.kodKu}-${i + 1}`,
         title: `${m2Txt(x.area_m2)} · ${PURPOSE_SK[x.purpose ?? ""] ?? x.purpose ?? "—"}`,
-        subtitle: `zóna ${x.zone ?? "—"} · ${x.n_parcels == null ? "? parciel" : plural(x.n_parcels, "parcela", "parcely", "parciel")} · tvar ${x.shape ?? "—"}`
+        subtitle: `zóna ${zoneLabel(x.zone)} · ${x.n_parcels == null ? "? parciel" : plural(x.n_parcels, "parcela", "parcely", "parciel")} · tvar ${x.shape ?? "—"}`
           + (x.ppf ? " · záber poľnohospodárskeho fondu" : ""),
         cols: [
           { label: "Parcely", value: x.parcels ?? "—" }, { label: "Výmera", value: m2Txt(x.area_m2) },
           { label: "Účel", value: PURPOSE_SK[x.purpose ?? ""] ?? x.purpose ?? "—" },
-          { label: "Zóna", value: x.zone ?? "—" },
+          { label: "Zóna", value: zoneLabel(x.zone) },
           { label: "Vlastníkov", value: x.n_owners == null ? "—" : String(x.n_owners) },
           { label: "Dostupnosť", value: accessTimesLabel(x.access_times) },
         ],
