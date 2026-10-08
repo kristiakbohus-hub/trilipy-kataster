@@ -18,6 +18,12 @@ const CHANGE_COLOR: Record<string, string> = {
   new: "#5b7a58", added: "#5b7a58", changed: "#9a7b3e", removed: "#9c4a40",
 };
 const DAYS = [7, 30, 90, 365];
+// Monitor okrem zmien zapisuje aj diagnostiku, PREČO za dané k.ú. porovnanie nevyrobil. Patrí to
+// bokom — nie je to zmena v katastri a v zozname zmien by to bol šum, ktorý vyzerá ako dáta.
+const META_LABEL: Record<string, string> = {
+  runs_not_comparable: "Behy sa nedajú porovnať",
+  field_tracking_started: "Pole sa začalo sledovať",
+};
 
 function ZmenyPage() {
   const [rows, setRows] = useState<ChangeFeedRow[]>([]);
@@ -31,11 +37,14 @@ function ZmenyPage() {
       .then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
   }, [days, src]);
 
-  const nUp = rows.filter((r) => r.src === "up").length;
-  const nKn = rows.filter((r) => r.src === "kataster").length;
-  const nHigh = rows.filter((r) => r.importance === "high").length;
+  // diagnostika monitora sa do počtov zmien NEZAPOČÍTAVA
+  const meta = useMemo(() => rows.filter((r) => (r.label ?? "").startsWith("meta")), [rows]);
+  const zmeny = useMemo(() => rows.filter((r) => !(r.label ?? "").startsWith("meta")), [rows]);
+  const nUp = zmeny.filter((r) => r.src === "up").length;
+  const nKn = zmeny.filter((r) => r.src === "kataster").length;
+  const nHigh = zmeny.filter((r) => r.importance === "high").length;
   const katastre = useMemo(
-    () => new Set(rows.map((r) => r.ku_name ?? r.dataset_id ?? "?")).size, [rows]);
+    () => new Set(zmeny.map((r) => r.ku_name ?? r.dataset_id ?? "?")).size, [zmeny]);
 
   return (
     <div className="space-y-6">
@@ -81,14 +90,14 @@ function ZmenyPage() {
 
       {loading ? (
         <Card className="p-6 text-center text-sm text-muted">Načítavam…</Card>
-      ) : rows.length === 0 ? (
+      ) : zmeny.length === 0 ? (
         <Card className="p-6 text-center text-sm text-muted">
           Za zvolené obdobie monitor nezaznamenal žiadnu zmenu. ÚP monitor beží pri importe a cez
           denný cron; katastrálne zmeny plní Mac cez <code>/api/ingest-changes</code>.
         </Card>
       ) : (
         <Card className="divide-y divide-line">
-          {rows.map((r, i) => {
+          {zmeny.map((r, i) => {
             const col = CHANGE_COLOR[r.change ?? ""] ?? "#8a8a8a";
             return (
               <div key={i} className="flex flex-wrap items-start gap-3 p-3">
@@ -144,10 +153,40 @@ function ZmenyPage() {
         </Card>
       )}
 
-      {rows.length ? (
+      {zmeny.length ? (
         <p className="text-xs text-muted">
-          Zobrazených {plural(rows.length, "záznam", "záznamy", "záznamov")} (strop 300 na dopyt).
+          Zobrazených {plural(zmeny.length, "záznam", "záznamy", "záznamov")} (strop 300 na dopyt).
         </p>
+      ) : null}
+
+      {meta.length ? (
+        <div>
+          <SectionHeader title="Stav monitora" hint="prečo za dané k.ú. porovnanie nevzniklo" />
+          <Card className="divide-y divide-line">
+            {meta.map((r, i) => (
+              <div key={`m${i}`} className="flex flex-wrap items-start justify-between gap-2 p-3 text-sm">
+                <div className="min-w-0">
+                  <span className="text-fg">{kuLabel(r.ku_name, r.dataset_id)}</span>
+                  <span className="ml-2 text-xs text-muted">
+                    {META_LABEL[r.change ?? ""] ?? r.change ?? "—"}
+                  </span>
+                  <div className="mt-0.5 text-xs text-muted">
+                    {r.old_value ? `${r.old_value} → ` : ""}{r.new_value ?? ""}
+                  </div>
+                </div>
+                <span className="shrink-0 text-[11px] tabular-nums text-muted">{r.detected_at ?? "—"}</span>
+              </div>
+            ))}
+          </Card>
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            Detekcia zmien porovnáva dva importné behy toho istého k.ú. Nerobí to, keď novší beh
+            pokrýva výrazne menej listov vlastníctva (čiastkový import) alebo keď sa pole doplnilo
+            do importu až neskôr — inak by naivný rozdiel nahlásil ako „zmenené" prakticky všetko.
+            Pri prvom prepočte to bolo <b>pol milióna</b> falošných záznamov. Aby monitor začal
+            dávať skutočné zmeny, treba pre dané k.ú. <b>čerstvý plný import</b> — potom bude mať
+            s čím porovnávať.
+          </p>
+        </div>
       ) : null}
 
       <Disclaimer>
