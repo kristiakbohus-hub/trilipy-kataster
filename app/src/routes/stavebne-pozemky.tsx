@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { getLandsearchBrowse, type LandsearchRow } from "../lib/api/kataster.functions";
-import { m2, parseAccessTimes, durationSk, reasonSk, decSk, kuLabel } from "../lib/domain";
+import { m2, parseAccessTimes, durationSk, reasonSk, decSk, kuLabel, plural } from "../lib/domain";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -129,7 +129,7 @@ function LandPage() {
                     <div className="text-xs text-muted">{kuLabel(r.ku_name, r.kod_ku)}{r.shape ? ` · ${r.shape}` : ""}</div>
                   </div>
                   <span className="shrink-0 rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] tabular-nums text-fg">
-                    {r.n_parcels} {r.n_parcels === 1 ? "parcela" : "parciel"} · kv. {r.quality != null ? Math.round(r.quality) : "—"}
+                    {plural(r.n_parcels ?? 0, "parcela", "parcely", "parciel")} · kv. {r.quality != null ? Math.round(r.quality) : "—"}
                   </span>
                 </div>
 
@@ -147,7 +147,7 @@ function LandPage() {
                   ) : null}
                   {r.n_owners ? (
                     <span className="rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] text-fg">
-                      {r.n_owners} {r.n_owners === 1 ? "vlastník" : "vlastníkov"}
+                      {plural(r.n_owners ?? 0, "vlastník", "vlastníci", "vlastníkov")}
                     </span>
                   ) : null}
                   {/* svah, prístup a zastavanosť engine počíta a posiela, ale karta ich nezobrazovala —
