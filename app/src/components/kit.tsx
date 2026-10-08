@@ -1,3 +1,4 @@
+import { critLabel, outcomeLabel } from "../lib/domain";
 import type { CSSProperties, ReactNode } from "react";
 
 // ——— Ikony (inline SVG, žiadna externá závislosť) ———
@@ -183,8 +184,8 @@ export function CriteriaMatrix({ json }: { json: string | null | undefined }) {
           return (
             <li key={i} className="text-xs">
               <div className="flex items-center justify-between gap-2">
-                <span className="text-fg">{c.key}</span>
-                <span className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: col, borderColor: col + "55" }}>{c.outcome}</span>
+                <span className="text-fg">{critLabel(c.key)}</span>
+                <span className="shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-semibold" style={{ color: col, borderColor: col + "55" }}>{outcomeLabel(c.outcome)}</span>
               </div>
               {ev?.fact ? (
                 <div className="mt-0.5 text-[11px] text-muted">

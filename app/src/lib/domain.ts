@@ -376,6 +376,53 @@ export const TASK_STATE_ORDER = ["pending", "contacted", "agreed", "signed", "de
 /** SPI kód parcely (PARCIS) → čitateľné číslo. Posledné 4 číslice sú podlomenie:
  *  "10000" → "1", "49660003" → "4966/3", "134720470" → "13472/470".
  *  Scenár vysporiadania posiela surový kód, ktorý je pri práci nepoužiteľný. */
+// ——— Kritériá kandidátov (candidate.py) ———
+// Kľúče chodia z enginov ako strojové snake_case. Zobrazovali sa surové všade, kde sa renderuje
+// matica kritérií (4 scenárové karty, dossier parcely a klientsky report) — pre klienta nečitateľné.
+// Slovník je tu, nie v jednej stránke, aby ho používal spoločný komponent CriteriaMatrix.
+const CRIT_LABEL: Record<string, string> = {
+  // pôda na bývanie (GOLD-UP)
+  zoning_permits_housing: "Územný plán na danom mieste dovoľuje bývanie",
+  land_still_agricultural: "Kataster vedie pozemok ako ornú pôdu alebo trvalý trávny porast",
+  already_built: "Na pozemku stojí stavba",
+  protected_soil: "Chránená pôda (vyňatie je podstatne ťažšie)",
+  cheap_withdrawal: "Nízky náklad vyňatia z poľnohospodárskeho fondu",
+  // vysporiadanie pozemkov pod stavbami (GOLD-04)
+  building_has_owner: "Stavba má evidovaného vlastníka",
+  has_related_land: "K stavbe sa podarilo dohľadať pozemok",
+  land_owner_mismatch: "Vlastník stavby a vlastník pozemku sú rôzne osoby",
+  registered_user_is_building_owner: "Evidovaný užívateľ pozemku je vlastníkom stavby",
+  geometry_confirmed: "Pozemok je potvrdený geometriou, nielen číslom parcely",
+  cx_historical_holding: "Pozemok leží na historickej pozemkovoknižnej držbe",
+  cx_multi_holding: "Pozemok má viacero spoluvlastníckych podielov",
+  cx_spf_parcel: "Podiel drží Slovenský pozemkový fond alebo štát",
+  // zdedené byty (GOLD-ZA)
+  qualifying_holding: "Dedičstvo aj iná adresa sedia na tom istom vlastníkovi",
+  floor_not_first_or_last: "Byt nie je na prvom ani poslednom podlaží",
+  // stavebné pozemky (GOLD-LI / GOLD-BU)
+  zoning_permits_purpose: "Územný plán na danom mieste dovoľuje zamýšľané využitie",
+  school_reachable: "Škola je v zadanom časovom limite",
+  school_margin: "Rezerva do limitu dostupnosti školy",
+  shop_reachable: "Obchod je v zadanom časovom limite",
+  shop_margin: "Rezerva do limitu dostupnosti obchodu",
+};
+export function critLabel(key: string): string {
+  return CRIT_LABEL[key] ?? key.replace(/_/g, " ");
+}
+// null = kľúč nepoznáme → volajúci radšej ukáže pôvodný text, než aby vyrobil polovičnú vetu.
+export const critLabelKnown = (key: string): string | null => CRIT_LABEL[key] ?? null;
+
+// PASS/FAIL/UNKNOWN je strojový výstup — voči POŽIADAVKE znamená splnené / nesplnené / neoverené.
+const OUTCOME_SK: Record<string, string> = { PASS: "splnené", FAIL: "nesplnené", UNKNOWN: "neoverené" };
+export const outcomeLabel = (o: string) => OUTCOME_SK[o] ?? o.toLowerCase();
+
+// Verdikt kandidáta. Karty ho prekladajú ručne na „Potenciálny kandidát / Na preskúmanie",
+// prieskum ho ukazoval surový („MATCH"). Jedno miesto, jedno znenie.
+const VERDICT_SK: Record<string, string> = {
+  MATCH: "Vyhovuje", PROVISIONAL: "Na preskúmanie", REJECTED: "Nevyhovuje",
+};
+export const verdictLabel = (v: string | null | undefined) => (v ? VERDICT_SK[v] ?? v : "—");
+
 // „school_car 540s; shop_car 82s" → [{ label: "škola autom", seconds: 540 }, …]
 // POZOR na tvar kľúča: engine skladá `f"{dest}_{profile}"` (gold_li_engine._eval_access), takže cieľ
 // a profil sú spojené PODTRŽNÍKOM, nie medzerou. Pôvodný parser čakal dve slová oddelené medzerou,

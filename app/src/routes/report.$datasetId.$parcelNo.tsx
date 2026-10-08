@@ -18,6 +18,7 @@ import { DocumentsPanel } from "../components/documents-panel";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
 // Viď pamäť cf_app_ssr_loader_leak.
+const UP_DOC_KIND: Record<string, string> = { vykres: "výkres", text: "textová časť", ine: "iné" };
 export const Route = createFileRoute("/report/$datasetId/$parcelNo")({
   head: () => ({ meta: [{ title: "Dossier parcely — TRI LIPY KATASTER CORE" }] }),
   component: ReportPage,
@@ -379,7 +380,7 @@ function ReportPage() {
         {upDocs.length ? (
           <ul className="list-disc pl-5 text-sm">
             {upDocs.slice(0, 20).map((d) => (
-              <li key={d.id}><a href={d.url ?? "#"} className="text-brand underline">{d.title ?? "dokument"}</a> <span className="text-[10px] text-muted">{d.kind}</span></li>
+              <li key={d.id}><a href={d.url ?? "#"} className="text-brand underline">{d.title ?? "dokument"}</a> <span className="text-[10px] text-muted">{UP_DOC_KIND[d.kind ?? ""] ?? d.kind}</span></li>
             ))}
           </ul>
         ) : <Muted>Žiadne ÚP dokumenty pre k.ú.</Muted>}

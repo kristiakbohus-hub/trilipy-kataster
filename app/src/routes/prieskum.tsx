@@ -4,7 +4,7 @@ import { nlQuery, saveSearch, listSavedSearches, deleteSavedSearch, setSavedAler
 import { Card, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
-import type { Role } from "../lib/domain";
+import { verdictLabel, type Role } from "../lib/domain";
 
 export const Route = createFileRoute("/prieskum")({
   head: () => ({ meta: [{ title: "NL prieskum — TRI LIPY KATASTER CORE" }] }),
@@ -234,7 +234,7 @@ function PrieskumPage() {
               const badge = o.verdict === "MATCH" ? "#1E7A3E" : "#B8860B";
               return (
                 <div key={`${o.kod_ku}-${o.parcels}-${i}`} className="flex items-center gap-3 py-2">
-                  <span className="rounded-full px-2 py-0.5 text-[11px] font-bold text-white" style={{ background: badge }}>{o.verdict}</span>
+                  <span className="rounded-full px-2 py-0.5 text-[11px] font-bold text-white" style={{ background: badge }}>{verdictLabel(o.verdict)}</span>
                   <div className="text-sm font-bold tabular-nums text-fg">{o.quality ?? "—"}</div>
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium text-fg">

@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getClientReport, type ClientReport } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer } from "../components/kit";
-import type { AppPath } from "../lib/domain";
+import { critLabel, critLabelKnown, type AppPath } from "../lib/domain";
 
 // Klientsky report A–H podľa dok. 16 §3. BEZ `loader` (viď pamäť cf_app_ssr_loader_leak).
 export const Route = createFileRoute("/klient-report/$scenario/$kodKu")({
@@ -18,22 +18,6 @@ const SCENARIO_LABEL: Record<string, string> = {
 };
 const EFFECT_LABEL: Record<string, string> = {
   MUST: "Povinná podmienka", MUST_NOT: "Zákaz", PREFER: "Preferencia", AVOID: "Nežiaduce", INFO: "Informatívne",
-};
-// Kritériá chodia ako strojové kľúče — v klientskom výstupe musia byť čitateľnou podmienkou.
-const CRIT_LABEL: Record<string, string> = {
-  zoning_permits_housing: "Územný plán na danom mieste dovoľuje bývanie",
-  land_still_agricultural: "Kataster vedie pozemok ako ornú pôdu alebo trvalý trávny porast",
-  already_built: "Na pozemku stojí stavba",
-  protected_soil: "Chránená pôda (vyňatie je podstatne ťažšie)",
-  cheap_withdrawal: "Nízky náklad vyňatia z poľnohospodárskeho fondu",
-  // vysporiadanie
-  building_on_foreign_land: "Stavba stojí na pozemku iného vlastníka",
-  owners_disjoint: "Vlastník stavby a vlastník pozemku sú rôzne osoby",
-  land_owner_known: "Vlastník pozemku je známy a dohľadateľný",
-  // zdedené byty
-  inherited_recent: "Podiel bol zdedený v sledovanom období",
-  not_first_or_last_floor: "Byt nie je na prvom ani poslednom podlaží",
-  owner_address_differs: "Vlastník má evidovanú adresu mimo obce bytu",
 };
 // Metodika a poznámky boli písané pre scenár „pôda na bývanie" a zobrazovali sa aj pri ostatných —
 // klient tak čítal o náklade vyňatia aj v reporte o zdedených bytoch. Každý scenár má svoje vlastné.
@@ -144,7 +128,7 @@ function ClientReportPage() {
             {r.brief.map((c, i) => (
               <tr key={i} className="border-b border-line/40">
                 <td className="py-0.5 pr-3 text-muted">{EFFECT_LABEL[c.effect] ?? c.effect}</td>
-                <td className="py-0.5">{CRIT_LABEL[c.key] ?? c.key}</td>
+                <td className="py-0.5">{critLabel(c.key)}</td>
               </tr>
             ))}
           </tbody></table>
@@ -255,7 +239,7 @@ function ClientReportPage() {
             {r.uncertainties.map((u, i) => {
               // candidate.py posiela „<kluc>: NOT VERIFIED" — v klientskom reporte to musí byť veta.
               const key = u.text.split(":")[0].trim();
-              const label = CRIT_LABEL[key];
+              const label = critLabelKnown(key);
               return (
                 <li key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
                   <span>{label ? `Nepodarilo sa overiť: ${label.charAt(0).toLowerCase()}${label.slice(1)}` : u.text}</span>

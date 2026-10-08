@@ -12,6 +12,7 @@ export const Route = createFileRoute("/stavebne-pozemky")({
 });
 
 const PURPOSE_LABEL: Record<string, string> = { residential: "bývanie", retail: "retail", industrial: "priemysel" };
+const BUILD_LABEL: Record<string, string> = { empty: "prázdny", demolishable: "na demoláciu", built: "zastavaný" };
 const PURPOSE_LIMITS: Record<string, string> = { residential: "škola ≤10 min · obchod ≤5 min autom" };
 
 
@@ -147,6 +148,24 @@ function LandPage() {
                   {r.n_owners ? (
                     <span className="rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] text-fg">
                       {r.n_owners} {r.n_owners === 1 ? "vlastník" : "vlastníkov"}
+                    </span>
+                  ) : null}
+                  {/* svah, prístup a zastavanosť engine počíta a posiela, ale karta ich nezobrazovala —
+                      pri stavebnom pozemku sú to pritom tri z najdôležitejších vecí. */}
+                  {r.slope != null ? (
+                    <span className="rounded-full border border-line px-2 py-0.5 text-[11px]"
+                      style={r.slope > 12 ? { color: "#9a7b3e" } : { color: "#5b7a58" }}>
+                      svah {r.slope} %
+                    </span>
+                  ) : null}
+                  {r.frontage === 0 ? (
+                    <span className="rounded-full border border-line px-2 py-0.5 text-[11px]" style={{ color: "#9a7b3e" }}>
+                      bez priameho prístupu z cesty
+                    </span>
+                  ) : null}
+                  {BUILD_LABEL[r.build ?? ""] ? (
+                    <span className="rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] text-fg">
+                      {BUILD_LABEL[r.build ?? ""]}
                     </span>
                   ) : null}
                 </div>

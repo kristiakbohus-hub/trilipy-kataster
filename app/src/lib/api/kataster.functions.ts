@@ -3695,9 +3695,18 @@ export const getMarketOpportunities = createServerFn({ method: "POST" })
 export type RadarLv = { dataset_id: string; ku_name: string; lv_no: number; score: number; reasons: string[]; co_owners: number; total_area: number; has_spf: number; okres: string | null; avm_eur: number | null };
 // ——— Národné geokódovanie (ZBGIS-style našepkávač miest/adries) — Nominatim SK ———
 export type GeoPlace = { label: string; lat: number; lng: number; kind: string };
+// Nominatim vracia `type` po anglicky („village", „administrative") a našepkávač ho zobrazoval surový.
+const OSM_KIND_SK: Record<string, string> = {
+  city: "mesto", town: "mesto", village: "obec", hamlet: "osada", suburb: "časť mesta",
+  neighbourhood: "časť obce", quarter: "časť mesta", locality: "lokalita", isolated_dwelling: "samota",
+  administrative: "územná jednotka", municipality: "obec", county: "okres", state: "kraj",
+  house: "dom", residential: "zástavba", building: "budova", road: "cesta", street: "ulica",
+  peak: "vrch", water: "vodná plocha", forest: "les", farmland: "pole", place_of_worship: "kostol",
+};
 export const geocodePlace = createServerFn({ method: "POST" })
   .validator(z.object({ q: z.string().min(2) }))
   .handler(async ({ data }): Promise<GeoPlace[]> => {
+    const osmKindSk = (k: string) => OSM_KIND_SK[k] ?? (k ? k.replace(/_/g, " ") : "miesto");
     const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=sk&limit=6&q=${encodeURIComponent(data.q.trim())}`;
     const arr = asArr(await fetchJsonTimed(url, 6000).catch(() => []));
     const out: GeoPlace[] = [];
@@ -3706,7 +3715,7 @@ export const geocodePlace = createServerFn({ method: "POST" })
       const lat = Number(x.lat), lng = Number(x.lon);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
       const dn = String(x.display_name ?? "");
-      out.push({ label: dn.split(",").slice(0, 3).join(",").trim() || dn.slice(0, 60), lat, lng, kind: String(x.type ?? x.category ?? "miesto") });
+      out.push({ label: dn.split(",").slice(0, 3).join(",").trim() || dn.slice(0, 60), lat, lng, kind: osmKindSk(String(x.type ?? x.category ?? "")) });
     }
     return out;
   });
