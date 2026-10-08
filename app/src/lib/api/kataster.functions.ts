@@ -3531,9 +3531,15 @@ export const getDataSanity = createServerFn({ method: "POST" })
     const strop = await q<{ kod_ku: string; purpose: string; n: number }>(
       `SELECT kod_ku, purpose, COUNT(*) AS n FROM landsearch_results
        GROUP BY kod_ku, purpose HAVING n >= 25 ORDER BY n DESC`).catch(() => []);
-    add("strop_profilu", "Scenár narazil na strop počtu výsledkov", strop.length,
-        "Push posiela najviac 25–40 celkov na profil. Kde sa strop dosiahol, zoznam je odrezaný podľa skóre — nie je to všetko, čo v k.ú. je.",
-        strop.slice(0, 4).map((r) => `${r.kod_ku}/${r.purpose}: ${r.n}`).join(" · ") || null);
+    // Narazenie na NASTAVENÝ strop je očakávané správanie, nie protirečenie — nikdy to teda nie je
+    // „rozpor", najviac upozornenie. Inak by karta svietila načerveno trvalo a podkopala by dôveru
+    // v tie kontroly, ktoré naozaj niečo našli.
+    out.push({
+      key: "strop_profilu", title: "Scenár narazil na strop počtu výsledkov", n: strop.length,
+      detail: "Push posiela najviac 25–40 celkov na profil. Kde sa strop dosiahol, zoznam je odrezaný podľa skóre — nie je to chyba, ale nie je to ani všetko, čo v k.ú. je. Ak chceš úplný zoznam, treba zdvihnúť cap v profile.",
+      sample: strop.slice(0, 4).map((r) => `${r.kod_ku}/${r.purpose}: ${r.n}`).join(" · ") || null,
+      level: strop.length > 0 ? "warn" : "ok",
+    });
 
     // 7) LV bez jediného vlastníka
     const lvBez = await one<{ n: number }>(
