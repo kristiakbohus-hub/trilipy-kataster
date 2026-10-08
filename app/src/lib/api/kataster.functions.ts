@@ -3730,12 +3730,22 @@ export type ReportParcel = {
   bpej: string | null; bpej_skupina: number | null; odnatie_eur: number | null;
   centroid_lat: number | null; centroid_lng: number | null;
   geometry_quality: GeometryQuality | null; geometry_json: string | null;
+  placement: string | null;      // „v zastavanom území obce" — rozhoduje o proxy zóne, keď ÚP chýba
 };
 export const getParcelByNo = createServerFn({ method: "POST" })
   .validator(z.object({ datasetId: z.string(), parcelNo: z.string() }))
   .handler(async ({ data }): Promise<ReportParcel | null> => {
     const r = await q<ReportParcel>(
-      "SELECT parcel_no,kn_type,area_m2,use_type,lv_no,celok,settled,ekn_ref,bpej,bpej_skupina,odnatie_eur,centroid_lat,centroid_lng,geometry_quality,geometry_json FROM parcels WHERE dataset_id=? AND parcel_no=? LIMIT 1",
+      // placement žije v lv_parcels (nie v parcels) a dossier ho nemal → proxy zóna padala vždy
+      // na „PP = poľnohospodárska, nezastavateľné", takže development potenciál hlásil 0 m²
+      // a 0 € GDV aj pre zastavané pozemky v obci. Ak sa riadok nenájde, zostane null ako dosiaľ.
+      `SELECT p.parcel_no,p.kn_type,p.area_m2,p.use_type,p.lv_no,p.celok,p.settled,p.ekn_ref,p.bpej,
+              p.bpej_skupina,p.odnatie_eur,p.centroid_lat,p.centroid_lng,p.geometry_quality,
+              p.geometry_json,
+              (SELECT lp.placement FROM lv_parcels lp
+                WHERE lp.dataset_id = p.dataset_id AND lp.parcel_no = p.parcel_no
+                  AND lp.placement IS NOT NULL LIMIT 1) AS placement
+         FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? LIMIT 1`,
       [data.datasetId, data.parcelNo]);
     return r[0] ?? null;
   });

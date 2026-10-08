@@ -128,7 +128,12 @@ function ReportPage() {
 
   // reg/dev/odhadCeny/siete sú null-safe (parcel môže byť null) — POZOR: musia byť PRED prípadným
   // early returnom nižšie, lebo bundle/hash hooky pod nimi musia byť volané nepodmienečne (Rules of Hooks).
-  const reg = parcel ? (regulativFromZone(zone) ?? regulativByCode(proxyZone(parcel.use_type, null))) : null;
+  const regUp = regulativFromZone(zone);
+  // Keď ÚP zónu pre parcelu nemáme, regulatív je ODVODENÝ z druhu pozemku a umiestnenia — nie
+  // výrok územného plánu. Dossier to dovtedy tvrdil ako „Regulatív (zóna)", takže vedľa signálu
+  // „zóna hromadné bývanie" stálo „Poľnohospodárska pôda (nezastavateľné)" o tej istej parcele.
+  const reg = parcel ? (regUp ?? regulativByCode(proxyZone(parcel.use_type, parcel.placement))) : null;
+  const regIsProxy = !!parcel && !regUp;
   const dev = (parcel && parcel.area_m2 && reg) ? developmentCalc(parcel.area_m2, reg, { ...calibDev.normal, predajEurM2: medPoz ?? calibDev.normal.predajEurM2 }) : null;
   const odhadCeny = (parcel && parcel.area_m2 && medPoz) ? parcel.area_m2 * medPoz : null;
   const siete = (parcel && parcel.centroid_lat != null && parcel.centroid_lng != null) ? sieteLinks(parcel.centroid_lat, parcel.centroid_lng) : [];
@@ -323,7 +328,7 @@ function ReportPage() {
       <Section title="Development potenciál (ÚP regulatív)">
         {dev ? (
           <Grid rows={[
-            ["Regulatív (zóna)", `${reg?.name ?? "—"} (IZP ${reg?.izp ?? "—"} · KZ ${reg?.kz ?? "—"} · IPP ${reg?.ipp ?? "—"})`],
+            [regIsProxy ? "Regulatív (odvodený, nie z ÚP)" : "Regulatív (zóna z ÚP)", `${reg?.name ?? "—"} (IZP ${reg?.izp ?? "—"} · KZ ${reg?.kz ?? "—"} · IPP ${reg?.ipp ?? "—"})`],
             ["Zastavateľnosť (IZP max.)", m2(Math.round(dev.izpArea))],
             ["Hrubá podlažná plocha (HPP)", m2(Math.round(dev.hpp))],
             ["Čistá predajná plocha (ČPP)", m2(Math.round(dev.cpp))],
@@ -331,7 +336,11 @@ function ReportPage() {
             ["Odhad GDV (hrubá hodnota)", eur(dev.ekonomika.gdv)],
           ]} />
         ) : <Muted>Bez výmery / nezastavateľné.</Muted>}
-        <Muted>Regulatívy z ÚP (zóna alebo číselník). Model orientačný.</Muted>
+        <Muted>
+          {regIsProxy
+            ? "Pre túto parcelu nemáme zónu z územného plánu. Regulatív je odvodený z druhu pozemku a umiestnenia — je to orientačný odhad, NIE výrok ÚP. Nulová zastavateľnosť tu znamená „nevieme“, nie „nezastavateľné“."
+            : "Regulatívy z ÚP (zóna alebo číselník). Model orientačný."}
+        </Muted>
       </Section>
 
       <Section title="Limity výstavby (úradné registre)">
