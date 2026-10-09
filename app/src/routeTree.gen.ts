@@ -48,6 +48,7 @@ import { Route as OgcRouteImport } from './routes/ogc'
 import { Route as MapproxyRouteImport } from './routes/mapproxy'
 import { Route as ApiRunAlertsRouteImport } from './routes/api.run-alerts'
 import { Route as ApiIngestChangesRouteImport } from './routes/api.ingest-changes'
+import { Route as ApiIngestObecChangesRouteImport } from './routes/api.ingest-obec-changes'
 import { Route as ApiIngestAcquisitionsRouteImport } from './routes/api.ingest-acquisitions'
 import { Route as ApiIngestLandsearchRouteImport } from './routes/api.ingest-landsearch'
 import { Route as ApiIngestZaRouteImport } from './routes/api.ingest-za'
@@ -257,6 +258,11 @@ const ApiIngestChangesRoute = ApiIngestChangesRouteImport.update({
   path: '/api/ingest-changes',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestObecChangesRoute = ApiIngestObecChangesRouteImport.update({
+  id: '/api/ingest-obec-changes',
+  path: '/api/ingest-obec-changes',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIngestAcquisitionsRoute = ApiIngestAcquisitionsRouteImport.update({
   id: '/api/ingest-acquisitions',
   path: '/api/ingest-acquisitions',
@@ -362,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
+  '/api/ingest-obec-changes': typeof ApiIngestObecChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
@@ -416,6 +423,7 @@ export interface FileRoutesByTo {
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
+  '/api/ingest-obec-changes': typeof ApiIngestObecChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
@@ -471,6 +479,7 @@ export interface FileRoutesById {
   '/mapproxy': typeof MapproxyRoute
   '/api/run-alerts': typeof ApiRunAlertsRoute
   '/api/ingest-changes': typeof ApiIngestChangesRoute
+  '/api/ingest-obec-changes': typeof ApiIngestObecChangesRoute
   '/api/ingest-acquisitions': typeof ApiIngestAcquisitionsRoute
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
@@ -527,6 +536,7 @@ export interface FileRouteTypes {
     | '/mapproxy'
     | '/api/run-alerts'
     | '/api/ingest-changes'
+    | '/api/ingest-obec-changes'
     | '/api/ingest-acquisitions'
     | '/api/ingest-landsearch'
     | '/api/ingest-parcel-zoning'
@@ -581,6 +591,7 @@ export interface FileRouteTypes {
     | '/mapproxy'
     | '/api/run-alerts'
     | '/api/ingest-changes'
+    | '/api/ingest-obec-changes'
     | '/api/ingest-acquisitions'
     | '/api/ingest-landsearch'
     | '/api/ingest-parcel-zoning'
@@ -635,6 +646,7 @@ export interface FileRouteTypes {
     | '/mapproxy'
     | '/api/run-alerts'
     | '/api/ingest-changes'
+    | '/api/ingest-obec-changes'
     | '/api/ingest-acquisitions'
     | '/api/ingest-landsearch'
     | '/api/ingest-parcel-zoning'
@@ -687,6 +699,7 @@ export interface RootRouteChildren {
   MapproxyRoute: typeof MapproxyRoute
   ApiRunAlertsRoute: typeof ApiRunAlertsRoute
   ApiIngestChangesRoute: typeof ApiIngestChangesRoute
+  ApiIngestObecChangesRoute: typeof ApiIngestObecChangesRoute
   ApiIngestAcquisitionsRoute: typeof ApiIngestAcquisitionsRoute
   ApiIngestLandsearchRoute: typeof ApiIngestLandsearchRoute
   ApiIngestParcelZoningRoute: typeof ApiIngestParcelZoningRoute
@@ -737,6 +750,14 @@ declare module '@tanstack/react-router' {
       path: '/api/ingest-changes'
       fullPath: '/api/ingest-changes'
       preLoaderRoute: typeof ApiIngestChangesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+
+    '/api/ingest-obec-changes': {
+      id: '/api/ingest-obec-changes'
+      path: '/api/ingest-obec-changes'
+      fullPath: '/api/ingest-obec-changes'
+      preLoaderRoute: typeof ApiIngestObecChangesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-acquisitions': {
@@ -1113,6 +1134,7 @@ const rootRouteChildren: RootRouteChildren = {
   MapproxyRoute: MapproxyRoute,
   ApiRunAlertsRoute: ApiRunAlertsRoute,
   ApiIngestChangesRoute: ApiIngestChangesRoute,
+  ApiIngestObecChangesRoute: ApiIngestObecChangesRoute,
   ApiIngestAcquisitionsRoute: ApiIngestAcquisitionsRoute,
   ApiIngestLandsearchRoute: ApiIngestLandsearchRoute,
   ApiIngestParcelZoningRoute: ApiIngestParcelZoningRoute,

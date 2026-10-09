@@ -3368,6 +3368,40 @@ async function computeObecMarket(): Promise<number> {
   return stmts.length;
 }
 
+// ——— Zmeny na úradných tabuliach obcí (Mac ÚP monitor → appka) ———
+// Monitor sleduje 1027 obcí a denne nájde ~100–400 zmien, ale publikoval ich len na GitHub, odkiaľ
+// ich v appke nikto nečítal — karta „Čo sa zmenilo" preto ukazovala nulu. Navyše ten publish bol
+// pokazený (git push s check=False a nepodmieneným „publikované"), takže súbor na GitHube stál
+// 4 dni. Preto ide Mac priamo sem, rovnakým vzorom ako ostatné ingesty.
+//
+// POZOR: je to CELÁ úradná tabuľa, nie len územný plán. Z jedného behu malo vzťah k pozemkom
+// alebo výstavbe 8 z 270 záznamov. Preto `relevance` a preto to nikde nevolám „zmeny ÚP".
+export const ingestObecChanges = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    rows: z.array(z.object({
+      obec: z.string().min(1).max(120), kuCode: z.string().max(10).optional(),
+      title: z.string().max(400).optional(), url: z.string().max(600).optional(),
+      change: z.string().max(20).optional(), relevance: z.string().max(20).optional(),
+      detectedAt: z.string().max(32).optional(),
+    })).max(2000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    // INSERT OR IGNORE + UNIQUE → opakovaný push to neduplikuje a nepotrebuje reset
+    const stmt = DB.prepare(
+      `INSERT OR IGNORE INTO obec_changes (obec,ku_code,title,url,change,relevance,detected_at)
+       VALUES (?,?,?,?,?,?,?)`);
+    const batch = data.rows.map((r) => stmt.bind(
+      r.obec, r.kuCode ?? null, r.title ?? null, r.url ?? null,
+      r.change ?? null, r.relevance ?? "ine", r.detectedAt ?? null));
+    for (let i = 0; i < batch.length; i += 50) await DB.batch(batch.slice(i, i + 50));
+    return { ok: true, inserted: data.rows.length };
+  });
+
 // ——— Záznam kontaktu s vlastníkom (od nálezu k osloveniu) ———
 // Appka príležitosť našla a tam to skončilo. Nikde nebolo, komu sa už volalo, čo odpovedal a kedy
 // sa ozvať znova — pri 117 zhodách naprieč 30 k.ú. sa to v hlave neudrží a dá sa volať dvakrát
@@ -3585,7 +3619,7 @@ export const getChangeFeed = createServerFn({ method: "POST" })
     const d = data?.days ?? 30;
     const want = data?.src ?? "";
     const out: ChangeFeedRow[] = [];
-    if (want !== "kataster") {
+    if (want === "" || want === "up") {
       const up = await q<ChangeFeedRow>(
         `SELECT 'up' AS src, c.dataset_id, ds.ku_name, c.title AS label, c.url, c.change AS change_kind,
                 NULL AS importance, NULL AS lv_no, NULL AS parcel_no,
@@ -3595,7 +3629,18 @@ export const getChangeFeed = createServerFn({ method: "POST" })
         [`-${d} days`]).catch(() => []);
       out.push(...up);
     }
-    if (want !== "up") {
+    if (want === "" || want === "obec") {
+      const ob = await q<ChangeFeedRow>(
+        `SELECT 'obec' AS src, NULL AS dataset_id, obec AS ku_name, title AS label, url,
+                change AS change_kind, relevance AS importance, NULL AS lv_no, NULL AS parcel_no,
+                NULL AS old_value, NULL AS new_value, detected_at
+         FROM obec_changes
+         WHERE detected_at >= datetime('now', ?)
+         ORDER BY (relevance <> 'ine') DESC, detected_at DESC, id DESC LIMIT 200`,
+        [`-${d} days`]).catch(() => []);
+      out.push(...ob);
+    }
+    if (want !== "up" && want !== "obec") {
       const kn = await q<ChangeFeedRow>(
         `SELECT 'kataster' AS src, c.dataset_id, ds.ku_name,
                 (c.entity || CASE WHEN c.field IS NULL THEN '' ELSE ' · ' || c.field END) AS label,
