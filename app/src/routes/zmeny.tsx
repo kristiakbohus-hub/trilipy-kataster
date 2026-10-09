@@ -43,8 +43,11 @@ function ZmenyPage() {
   }, [days, src]);
 
   // diagnostika monitora sa do počtov zmien NEZAPOČÍTAVA
-  const meta = useMemo(() => rows.filter((r) => (r.label ?? "").startsWith("meta")), [rows]);
-  const zmeny = useMemo(() => rows.filter((r) => !(r.label ?? "").startsWith("meta")), [rows]);
+  // Diagnostika sa pozná podľa TYPU zmeny, nie podľa prefixu v názve — obecné zverejnenie
+  // s názvom začínajúcim na „meta" by sa inak omylom skrylo medzi stav monitora.
+  const jeMeta = (r: ChangeFeedRow) => r.src === "kataster" && !!META_LABEL[r.change_kind ?? ""];
+  const meta = useMemo(() => rows.filter(jeMeta), [rows]);
+  const zmeny = useMemo(() => rows.filter((r) => !jeMeta(r)), [rows]);
   const nUp = zmeny.filter((r) => r.src === "up").length;
   const nKn = zmeny.filter((r) => r.src === "kataster").length;
   const nObec = zmeny.filter((r) => r.src === "obec").length;

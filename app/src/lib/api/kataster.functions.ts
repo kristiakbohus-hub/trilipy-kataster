@@ -3405,9 +3405,15 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
     const stmt = DB.prepare(
       `INSERT OR IGNORE INTO obec_changes (obec,ku_code,title,url,change,relevance,detected_at)
        VALUES (?,?,?,?,?,?,?)`);
+    // ISO timestamp z monitora má „T" („2026-10-08T07:05:39"), ale SQLite `datetime()` dáva medzeru.
+    // V ASCII je „T" (0x54) VÄČŠIE než medzera (0x20), takže „…09T05:00" > „…09 12:00" — obecný
+    // záznam z rána sa v spojenom prúde radil NAD katastrálny z poobedia a „najnovšie prvé"
+    // nebola pravda; rovnako klamalo porovnanie na hranici dátumového filtra. Normalizujeme pri
+    // zápise, nie pri čítaní, aby to platilo pre každý dotaz.
+    const norm = (t: string | undefined) => (t ? t.replace("T", " ").slice(0, 19) : null);
     const batch = data.rows.map((r) => stmt.bind(
       r.obec, r.kuCode ?? null, r.title ?? null, r.url ?? null,
-      r.change ?? null, r.relevance ?? "ine", r.detectedAt ?? null));
+      r.change ?? null, r.relevance ?? "ine", norm(r.detectedAt)));
     for (let i = 0; i < batch.length; i += 50) await DB.batch(batch.slice(i, i + 50));
     let reg = 0;
     if (data.registry?.length) {
@@ -3611,6 +3617,15 @@ export const getDataSanity = createServerFn({ method: "POST" })
       sample: null,
       level: vs === 0 || sa === 0 ? "warn" : "ok",
     });
+
+    // 6c) duplicitné obecné zmeny — UNIQUE je na (obec,title,change,detected_at), takže keď monitor
+    // nahlási tú istú zmenu znova s novým časom, prejde druhýkrát. Nech je to vidno.
+    const dup = await one<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM (SELECT obec, title, change FROM obec_changes
+                                  GROUP BY obec, title, change HAVING COUNT(*) > 1)`);
+    add("obec_duplikaty", "Tá istá obecná zmena je v zozname viackrát", dup?.n ?? 0,
+        "UNIQUE drží (obec, názov, typ, čas detekcie). Ak monitor nahlási tú istú zmenu znova s iným časom, prejde druhýkrát a v prúde sa zopakuje.",
+        null, 5);
 
     // 7) LV bez jediného vlastníka
     const lvBez = await one<{ n: number }>(
