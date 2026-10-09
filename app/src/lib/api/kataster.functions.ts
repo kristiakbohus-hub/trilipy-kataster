@@ -3595,6 +3595,23 @@ export const getDataSanity = createServerFn({ method: "POST" })
       level: strop.length > 0 ? "warn" : "ok",
     });
 
+    // 6b) alerting beží, ale nemá čo kontrolovať — cron hlási `checked=0` do logu, ktorý nikto
+    // nečíta, takže nečinnosť bola neviditeľná. Mechanizmus je v poriadku; chýba zapnutý alert.
+    const ss = await one<{ vsetky: number; s_alertom: number }>(
+      "SELECT COUNT(*) AS vsetky, COALESCE(SUM(alert = 1), 0) AS s_alertom FROM saved_search");
+    const vs = ss?.vsetky ?? 0, sa = ss?.s_alertom ?? 0;
+    out.push({
+      key: "alerting_necinny", title: "Upozorňovanie na uložené hľadania je nečinné",
+      n: vs === 0 ? 1 : (sa === 0 ? vs : 0),
+      detail: vs === 0
+        ? "Nie je uložené žiadne hľadanie, takže denný cron nemá čo kontrolovať — v logu hlási checked=0. Ulož si hľadanie v Prieskume a zapni mu alert."
+        : sa === 0
+          ? `Uložených hľadaní je ${vs}, ale ani jedno nemá zapnutý alert — cron teda beží naprázdno. Alert sa zapína pri uloženom hľadaní v Prieskume.`
+          : `Upozorňovanie je aktívne na ${sa} z ${vs} uložených hľadaní.`,
+      sample: null,
+      level: vs === 0 || sa === 0 ? "warn" : "ok",
+    });
+
     // 7) LV bez jediného vlastníka
     const lvBez = await one<{ n: number }>(
       `SELECT COUNT(*) AS n FROM lvs l

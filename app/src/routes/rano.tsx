@@ -1,6 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getMorningBriefing } from "../lib/api/kataster.functions";
+import { getMorningBriefing, getFollowUps, type ContactRow } from "../lib/api/kataster.functions";
+import { useAuth } from "../lib/auth-context";
+import { parcelLabel, plural } from "../lib/domain";
 import { Badge, Card, Icon, Stat } from "../components/kit";
 
 type Brief = Awaited<ReturnType<typeof getMorningBriefing>>;
@@ -18,6 +20,13 @@ const EMPTY_BRIEF: Brief = { today: null, summary: { newToday: 0, drops: 0, upDe
 function RanoPage() {
   const [b, setB] = useState<Brief>(EMPTY_BRIEF);
   useEffect(() => { getMorningBriefing({ data: { limit: 15 } }).then(setB).catch(() => {}); }, []);
+  // „Koho zavolať" — getFollowUps() existovalo, ale nebolo napojené, takže záznam kontaktu
+  // nikdy nepripomenul termín, ktorý si doň človek zapísal.
+  const { token } = useAuth();
+  const [follow, setFollow] = useState<ContactRow[]>([]);
+  useEffect(() => {
+    getFollowUps({ data: { token: token ?? undefined, days: 3 } }).then(setFollow).catch(() => {});
+  }, [token]);
   const [okres, setOkres] = useState("");
   const [ptype, setPtype] = useState("");
   const [onlyPrivate, setOnlyPrivate] = useState(true);
@@ -52,6 +61,39 @@ function RanoPage() {
         <Stat label="Súkromné príležitosti" value={String(b.summary.privateOpps)} />
         <Stat label="Naše ÚP deals (MATCH)" value={String(b.summary.upDeals)} />
       </div>
+
+      {/* Koho zavolať — z vlastných záznamov kontaktu, nie z odhadu */}
+      {follow.length ? (
+        <div className="rounded-lg border p-3" style={{ borderColor: "#9a7b3e55", background: "rgba(154,123,62,0.06)" }}>
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-fg">
+              Koho zavolať — {plural(follow.length, "termín", "termíny", "termínov")}
+            </h2>
+            <span className="text-[11px] text-muted">podľa toho, čo si si zapísal pri kontakte</span>
+          </div>
+          <ul className="mt-2 divide-y divide-line">
+            {follow.slice(0, 8).map((r) => (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5 text-sm">
+                <span className="min-w-0">
+                  <b className="text-fg">{r.owner_name ?? "celé LV"}</b>
+                  <span className="text-muted">
+                    {r.lv_no != null ? ` · LV ${r.lv_no}` : ""}
+                    {r.parcel_no ? ` · parcela ${parcelLabel(r.parcel_no)}` : ""}
+                  </span>
+                  {r.note ? <span className="block text-xs text-muted">{r.note}</span> : null}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  <span className="text-xs tabular-nums" style={{ color: "#9a7b3e" }}>{r.next_at}</span>
+                  {r.dataset_id && r.lv_no != null ? (
+                    <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: r.dataset_id, lvNo: String(r.lv_no) }}
+                      search={{ typ: "vypis" }} className="text-xs text-brand hover:underline">otvoriť →</Link>
+                  ) : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* Free-text prompt — „dnes hľadám…" */}
       <form onSubmit={(e) => { e.preventDefault(); setPromptApplied(prompt.trim()); }} className="rounded-lg border border-line bg-surface/60 p-3">
