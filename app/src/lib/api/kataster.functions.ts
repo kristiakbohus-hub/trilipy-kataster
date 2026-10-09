@@ -3385,6 +3385,16 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
       change: z.string().max(20).optional(), relevance: z.string().max(20).optional(),
       detectedAt: z.string().max(32).optional(),
     })).max(2000),
+    // Register ÚP stránok obcí (k.ú. → obec → URL). Cesta existuje, ALE ⚠ NEPLNIŤ JU ZO
+    // `up-registry.json` MONITORA: z 1027 obcí má ku_code len 4 a jeden z tých štyroch je
+    // NESPRÁVNY — tvrdí `800376 = Turzovka`, pričom 800376 je Babkov (okres Žilina) a Turzovka je
+    // 866083 (okres Čadca). Appka by potom pre žilinské k.ú. hľadala územný plán Turzovky.
+    // Správny zdroj priradenia je ÚGKK gazetteer (viď 40_UP_GEOREF/up_obec_web.py, ktorý doménu
+    // obce aj OVERÍ). Kým to nie je odvodené odtiaľ, sem sa register neposiela.
+    registry: z.array(z.object({
+      kuCode: z.string().min(1).max(10), obec: z.string().max(120).optional(),
+      upPageUrl: z.string().max(600).optional(),
+    })).max(3000).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
@@ -3399,7 +3409,17 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
       r.obec, r.kuCode ?? null, r.title ?? null, r.url ?? null,
       r.change ?? null, r.relevance ?? "ine", r.detectedAt ?? null));
     for (let i = 0; i < batch.length; i += 50) await DB.batch(batch.slice(i, i + 50));
-    return { ok: true, inserted: data.rows.length };
+    let reg = 0;
+    if (data.registry?.length) {
+      const rs = DB.prepare(
+        `INSERT INTO up_registry (ku_code,obec,up_page_url) VALUES (?,?,?)
+         ON CONFLICT(ku_code) DO UPDATE SET obec=COALESCE(excluded.obec,up_registry.obec),
+                                           up_page_url=COALESCE(excluded.up_page_url,up_registry.up_page_url)`);
+      const rb = data.registry.map((r) => rs.bind(r.kuCode, r.obec ?? null, r.upPageUrl ?? null));
+      for (let i = 0; i < rb.length; i += 50) await DB.batch(rb.slice(i, i + 50));
+      reg = rb.length;
+    }
+    return { ok: true, inserted: data.rows.length + reg };
   });
 
 // ——— Záznam kontaktu s vlastníkom (od nálezu k osloveniu) ———

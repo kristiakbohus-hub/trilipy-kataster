@@ -10,7 +10,12 @@ export const Route = createFileRoute("/zmeny")({
   component: ZmenyPage,
 });
 
-const SRC_LABEL: Record<string, string> = { up: "územný plán", kataster: "kataster" };
+const SRC_LABEL: Record<string, string> = {
+  up: "územný plán", kataster: "kataster", obec: "úradná tabuľa obce",
+};
+// Zdroj „obec" nesie v poli importance RELEVANCIU (nie dôležitosť) — monitor sleduje celú úradnú
+// tabuľu, takže väčšina záznamov s pozemkami ani výstavbou nesúvisí.
+const REL_LABEL: Record<string, string> = { pozemky: "pozemky", vystavba: "výstavba / ÚP" };
 const CHANGE_LABEL: Record<string, string> = {
   new: "nové", added: "pridané", changed: "zmenené", removed: "odstránené",
 };
@@ -42,7 +47,12 @@ function ZmenyPage() {
   const zmeny = useMemo(() => rows.filter((r) => !(r.label ?? "").startsWith("meta")), [rows]);
   const nUp = zmeny.filter((r) => r.src === "up").length;
   const nKn = zmeny.filter((r) => r.src === "kataster").length;
-  const nHigh = zmeny.filter((r) => r.importance === "high").length;
+  const nObec = zmeny.filter((r) => r.src === "obec").length;
+  // „Zaujímavé" = katastrálna zmena označená ako dôležitá, alebo obecné zverejnenie, ktoré sa
+  // naozaj týka pozemkov či výstavby. Predtým sa počítalo len `importance === "high"`, takže pri
+  // obecných zmenách svietila nula aj keď v zozname boli nové územné plány.
+  const nZaujem = zmeny.filter((r) =>
+    r.importance === "high" || r.importance === "pozemky" || r.importance === "vystavba").length;
   const katastre = useMemo(
     () => new Set(zmeny.map((r) => r.ku_name ?? r.dataset_id ?? "?")).size, [zmeny]);
 
@@ -57,11 +67,12 @@ function ZmenyPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Územný plán" value={nUp} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+        <Stat label="Úradné tabule obcí" value={nObec} />
+        <Stat label="Územný plán (naše k.ú.)" value={nUp} />
         <Stat label="Kataster" value={nKn} />
-        <Stat label="Dôležité" value={nHigh} />
-        <Stat label="Katastre" value={katastre} />
+        <Stat label="Zaujímavé" value={nZaujem} />
+        <Stat label="Obce / k.ú." value={katastre} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -77,7 +88,7 @@ function ZmenyPage() {
             ))}
           </div>
           <div className="inline-flex overflow-hidden rounded-md border border-line text-xs">
-            {[["", "všetko"], ["up", "územný plán"], ["kataster", "kataster"]].map(([v, l]) => (
+            {[["", "všetko"], ["obec", "úradné tabule"], ["up", "územný plán"], ["kataster", "kataster"]].map(([v, l]) => (
               <button
                 key={v}
                 onClick={() => setSrc(v)}
@@ -113,6 +124,11 @@ function ZmenyPage() {
                     {r.importance === "high" ? (
                       <span className="rounded-full border px-2 py-0.5 text-[11px]"
                         style={{ color: "#9c4a40", borderColor: "#9c4a4055" }}>dôležité</span>
+                    ) : REL_LABEL[r.importance ?? ""] ? (
+                      <span className="rounded-full border px-2 py-0.5 text-[11px]"
+                        style={{ color: "#5b7a58", borderColor: "#5b7a5855" }}>
+                        {REL_LABEL[r.importance ?? ""]}
+                      </span>
                     ) : null}
                     <span className="text-xs text-muted">{kuLabel(r.ku_name, r.dataset_id)}</span>
                   </div>
