@@ -3627,6 +3627,17 @@ export const getDataSanity = createServerFn({ method: "POST" })
         "UNIQUE drží (obec, názov, typ, čas detekcie). Ak monitor nahlási tú istú zmenu znova s iným časom, prejde druhýkrát a v prúde sa zopakuje.",
         null, 5);
 
+    // 6d) k.ú. bez známej ÚP stránky — up_registry je to, z čoho appka hľadá územný plán pre k.ú.
+    // Pokrytie tu bolo neviditeľné, takže nebolo ako zistiť, či register vôbec niečo obsahuje.
+    const bezUpStranky = await q<{ ku_name: string; ku_code: string }>(
+      `SELECT d.ku_name, d.ku_code FROM datasets d
+       WHERE NOT EXISTS (SELECT 1 FROM up_registry r
+                         WHERE (r.ku_code = d.ku_code OR r.ku_code = REPLACE(d.id, 'kn-', ''))
+                           AND r.up_page_url IS NOT NULL AND TRIM(r.up_page_url) <> '')`).catch(() => []);
+    add("bez_up_stranky", "k.ú. bez známej stránky územného plánu", bezUpStranky.length,
+        "Z registra sa dohľadáva, kde obec zverejňuje územný plán. Bez záznamu sa preň nedá ísť automaticky. Plní `40_UP_GEOREF/up_registry_push.py` z ÚGKK gazetteera (nie z monitorového súboru — ten má nesprávne priradenia).",
+        bezUpStranky.slice(0, 5).map((r) => r.ku_name).join(" · ") || null);
+
     // 7) LV bez jediného vlastníka
     const lvBez = await one<{ n: number }>(
       `SELECT COUNT(*) AS n FROM lvs l
