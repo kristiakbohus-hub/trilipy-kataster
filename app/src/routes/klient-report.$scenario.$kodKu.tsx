@@ -76,6 +76,7 @@ function ClientReportPage() {
   const { scenario, kodKu } = Route.useParams();
   const [r, setR] = useState<ClientReport | null>(null);
   const [ready, setReady] = useState(false);
+  const [exportErr, setExportErr] = useState<string | null>(null);
   useEffect(() => {
     getClientReport({ data: { scenario, kodKu } }).then(setR).catch(() => {}).finally(() => setReady(true));
   }, [scenario, kodKu]);
@@ -88,6 +89,20 @@ function ClientReportPage() {
     try { return run?.reasons_json ? JSON.parse(run.reasons_json) : []; } catch { return []; }
   })();
   const meta = SCENARIO_META[r.scenario] ?? DEFAULT_META;
+
+  function exportJson() {
+    try {
+      const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `klient-report-${r.scenario}-${r.kodKu}-${r.resultHash}.json`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) {
+      // Dok. 16: „Export sa označí ako neúspešný, ak príslušný finálny formát nevznikol."
+      setExportErr(e instanceof Error ? e.message : "Export JSON zlyhal.");
+    }
+  }
   const match = r.shortlist.filter((x) => x.classification === "MATCH");
   const prov = r.shortlist.filter((x) => x.classification === "PROVISIONAL");
 
@@ -95,9 +110,17 @@ function ClientReportPage() {
     <div className="mx-auto max-w-[900px] space-y-7 print:max-w-none">
       <div className="flex items-start justify-between gap-3 print:hidden">
         <Link to={meta.back} className="text-xs text-muted hover:text-fg">← Späť na kartu</Link>
-        <button onClick={() => window.print()} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
-          Tlačiť / uložiť PDF
-        </button>
+        <span className="flex items-center gap-2">
+          {/* Dok. 16 žiada aj STROJOVO čitateľný výstup, nie len stránku na tlač. JSON nesie ten
+              istý `result_hash` ako vytlačená verzia, takže sa dá dokázať, že ide o ten istý
+              výsledok — a ak sa súbor nevytvorí, povieme to, nie aby to vyzeralo ako hotové. */}
+          <button onClick={exportJson} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
+            Stiahnuť JSON
+          </button>
+          <button onClick={() => window.print()} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
+            Tlačiť / uložiť PDF
+          </button>
+        </span>
       </div>
 
       <Sec id="A." title="Identifikácia a zhrnutie">
@@ -108,7 +131,19 @@ function ClientReportPage() {
           <tr><td className="py-0.5 pr-3 text-muted">Preukázané zhody</td><td className="tabular-nums">{num(r.nMatch)}</td></tr>
           <tr><td className="py-0.5 pr-3 text-muted">Podmienené (na preskúmanie)</td><td className="tabular-nums">{num(r.nProvisional)}</td></tr>
           <tr><td className="py-0.5 pr-3 text-muted">Vylúčené</td><td className="tabular-nums">{run ? num(run.n_rejected) : "neevidované pre tento beh"}</td></tr>
+          <tr><td className="py-0.5 pr-3 text-muted">Revízia výsledku</td>
+              <td className="font-mono text-xs">{r.revision}</td></tr>
+          <tr><td className="py-0.5 pr-3 text-muted">Vykreslené</td>
+              <td className="tabular-nums text-xs">{r.generatedAt}</td></tr>
         </tbody></table>
+        {exportErr ? (
+          <p className="mt-1 text-xs" style={{ color: "#9c4a40" }}>Export zlyhal: {exportErr}</p>
+        ) : null}
+        <p className="mt-1 text-xs text-muted">
+          Revízia je kontrolný súčet <b>analytického obsahu</b> — čas vykreslenia doň nevstupuje.
+          Vytlačená aj strojová (JSON) verzia preto nesú ten istý súčet; ak sa líšia, nie je to
+          ten istý výsledok.
+        </p>
         <p className="mt-2 text-xs text-muted">
           Najdôležitejšie obmedzenie: výsledok platí pre deklarované územie a snapshot dát uvedený vyššie.
           Nejde o právny ani znalecký záver.

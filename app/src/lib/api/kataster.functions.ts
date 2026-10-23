@@ -1355,7 +1355,21 @@ export type ClientReport = {
   shortlist: ClientReportItem[];           // D + E
   uncertainties: { text: string; n: number }[];  // G — agregované neistoty z kandidátov
   zoningSources: { src: string; n: number }[];   // C + H — z čoho pochádza funkčné využitie
+  // Dok. 16: „Report má revision a checksum… Pred uložením artefaktu over rovnaký `result_hash`,
+  // počty, hodnoty, jednotky a statusy vo VŠETKÝCH formátoch. Čas renderovania sa môže líšiť;
+  // analytický obsah nie." Hash sa preto počíta LEN z analytického obsahu — nie z času, v ktorom
+  // sa report vykreslil. Vytlačená stránka a strojový JSON tak nesú ten istý súčet a dá sa
+  // dokázať, že ide o ten istý výsledok.
+  resultHash: string;        // SHA-256 (16 znakov) analytického obsahu
+  revision: string;          // as_of dát + hash — čo klient cituje
+  generatedAt: string;       // čas vykreslenia; do hashu NEvstupuje
 };
+// SHA-256 → prvých 16 hex znakov. Stačí na identitu výsledku; nie je to kryptografický podpis.
+async function sha256Hex(txt: string): Promise<string> {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("").slice(0, 16);
+}
+
 export const getClientReport = createServerFn({ method: "POST" })
   .validator(z.object({ scenario: z.string(), kodKu: z.string() }))
   .handler(async ({ data }): Promise<ClientReport> => {
@@ -1491,19 +1505,31 @@ export const getClientReport = createServerFn({ method: "POST" })
       "SELECT updated_at FROM datasets WHERE ku_code = ? OR id = ? LIMIT 1",
       [data.kodKu, `kn-${data.kodKu}`]).catch(() => []))[0] ?? null;
 
-    return {
-      scenario: data.scenario, kodKu: data.kodKu,
-      kuName: kuName ?? run?.ku_name ?? null,
-      asOf: ds?.updated_at ?? run?.as_of ?? null,
-      hasDataset: !!ds,
-      run,
+    const asOf = ds?.updated_at ?? run?.as_of ?? null;
+    const jadro = {
+      scenario: data.scenario, kodKu: data.kodKu, asOf,
       nMatch: rows.filter((r) => r.classification === "MATCH").length,
       nProvisional: rows.filter((r) => r.classification === "PROVISIONAL").length,
-      brief,
-      colLabels,
-      shortlist: rows,
+      brief, colLabels,
+      shortlist: rows.map((r) => ({
+        id: r.id, title: r.title, subtitle: r.subtitle, cols: r.cols,
+        classification: r.classification, reason: r.reason,
+        datasetId: r.datasetId, lvNo: r.lvNo, parcelNo: r.parcelNo,
+      })),
       uncertainties: [...unc].map(([text, n]) => ({ text, n })).sort((a, b) => b.n - a.n),
       zoningSources: [...zs].map(([src, n]) => ({ src, n })).sort((a, b) => b.n - a.n),
+      run: run && { examined: run.examined, nRejected: run.n_rejected, nPushed: run.n_pushed },
+    };
+    const resultHash = await sha256Hex(JSON.stringify(jadro));
+    return {
+      ...jadro,
+      kuName: kuName ?? run?.ku_name ?? null,
+      hasDataset: !!ds,
+      run,
+      shortlist: rows,
+      resultHash,
+      revision: `${asOf ?? "bez-dat"}·${resultHash}`,
+      generatedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
     };
   });
 
