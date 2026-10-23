@@ -1834,7 +1834,7 @@ export function MapView({
                         />
                         {rasterOn[r.id] && r.transform_json ? (
                           <input type="range" min={0.1} max={1} step={0.1} value={r.opacity}
-                            onChange={(e) => { const op = Number(e.target.value); setRasters((rs) => rs.map((x) => x.id === r.id ? { ...x, opacity: op } : x)); void updateRaster({ data: { id: r.id, opacity: op, role } }); }}
+                            onChange={(e) => { const op = Number(e.target.value); setRasters((rs) => rs.map((x) => x.id === r.id ? { ...x, opacity: op } : x)); void updateRaster({ data: { id: r.id, opacity: op, role, token: token ?? undefined } }); }}
                             className="mt-1 w-full accent-brand" />
                         ) : null}
                         {r.transform_json ? (

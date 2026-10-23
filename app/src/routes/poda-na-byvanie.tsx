@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getUPCases, type UPRow } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 import { kuLabel } from "../lib/domain";
 
 // ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
@@ -17,6 +18,7 @@ const eur = (n: number | null) => (n === null ? "—" : `${n.toLocaleString("sk-
 
 function UpzonedFarmlandPage() {
   const { role } = useRole();
+  const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [rows, setRows] = useState<UPRow[]>([]);
   const [loading, setLoading] = useState(true);
   const reload = useCallback(() => {
@@ -34,7 +36,7 @@ function UpzonedFarmlandPage() {
     const key = `${r.dataset_id}-${r.lv_no}`;
     setDealBusy(key);
     try {
-      const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.lv_no, role } });
+      const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.lv_no, role, token: token ?? undefined } });
       if (res.ok && res.id) { setCreated((m) => ({ ...m, [key]: res.id! })); reload(); }
     } finally { setDealBusy(null); }
   }

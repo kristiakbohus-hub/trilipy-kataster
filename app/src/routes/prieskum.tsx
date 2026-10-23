@@ -41,7 +41,7 @@ function PrieskumPage() {
   async function run(query = q, s = sort) {
     if (!query.trim()) return;
     setBusy(true);
-    try { setRes(await nlQuery({ data: { query: query.trim(), role, sort: s } })); }
+    try { setRes(await nlQuery({ data: { query: query.trim(), role, sort: s, token: token ?? undefined } })); }
     finally { setBusy(false); }
   }
 

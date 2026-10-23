@@ -74,11 +74,11 @@ export const getDatasets = createServerFn({ method: "GET" }).handler(async () =>
   return await q<Dataset>("SELECT * FROM datasets ORDER BY status, ku_name");
 });
 
-// ——— Detail datasetu (owners rolovo gatované) ———
+// ——— Detail datasetu (bez owner-sensitive polí: vlastníci len ako predpočítaný počet) ———
+// `role` tu NIE je — handler ju nikdy nepoužil, takže parameter len predstieral stráž.
 export const getDataset = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string(), role: roleSchema }))
+  .validator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
     const dataset = (await q<Dataset>("SELECT * FROM datasets WHERE id = ?", [data.id]))[0] ?? null;
     const parcels = await q<Parcel>(
       "SELECT * FROM parcels WHERE dataset_id = ? ORDER BY parcel_no",
@@ -352,11 +352,12 @@ function applyLlmFilter(f: LlmNlFilter, cond: string[], args: unknown[]): { lega
 }
 
 export const nlQuery = createServerFn({ method: "POST" })
-  .validator(z.object({ query: z.string(), role: roleSchema, sort: z.enum(["score", "area", "owners"]).optional(), llm: z.boolean().optional() }))
+  .validator(z.object({ query: z.string(), role: roleSchema, sort: z.enum(["score", "area", "owners"]).optional(), llm: z.boolean().optional(), token: z.string().optional() }))
   .handler(async ({ data }) => {
     const raw = data.query.trim();
     const s = raw.toLowerCase();
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
 
     // ——— intent: naprieč doménami (LV signály + vlastníci + trhové inzeráty) ———
     const marketIntent = /pred[aá]|kúp|kup\b|prenáj|nájom|najom|inzer|\bcena|cen[yu]\b|€|eur\b|lacn|pod\s*cen|\bbyt|byty|domy|pozem|\bchat|rodinn|za\s*m2|za\s*m²|€\/m/.test(s);
@@ -695,12 +696,15 @@ export const generateReport = createServerFn({ method: "POST" })
       kind: z.enum(["evidence_list", "parcel_pack", "map_sheet"]),
       title: z.string().min(3),
       role: roleSchema,
+      token: z.string().optional(),
     }),
   )
   .handler(
     async ({
       data,
     }): Promise<{ ok: false; message: string } | { ok: true; id: number | null; hash: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Vyžaduje prihlásenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const hash = Math.random().toString(16).slice(2, 10);
@@ -709,7 +713,7 @@ export const generateReport = createServerFn({ method: "POST" })
     )
       .bind(data.datasetId, data.kind, data.title, hash)
       .run();
-    await logAudit("report.generate", data.role, `Report „${data.title}" vytvorený (draft, audit ${hash}).`, data.datasetId);
+    await logAudit("report.generate", u.role, `Report „${data.title}" vytvorený (draft, audit ${hash}).`, data.datasetId);
     return { ok: true, id: res.meta?.last_row_id ?? null, hash };
   });
 
@@ -803,6 +807,14 @@ async function userFromToken(token: string): Promise<AuthUser | null> {
 async function roleFromToken(token: string | undefined): Promise<Role> {
   const u = token ? await userFromToken(token).catch(() => null) : null;
   return (u?.role ?? "viewer") as Role;
+}
+
+// Stráž pre ZAPISUJÚCE funkcie. Server fn sú VEREJNÉ POST endpointy a prihlasovacia brána je len
+// na klientovi, takže bez tejto kontroly vedel ktokoľvek zakladať cases, písať poznámky, mazať
+// prepojenia a generovať reporty — a navyše si do `author_role` zapísať rolu, akú si vymyslel.
+// Autor sa odteraz berie zo session, nikdy z tela požiadavky.
+async function requireUser(token: string | undefined): Promise<AuthUser | null> {
+  return token ? await userFromToken(token).catch(() => null) : null;
 }
 
 export const registerUser = createServerFn({ method: "POST" })
@@ -1026,7 +1038,8 @@ export const runMyAlerts = createServerFn({ method: "POST" })
     let newTotal = 0;
     for (const sv of rows) {
       let res: Awaited<ReturnType<typeof nlQuery>> | null = null;
-      try { res = await nlQuery({ data: { query: sv.query, role: data.role, sort: ((sv.sort as "score" | "area" | "owners") || "score"), llm: false } }); } catch { continue; }
+      // token ide ďalej: nlQuery si rolu berie zo session, nie z `role` v tele požiadavky
+      try { res = await nlQuery({ data: { query: sv.query, role: data.role, token: data.token, sort: ((sv.sort as "score" | "area" | "owners") || "score"), llm: false } }); } catch { continue; }
       const hits = res?.lv.results ?? [];
       const seen = new Set((await q<{ gid: string }>("SELECT gid FROM alert_seen WHERE saved_id=?", [sv.id])).map((r) => r.gid));
       const firstRun = seen.size === 0;
@@ -2217,25 +2230,29 @@ export const getCase = createServerFn({ method: "POST" })
   });
 
 export const linkCaseEntity = createServerFn({ method: "POST" })
-  .validator(z.object({ caseId: z.number(), linkType: z.enum(["parcel", "lv", "owner", "deal", "doc"]), datasetId: z.string().optional(), ref: z.string().min(1), label: z.string().optional(), role: roleSchema }))
+  .validator(z.object({ caseId: z.number(), linkType: z.enum(["parcel", "lv", "owner", "deal", "doc"]), datasetId: z.string().optional(), ref: z.string().min(1), label: z.string().optional(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; id?: number | null; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Vyžaduje prihlásenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     try {
       const res = await DB.prepare("INSERT INTO case_links (case_id, link_type, dataset_id, ref, label) VALUES (?,?,?,?,?)")
         .bind(data.caseId, data.linkType, data.datasetId ?? null, data.ref, data.label ?? null).run();
-      await logAudit("case.link", data.role, `Case #${data.caseId} + ${data.linkType}: ${data.label ?? data.ref}`);
+      await logAudit("case.link", u.role, `Case #${data.caseId} + ${data.linkType}: ${data.label ?? data.ref}`);
       return { ok: true, id: res.meta?.last_row_id ?? null };
     } catch (e) { return { ok: false, message: String((e as Error)?.message ?? e) }; }
   });
 
 export const unlinkCaseEntity = createServerFn({ method: "POST" })
-  .validator(z.object({ linkId: z.number(), role: roleSchema }))
-  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+  .validator(z.object({ linkId: z.number(), role: roleSchema, token: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Vyžaduje prihlásenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false };
     await DB.prepare("DELETE FROM case_links WHERE id = ?").bind(data.linkId).run();
-    await logAudit("case.unlink", data.role, `Case link #${data.linkId} odstránený.`);
+    await logAudit("case.unlink", u.role, `Case link #${data.linkId} odstránený.`);
     return { ok: true };
   });
 
@@ -2248,39 +2265,46 @@ export const createCase = createServerFn({ method: "POST" })
       nextSteps: z.string().optional(),
       linkedRef: z.string().optional(),
       role: roleSchema,
+      token: z.string().optional(),
     }),
   )
   .handler(async ({ data }): Promise<{ ok: boolean; id?: number | null; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Vyžaduje prihlásenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const res = await DB.prepare(
       "INSERT INTO cases (dataset_id, title, kind, status, owner_role, linked_ref, next_steps) VALUES (?, ?, ?, 'open', ?, ?, ?)",
     )
-      .bind(data.datasetId, data.title, data.kind, data.role, data.linkedRef ?? null, data.nextSteps ?? null)
+      .bind(data.datasetId, data.title, data.kind, u.role, data.linkedRef ?? null, data.nextSteps ?? null)
       .run();
-    await logAudit("case.create", data.role, `Case „${data.title}" (${data.kind}).`, data.datasetId);
+    await logAudit("case.create", u.role, `Case „${data.title}" (${data.kind}).`, data.datasetId);
     return { ok: true, id: res.meta?.last_row_id ?? null };
   });
 
 export const updateCaseStatus = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.number(), status: z.enum(["open", "review", "done"]), role: roleSchema }))
+  .validator(z.object({ id: z.number(), status: z.enum(["open", "review", "done"]), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Vyžaduje prihlásenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     await DB.prepare("UPDATE cases SET status = ? WHERE id = ?").bind(data.status, data.id).run();
-    await logAudit("case.status", data.role, `Case #${data.id} → ${data.status}.`);
+    await logAudit("case.status", u.role, `Case #${data.id} → ${data.status}.`);
     return { ok: true };
   });
 
 export const addCaseNote = createServerFn({ method: "POST" })
-  .validator(z.object({ caseId: z.number(), body: z.string().min(2), role: roleSchema }))
+  .validator(z.object({ caseId: z.number(), body: z.string().min(2), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Vyžaduje prihlásenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     await DB.prepare("INSERT INTO case_notes (case_id, author_role, body) VALUES (?, ?, ?)")
-      .bind(data.caseId, data.role, data.body)
+      .bind(data.caseId, u.role, data.body)
       .run();
-    await logAudit("case.note", data.role, `Poznámka k case #${data.caseId}.`);
+    await logAudit("case.note", u.role, `Poznámka k case #${data.caseId}.`);
     return { ok: true };
   });
 
@@ -2376,8 +2400,10 @@ export const saveGeoref = createServerFn({ method: "POST" })
   });
 
 export const updateRaster = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string(), opacity: z.number().min(0).max(1).optional(), note: z.string().optional(), role: roleSchema }))
-  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+  .validator(z.object({ id: z.string(), opacity: z.number().min(0).max(1).optional(), note: z.string().optional(), role: roleSchema, token: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Vyžaduje prihlásenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false };
     if (data.opacity != null) await DB.prepare("UPDATE up_rasters SET opacity = ? WHERE id = ?").bind(data.opacity, data.id).run();
@@ -2541,9 +2567,10 @@ type OwnerHit = { name: string; is_company: number; ico: string | null; birth_da
 type OwnerOccurrence = { dataset_id: string; ku_name: string; lv_no: number; share: string | null };
 type OwnerGroup = { name: string; is_company: number; ico: string | null; birth_date: string | null; occurrences: OwnerOccurrence[]; lvCount: number; kuCount: number };
 export const searchOwnersGlobal = createServerFn({ method: "POST" })
-  .validator(z.object({ q: z.string(), role: roleSchema }))
+  .validator(z.object({ q: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
     const access = ownerAccess(role);
     const query = data.q.trim();
     if (access !== "full") return { access, results: [] as OwnerGroup[], total: 0 };
@@ -2682,9 +2709,10 @@ const DEAL_STATUSES = ["new", "checking", "contacted", "negotiation", "offer", "
 const TASK_STATES = ["pending", "contacted", "agreed", "signed", "declined"] as const;
 
 export const createDeal = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema, caseId: z.number().optional(), odkupEur: z.number().optional(), nextStep: z.string().optional() }))
+  .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema, caseId: z.number().optional(), odkupEur: z.number().optional(), nextStep: z.string().optional(), token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; id?: string; message?: string }> => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
     if (ownerAccess(role) !== "full") return { ok: false, message: "Rola nemá plný prístup na založenie dealu." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2729,9 +2757,10 @@ export const listDeals = createServerFn({ method: "GET" }).handler(async () => {
 });
 
 export const getDeal = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string(), role: roleSchema }))
+  .validator(z.object({ id: z.string(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
     const access = ownerAccess(role);
     const deal = (await q<DealRow>("SELECT * FROM deals WHERE id = ?", [data.id]))[0] ?? null;
     const notes = await q<DealNoteRow>("SELECT * FROM deal_notes WHERE deal_id = ? ORDER BY id DESC", [data.id]);
@@ -2741,9 +2770,10 @@ export const getDeal = createServerFn({ method: "POST" })
   });
 
 export const updateDealStatus = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string(), status: z.enum(DEAL_STATUSES), role: roleSchema }))
+  .validator(z.object({ id: z.string(), status: z.enum(DEAL_STATUSES), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
     if (ownerAccess(role) !== "full") return { ok: false, message: "Rola nemá oprávnenie meniť deal." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2754,9 +2784,10 @@ export const updateDealStatus = createServerFn({ method: "POST" })
 
 // Úprava hodnoty odkupu / ďalšieho kroku / poznámky dealu (aditívne stĺpce z 0064).
 export const updateDeal = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.string(), role: roleSchema, odkupEur: z.number().nullable().optional(), nextStep: z.string().nullable().optional(), note: z.string().optional() }))
+  .validator(z.object({ id: z.string(), role: roleSchema, odkupEur: z.number().nullable().optional(), nextStep: z.string().nullable().optional(), note: z.string().optional(), token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
     if (ownerAccess(role) !== "full") return { ok: false, message: "Rola nemá oprávnenie meniť deal." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2774,9 +2805,10 @@ export const updateDeal = createServerFn({ method: "POST" })
   });
 
 export const updateDealTask = createServerFn({ method: "POST" })
-  .validator(z.object({ id: z.number(), state: z.enum(TASK_STATES), note: z.string().optional(), role: roleSchema }))
+  .validator(z.object({ id: z.number(), state: z.enum(TASK_STATES), note: z.string().optional(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
     if (ownerAccess(role) !== "full") return { ok: false, message: "Rola nemá oprávnenie meniť úkon." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2786,11 +2818,13 @@ export const updateDealTask = createServerFn({ method: "POST" })
   });
 
 export const addDealNote = createServerFn({ method: "POST" })
-  .validator(z.object({ dealId: z.string(), body: z.string().min(1), role: roleSchema }))
-  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+  .validator(z.object({ dealId: z.string(), body: z.string().min(1), role: roleSchema, token: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Vyžaduje prihlásenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false };
-    await DB.prepare("INSERT INTO deal_notes (deal_id, author_role, body) VALUES (?, ?, ?)").bind(data.dealId, data.role, data.body).run();
+    await DB.prepare("INSERT INTO deal_notes (deal_id, author_role, body) VALUES (?, ?, ?)").bind(data.dealId, u.role, data.body).run();
     await DB.prepare("UPDATE deals SET updated_at = datetime('now') WHERE id = ?").bind(data.dealId).run();
     return { ok: true };
   });
@@ -2968,9 +3002,10 @@ export const getDataSubjectRecord = createServerFn({ method: "POST" })
 
 // ——— Bod 4: záloha D1 (export-only, gated admin/manažér) ———
 export const exportBackup = createServerFn({ method: "POST" })
-  .validator(z.object({ role: roleSchema }))
+  .validator(z.object({ role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; json?: string; message?: string }> => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
     if (role !== "admin" && role !== "manager") return { ok: false, message: "Zálohu môže exportovať len admin alebo manažér." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
@@ -2987,9 +3022,10 @@ export const exportBackup = createServerFn({ method: "POST" })
 
 // ——— Evidenčný list (Bod C) — C-KN parcely + historický UŽÍVATEĽ (uz.CEL cez pa.CEL), NIE vlastník ———
 export const getEvidencnyList = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), celok: z.number(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), celok: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }) => {
-    const role = data.role as Role;
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const role = await roleFromToken(data.token);
     const access = ownerAccess(role);
     const dataset = (await q<Dataset>("SELECT * FROM datasets WHERE id = ?", [data.datasetId]))[0] ?? null;
     const cel = (await q<{ celok: number; uzivatel: string | null; ico: string | null }>(
@@ -3008,9 +3044,10 @@ export const getEvidencnyList = createServerFn({ method: "POST" })
 
 // Užívateľ pre celok (identify na mape) — gatované.
 export const getCelokUser = createServerFn({ method: "POST" })
-  .validator(z.object({ datasetId: z.string(), celok: z.number(), role: roleSchema }))
+  .validator(z.object({ datasetId: z.string(), celok: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<{ uzivatel: string | null; ico: string | null }> => {
-    const access = ownerAccess(data.role as Role);
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const access = ownerAccess(await roleFromToken(data.token));
     const cel = (await q<{ uzivatel: string | null; ico: string | null }>(
       "SELECT uzivatel, ico FROM celky WHERE dataset_id = ? AND celok = ?",
       [data.datasetId, data.celok],
@@ -4277,7 +4314,8 @@ export type LvSettlement = {
 export const getLvSettlement = createServerFn({ method: "POST" })
   .validator(z.object({ datasetId: z.string(), lvNo: z.number(), role: roleSchema, token: z.string().optional() }))
   .handler(async ({ data }): Promise<LvSettlement> => {
-    const access = ownerAccess(data.role as Role);
+    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
+    const access = ownerAccess(await roleFromToken(data.token));
     const disclaimer = "Orientačné, nie právna rada — over s notárom/advokátom. § kurátorované zo znalostnej bázy.";
     const s = (await q<{ co_owners: number; has_spf: number; dedic: number; clean_title: number; absenter_ratio: number }>(
       "SELECT co_owners, has_spf, dedic, clean_title, absenter_ratio FROM lv_signals WHERE dataset_id=? AND lv_no=? LIMIT 1",

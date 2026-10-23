@@ -4,6 +4,7 @@ import { createDeal, getDeals, type LvSignal } from "../lib/api/kataster.functio
 import { m2 } from "../lib/domain";
 import { Badge, Card, Disclaimer, Meter, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 // ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
 // by vložil dáta do HTML pre KOHOKOĽVEK, kto pozná URL. Ťaháme ich až v efekte.
@@ -47,6 +48,7 @@ function reasonsOf(s: LvSignal): string[] {
 
 function OpportunitiesPage() {
   const { role } = useRole();
+  const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [signals, setSignals] = useState<Awaited<ReturnType<typeof getDeals>>>([]);
   const reload = useCallback(() => { getDeals({ data: {} }).then(setSignals).catch(() => setSignals([])); }, []);
   useEffect(() => { reload(); }, [reload]);
@@ -60,7 +62,7 @@ function OpportunitiesPage() {
     const key = `${s.dataset_id}-${s.lv_no}`;
     setDealBusy(key);
     try {
-      const r = await createDeal({ data: { datasetId: s.dataset_id, lvNo: s.lv_no, role } });
+      const r = await createDeal({ data: { datasetId: s.dataset_id, lvNo: s.lv_no, role, token: token ?? undefined } });
       if (r.ok && r.id) { setCreated((m) => ({ ...m, [key]: r.id! })); reload(); }
     } finally { setDealBusy(null); }
   }

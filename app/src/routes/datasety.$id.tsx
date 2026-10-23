@@ -32,7 +32,7 @@ function DatasetDetail() {
   const [recheck, setRecheck] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const reload = useCallback(() => {
-    getDataset({ data: { id, role: "viewer" } }).then(setData).catch(() => {});
+    getDataset({ data: { id } }).then(setData).catch(() => {});
   }, [id]);
   useEffect(() => { reload(); }, [reload]);
 

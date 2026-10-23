@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { getEvidencnyList } from "../lib/api/kataster.functions";
 import { m2 } from "../lib/domain";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 type Content = Awaited<ReturnType<typeof getEvidencnyList>>;
 
@@ -18,11 +19,12 @@ function ElPage() {
   const datasetId = params.datasetId;
   const celok = Number(params.celok);
   const { role } = useRole();
+  const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [c, setC] = useState<Content | null>(null);
 
   useEffect(() => {
     let alive = true;
-    getEvidencnyList({ data: { datasetId, celok, role } }).then((r) => alive && setC(r));
+    getEvidencnyList({ data: { datasetId, celok, role, token: token ?? undefined } }).then((r) => alive && setC(r));
     return () => { alive = false; };
   }, [datasetId, celok, role]);
 

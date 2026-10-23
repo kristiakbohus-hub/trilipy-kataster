@@ -5,6 +5,7 @@ import { CASE_KIND_LABEL, CASE_STATUS_META, type Case, type CaseNote } from "../
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
 import { DocumentsPanel } from "../components/documents-panel";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 type Kind = "vysporiadanie" | "screening" | "pristup" | "ine";
 
@@ -24,6 +25,7 @@ function CasesPage() {
   }, []);
   useEffect(() => { reload(); }, [reload]);
   const { role } = useRole();
+  const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const usable = datasets.filter((d) => d.status !== "blocked");
 
   const [datasetId, setDatasetId] = useState(usable[0]?.id ?? "");
@@ -48,13 +50,13 @@ function CasesPage() {
 
   async function addLink() {
     if (!selected?.case || linkRef.trim().length < 1) return;
-    await linkCaseEntity({ data: { caseId: selected.case.id, linkType, datasetId: selected.case.dataset_id, ref: linkRef.trim(), label: linkLabel.trim() || undefined, role } });
+    await linkCaseEntity({ data: { caseId: selected.case.id, linkType, datasetId: selected.case.dataset_id, ref: linkRef.trim(), label: linkLabel.trim() || undefined, role, token: token ?? undefined } });
     setLinkRef(""); setLinkLabel("");
     void openCase(selected.case.id);
   }
   async function removeLink(linkId: number) {
     if (!selected?.case) return;
-    await unlinkCaseEntity({ data: { linkId, role } });
+    await unlinkCaseEntity({ data: { linkId, role, token: token ?? undefined } });
     void openCase(selected.case.id);
   }
 
@@ -62,7 +64,7 @@ function CasesPage() {
     if (!datasetId || title.trim().length < 3) { setMsg("Zadaj dataset a názov (min. 3 znaky)."); return; }
     setBusy(true); setMsg(null);
     try {
-      const r = await createCase({ data: { datasetId, title: title.trim(), kind, nextSteps: nextSteps.trim() || undefined, role } });
+      const r = await createCase({ data: { datasetId, title: title.trim(), kind, nextSteps: nextSteps.trim() || undefined, role, token: token ?? undefined } });
       setMsg(r.ok ? "Case vytvorený." : r.message ?? "Neúspešné.");
       if (r.ok) { setTitle(""); setNextSteps(""); }
       reload();
@@ -70,14 +72,14 @@ function CasesPage() {
   }
 
   async function setStatus(id: number, status: "open" | "review" | "done") {
-    await updateCaseStatus({ data: { id, status, role } });
+    await updateCaseStatus({ data: { id, status, role, token: token ?? undefined } });
     reload();
     void openCase(id);
   }
 
   async function addNote() {
     if (!selected?.case || noteBody.trim().length < 2) return;
-    await addCaseNote({ data: { caseId: selected.case.id, body: noteBody.trim(), role } });
+    await addCaseNote({ data: { caseId: selected.case.id, body: noteBody.trim(), role, token: token ?? undefined } });
     setNoteBody("");
     void openCase(selected.case.id);
     reload();

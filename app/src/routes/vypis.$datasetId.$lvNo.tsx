@@ -189,7 +189,7 @@ function VypisPage() {
           html += `</p>`;
         }
       }
-      const st = await getLvSettlement({ data: { datasetId, lvNo, role } }).catch(() => null);
+      const st = await getLvSettlement({ data: { datasetId, lvNo, role, token: token ?? undefined } }).catch(() => null);
       if (st && (st.issues.length || (st.access === "full" && st.owners.length))) {
         html += `<h3 style="font-family:Georgia,serif">Vysporiadanie &amp; odkup podielov (orientačné)</h3>`;
         html += `<p style="font-size:12px">Náročnosť vysporiadania: <b>${he(DIFF_LABEL[st.difficulty])}</b> · potenciál ${st.potential_score}/100.</p>`;
@@ -275,7 +275,7 @@ function VypisPage() {
   // NEODOSIELA — len vygeneruje dokument; odoslanie robí používateľ. Owner-sensitive (len full).
   async function exportOutreach() {
     if (cc.access !== "full") return;
-    const st = await getLvSettlement({ data: { datasetId, lvNo, role } }).catch(() => null);
+    const st = await getLvSettlement({ data: { datasetId, lvNo, role, token: token ?? undefined } }).catch(() => null);
     const avm = st?.avm_eur ?? null;
     const settlement = (st?.issues.length ?? 0) > 0;
     const ku = d?.ku_name ?? "";
@@ -874,11 +874,12 @@ const DIFF_LABEL: Record<string, string> = { high: "vysoká náročnosť", med: 
 
 // Vysporiadanie & odkup podielov — klasifikácia issues + § postup (kurátorované) + kalkulačka odkupu (owner-sensitive).
 function LvSettlementSection({ datasetId, lvNo, role }: { datasetId: string; lvNo: number; role: Role }) {
+  const { token } = useAuth();   // rolu overuje server zo session
   const [d, setD] = useState<Awaited<ReturnType<typeof getLvSettlement>> | null>(null);
   const [openType, setOpenType] = useState<string | null>(null);
   useEffect(() => {
     let alive = true; setD(null); setOpenType(null);
-    getLvSettlement({ data: { datasetId, lvNo, role } }).then((r) => { if (alive) setD(r); }).catch(() => {});
+    getLvSettlement({ data: { datasetId, lvNo, role, token: token ?? undefined } }).then((r) => { if (alive) setD(r); }).catch(() => {});
     return () => { alive = false; };
   }, [datasetId, lvNo, role]);
   if (!d) return null;

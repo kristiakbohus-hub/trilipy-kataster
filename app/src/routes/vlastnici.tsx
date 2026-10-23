@@ -57,7 +57,7 @@ function VlastniciPage() {
   async function search() {
     if (q.trim().length < 2) return;
     setLoading(true);
-    try { setRes(await searchOwnersGlobal({ data: { q: q.trim(), role } })); }
+    try { setRes(await searchOwnersGlobal({ data: { q: q.trim(), role, token: token ?? undefined } })); }
     finally { setLoading(false); }
   }
   async function enrich(ico: string) {

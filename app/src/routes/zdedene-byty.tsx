@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getZACases, type ZARow } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 import { kuLabel } from "../lib/domain";
 
 // ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
@@ -14,6 +15,7 @@ export const Route = createFileRoute("/zdedene-byty")({
 
 function InheritedFlatsPage() {
   const { role } = useRole();
+  const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [rows, setRows] = useState<ZARow[]>([]);
   const [loading, setLoading] = useState(true);
   const reload = useCallback(() => {
@@ -31,7 +33,7 @@ function InheritedFlatsPage() {
     const key = `${r.dataset_id}-${r.lv_no}`;
     setDealBusy(key);
     try {
-      const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.lv_no, role } });
+      const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.lv_no, role, token: token ?? undefined } });
       if (res.ok && res.id) { setCreated((m) => ({ ...m, [key]: res.id! })); reload(); }
     } finally { setDealBusy(null); }
   }

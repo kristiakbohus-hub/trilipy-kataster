@@ -4,6 +4,7 @@ import { getDeal, listDeals, updateDealStatus, updateDealTask, addDealNote, upda
 import { DEAL_STATUS, DEAL_STATUS_ORDER, TASK_STATE, TASK_STATE_ORDER, eur, m2 } from "../lib/domain";
 import { Badge, Card, Disclaimer, Meter, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 type DealListItem = Awaited<ReturnType<typeof listDeals>>[number];
 
@@ -69,6 +70,7 @@ function DealsPage() {
   const reloadDeals = useCallback(() => { listDeals().then(setDeals).catch(() => setDeals([])); }, []);
   useEffect(() => { reloadDeals(); }, [reloadDeals]);
   const { role } = useRole();
+  const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [sel, setSel] = useState<string | null>(null);
   const [detail, setDetail] = useState<DealDetail | null>(null);
   const [noteBody, setNoteBody] = useState("");
@@ -78,7 +80,7 @@ function DealsPage() {
 
   async function open(id: string) {
     setSel(id);
-    const d = await getDeal({ data: { id, role } });
+    const d = await getDeal({ data: { id, role, token: token ?? undefined } });
     setDetail(d);
     setOdkupInput(d.deal?.odkup_eur != null ? String(d.deal.odkup_eur) : "");
     setStepInput(d.deal?.next_step ?? "");
@@ -87,25 +89,25 @@ function DealsPage() {
     if (!sel) return;
     setBusy(true);
     try {
-      await updateDeal({ data: { id: sel, role, odkupEur: odkupInput.trim() ? Number(odkupInput.replace(/\s/g, "")) : null, nextStep: stepInput.trim() || null } });
+      await updateDeal({ data: { id: sel, role, token: token ?? undefined, odkupEur: odkupInput.trim() ? Number(odkupInput.replace(/\s/g, "")) : null, nextStep: stepInput.trim() || null } });
       await open(sel); reloadDeals();
     } finally { setBusy(false); }
   }
   async function setStatus(status: (typeof DEAL_STATUS_ORDER)[number]) {
     if (!sel) return;
     setBusy(true);
-    try { await updateDealStatus({ data: { id: sel, status, role } }); await open(sel); reloadDeals(); }
+    try { await updateDealStatus({ data: { id: sel, status, role, token: token ?? undefined } }); await open(sel); reloadDeals(); }
     finally { setBusy(false); }
   }
   async function cycleTask(taskId: number, state: string) {
     const idx = TASK_STATE_ORDER.indexOf(state as (typeof TASK_STATE_ORDER)[number]);
     const next = TASK_STATE_ORDER[(idx + 1) % TASK_STATE_ORDER.length];
-    await updateDealTask({ data: { id: taskId, state: next, role } });
+    await updateDealTask({ data: { id: taskId, state: next, role, token: token ?? undefined } });
     if (sel) await open(sel);
   }
   async function submitNote() {
     if (!sel || noteBody.trim().length < 1) return;
-    await addDealNote({ data: { dealId: sel, body: noteBody.trim(), role } });
+    await addDealNote({ data: { dealId: sel, body: noteBody.trim(), role, token: token ?? undefined } });
     setNoteBody("");
     await open(sel);
     reloadDeals();

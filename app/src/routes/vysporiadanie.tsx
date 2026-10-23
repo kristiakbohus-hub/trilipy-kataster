@@ -4,6 +4,7 @@ import { createDeal, getSettlementCases, type SettlementRow } from "../lib/api/k
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { kuLabel, eur, parcelLabel } from "../lib/domain";
 import { useRole } from "../lib/role-context";
+import { useAuth } from "../lib/auth-context";
 
 // ZÁMERNE BEZ `loader`: loader beží počas SSR ešte pred prihlasovacou bránou (__root.tsx), takže
 // by vložil celý dataset do HTML pre KOHOKOĽVEK, kto pozná URL. Dáta sa ťahajú až v efekte.
@@ -38,6 +39,7 @@ function OutreachList({ json }: { json: string | null }) {
 
 function SettlementPage() {
   const { role } = useRole();
+  const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [rows, setRows] = useState<SettlementRow[]>([]);
   const [loading, setLoading] = useState(true);
   const reload = useCallback(() => {
@@ -56,7 +58,7 @@ function SettlementPage() {
     const key = `${r.dataset_id}-${r.land_lv_no}`;
     setDealBusy(key);
     try {
-      const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.land_lv_no, role } });
+      const res = await createDeal({ data: { datasetId: r.dataset_id, lvNo: r.land_lv_no, role, token: token ?? undefined } });
       if (res.ok && res.id) { setCreated((m) => ({ ...m, [key]: res.id! })); reload(); }
     } finally { setDealBusy(null); }
   }

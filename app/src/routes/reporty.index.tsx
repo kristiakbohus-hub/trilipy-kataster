@@ -46,7 +46,7 @@ function ReportsPage() {
     setBusy(true);
     setNote(null);
     try {
-      const r = await generateReport({ data: { datasetId, kind, title: title.trim(), role } });
+      const r = await generateReport({ data: { datasetId, kind, title: title.trim(), role, token: token ?? undefined } });
       setNote(r.ok ? `Report vytvorený (draft, audit ${r.hash}).` : r.message ?? "Neúspešné.");
       if (r.ok) setTitle("");
       reload();

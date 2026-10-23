@@ -34,7 +34,7 @@ function SystemPage() {
   async function backup() {
     setBkBusy(true); setBkMsg(null);
     try {
-      const r = await exportBackup({ data: { role } });
+      const r = await exportBackup({ data: { role, token: token ?? undefined } });
       if (r.ok && r.json) {
         const blob = new Blob([r.json], { type: "application/json" });
         const url = URL.createObjectURL(blob);
