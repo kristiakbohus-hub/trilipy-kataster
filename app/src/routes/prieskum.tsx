@@ -33,6 +33,7 @@ const ppm = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleStr
 
 function PrieskumPage() {
   const { role } = useRole();
+  const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<"score" | "area" | "owners">("score");
   const [res, setRes] = useState<Res | null>(null);
