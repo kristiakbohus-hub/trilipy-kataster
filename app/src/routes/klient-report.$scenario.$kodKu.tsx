@@ -186,6 +186,18 @@ function ClientReportPage() {
           ))}
           {run?.params_json ? <tr><td className="py-0.5 pr-3 text-muted">Parametre behu</td><td className="break-all text-xs">{run.params_json}</td></tr> : null}
         </tbody></table>
+        {/* Retail a priemysel bežia na testovacom profile. Report ide klientovi do ruky, takže
+            to musí byť uvedené TU, nie len v dokumentácii (OI-07/OI-08, dok. 05 §3). */}
+        {r.scenario === "landsearch" && r.shortlist.some((x) =>
+          x.cols.some((c) => c.label === "Účel" && (c.value === "retail" || c.value === "priemysel"))) ? (
+          <p className="mt-2 rounded border px-2 py-1.5 text-xs leading-relaxed"
+            style={{ borderColor: "#9a7b3e55", background: "rgba(154,123,62,0.07)", color: "#6b5324" }}>
+            <b>Rozsah platnosti:</b> celky pre účel „retail" a „priemysel" sú vyhodnotené na
+            <b> testovacom profile</b> (plocha bez kritérií dostupnosti), nie podľa požiadaviek
+            konkrétneho zadávateľa — tie zatiaľ nie sú schválené. Pre tieto účely ide o fyzickú
+            vhodnosť pozemku, <b>nie o kvalifikáciu pre klientsky dopyt</b>.
+          </p>
+        ) : null}
         <p className="mt-2 text-xs text-muted">
           Úplnosť: {meta.scope}
         </p>

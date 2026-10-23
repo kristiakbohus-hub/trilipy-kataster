@@ -14,6 +14,15 @@ export const Route = createFileRoute("/stavebne-pozemky")({
 const PURPOSE_LABEL: Record<string, string> = { residential: "bývanie", retail: "retail", industrial: "priemysel" };
 const BUILD_LABEL: Record<string, string> = { empty: "prázdny", demolishable: "na demoláciu", built: "zastavaný" };
 const PURPOSE_LIMITS: Record<string, string> = { residential: "škola ≤10 min · obchod ≤5 min autom" };
+// Dok. 05 §3 (GOLD-LI): „Neurčené obchodné parametre… Musia prísť zo skutočného dopytu alebo
+// schválenej retail šablóny. ŽIADNE z nasledujúcich testovacích čísel nie je požiadavkou Lidlu."
+// Náš profil beží na 8 000–10 000 m² bez kritérií dostupnosti, čo nesedí ani so zadaním (žiadne
+// nie je), ani s testovacím profilom balíka (4 000–8 000 m²). Kým nie je schválená šablóna, karta
+// to musí priznať — inak by tvrdila vhodnosť pre zadávateľa, ktorú nemá podloženú (OI-07/OI-08).
+const PURPOSE_WARN: Record<string, string> = {
+  retail: "Testovací profil (8 000–10 000 m², bez kritérií dostupnosti) — NIE požiadavka konkrétneho zadávateľa. Kým nie je schválená retail šablóna, neprezentuj to ako vhodnosť pre klienta.",
+  industrial: "Testovací profil (10 000–30 000 m², bez kritérií dostupnosti) — plocha ani prevádzkové požiadavky nie sú zo zadania.",
+};
 
 
 function LandPage() {
@@ -117,6 +126,13 @@ function LandPage() {
           ) : null}
         </div>
       </div>
+
+      {PURPOSE_WARN[purpose] ? (
+        <div className="rounded-lg border px-3 py-2 text-xs leading-relaxed"
+          style={{ borderColor: "#9a7b3e55", background: "rgba(154,123,62,0.07)", color: "#6b5324" }}>
+          <b>Pozor na výklad:</b> {PURPOSE_WARN[purpose]}
+        </div>
+      ) : null}
 
       {loading ? (
         <Card className="p-6 text-center text-sm text-muted">Načítavam…</Card>
