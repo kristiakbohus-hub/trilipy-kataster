@@ -90,12 +90,16 @@ function ClientReportPage() {
   })();
   const meta = SCENARIO_META[r.scenario] ?? DEFAULT_META;
 
+  // POZOR: `r` je zúžené cez `if (!r) return` VYŠŠIE, ale deklarácia funkcie je hoistovaná, takže
+  // TypeScript to zúženie dovnútra neprenesie (TS18047). Preto lokálna kópia — rovnaká pasca ako
+  // pri `const cc = c` v dossieri.
+  const rep = r;
   function exportJson() {
     try {
-      const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(rep, null, 2)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `klient-report-${r.scenario}-${r.kodKu}-${r.resultHash}.json`;
+      a.download = `klient-report-${rep.scenario}-${rep.kodKu}-${rep.resultHash}.json`;
       a.click();
       URL.revokeObjectURL(a.href);
     } catch (e) {
