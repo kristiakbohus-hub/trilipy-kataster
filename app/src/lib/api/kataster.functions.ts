@@ -3287,11 +3287,22 @@ const normOkres = (okresRow: unknown, obec: unknown): string | null => {
   else if (/^Košice/i.test(o) && o !== "Košice-okolie") o = "Košice";
   return OKRES_ALIAS[o] ?? o;
 };
+// Pipeline autorizácia: buď session rola s právom pipeline, ALEBO platný market secret (cloud
+// GitHub Action nemá session, len ALERT_SECRET). Bez toho ingestMarketAll volal refresh* s rolou od
+// klienta; po hardeningu rola ide zo session → server-side volanie bez tokenu padlo na „viewer"
+// a ingest do D1 prestal fungovať (origin svieži, D1 zastaraný).
+async function pipelineAuthed(role: Role, pipelineSecret?: string): Promise<boolean> {
+  if (canRunPipeline(role)) return true;
+  if (!pipelineSecret) return false;
+  const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
+  return !!expected && pipelineSecret === expected;
+}
+
 export const refreshMarketData = createServerFn({ method: "POST" })
-  .validator(z.object({ role: roleSchema, token: z.string().optional(), url: z.string().url().optional() }))
+  .validator(z.object({ role: roleSchema, token: z.string().optional(), url: z.string().url().optional(), pipelineSecret: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; index: number; opps: number; generated?: string; chunks?: number; phChunks?: number; message?: string }> => {
-    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
-    if (!canRunPipeline(role)) return { ok: false, index: 0, opps: 0, message: "Rola nemá oprávnenie." };
+    const role = await roleFromToken(data.token);   // rola zo session, alebo pipeline secret (cloud ingest)
+    if (!(await pipelineAuthed(role, data.pipelineSecret))) return { ok: false, index: 0, opps: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, index: 0, opps: 0, message: "Databáza nedostupná." };
     let url = data.url;
@@ -3326,10 +3337,10 @@ export const refreshMarketData = createServerFn({ method: "POST" })
 
 // Chunkovaný ingest inzerátov (market-listings-<i>.json) — Worker fetchne chunk a upsertne (história navždy).
 export const refreshMarketListings = createServerFn({ method: "POST" })
-  .validator(z.object({ url: z.string().url(), role: roleSchema, token: z.string().optional() }))
+  .validator(z.object({ url: z.string().url(), role: roleSchema, token: z.string().optional(), pipelineSecret: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; count: number; message?: string }> => {
-    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
-    if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
+    const role = await roleFromToken(data.token);   // rola zo session, alebo pipeline secret (cloud ingest)
+    if (!(await pipelineAuthed(role, data.pipelineSecret))) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
     let arr: unknown[];
@@ -3353,10 +3364,10 @@ export const refreshMarketListings = createServerFn({ method: "POST" })
 
 // ——— Per-inzerát história ceny: ingest chunku (market-pricehistory-<i>.json) + fetch krivky ———
 export const refreshMarketPriceHistory = createServerFn({ method: "POST" })
-  .validator(z.object({ url: z.string().url(), role: roleSchema, token: z.string().optional() }))
+  .validator(z.object({ url: z.string().url(), role: roleSchema, token: z.string().optional(), pipelineSecret: z.string().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; count: number; message?: string }> => {
-    const role = await roleFromToken(data.token);   // rola zo session, nie od klienta
-    if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
+    const role = await roleFromToken(data.token);   // rola zo session, alebo pipeline secret (cloud ingest)
+    if (!(await pipelineAuthed(role, data.pipelineSecret))) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
     let arr: unknown[];
@@ -3912,9 +3923,22 @@ export const ingestDataset = createServerFn({ method: "POST" })
 
 // Kompletný market ingest cez secret (pre GitHub Actions curl) — index+opps+listing chunky+pricehistory z verejného URL.
 // Auth: x-alert-secret === D1 market_meta.alert_secret. Zvnútra volá role-guarded fns ako 'admin' (secret už overil).
+// Stepový ingest trhových dát — každý krok je samostatný HTTP request, aby žiaden neprekročil
+// limit Workera (~1000 subrequestov). Monolitný beh (data + 14 chunkov listings + pricehistory +
+// AVM v jednom requeste = ~1300 subreq) ho prekračoval → `curl` v GitHub Action padal → D1 ostal
+// zastaraný, hoci origin bol svieži. Teraz to cloud workflow poženie po krokoch (ako /ceny z prehliadača):
+//   {step:"data"}                 → index + opportunities + meta; vráti chunks/phChunks
+//   {step:"listings", chunk:i}    → jeden market-listings-<i>.json
+//   {step:"pricehistory", chunk:i}→ jeden market-pricehistory-<i>.json
+//   {step:"compute"}              → prepočet AVM (z inzerátov) + obecné mediány
+// Bez `step` (staré volanie `{}`) = "data" — ostane spätne kompatibilné (krok nepadne, D1 dostane
+// aspoň index+opps+meta), kým sa workflow zaktualizuje na plnú sekvenciu.
+type MarketStepResult = { ok: boolean; step?: string; chunk?: number; message?: string;
+  index?: number; opps?: number; listings?: number; ph?: number; chunks?: number; phChunks?: number;
+  generated?: string; avm?: number; obm?: number };
 export const ingestMarketAll = createServerFn({ method: "POST" })
-  .validator(z.object({ secret: z.string() }))
-  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; opps?: number; listings?: number; ph?: number; chunks?: number; avm?: number; obm?: number }> => {
+  .validator(z.object({ secret: z.string(), step: z.enum(["data", "listings", "pricehistory", "compute"]).optional(), chunk: z.number().int().min(0).optional() }))
+  .handler(async ({ data }): Promise<MarketStepResult> => {
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "DB nedostupná" };
     const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
@@ -3922,23 +3946,28 @@ export const ingestMarketAll = createServerFn({ method: "POST" })
     const src = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
     if (!src) return { ok: false, message: "Chýba source_url v market_meta" };
     const adminRole = "admin" as Role;
-    const r1 = await refreshMarketData({ data: { role: adminRole } });
-    if (!r1.ok) return { ok: false, message: r1.message ?? "refreshMarketData zlyhal" };
-    let listings = 0;
-    for (let i = 0; i < (r1.chunks ?? 0); i++) {
+    const ps = data.secret;
+    const step = data.step ?? "data";
+    if (step === "data") {
+      const r = await refreshMarketData({ data: { role: adminRole, pipelineSecret: ps } });
+      return { ok: r.ok, step, message: r.message, index: r.index, opps: r.opps, chunks: r.chunks, phChunks: r.phChunks, generated: r.generated };
+    }
+    if (step === "listings") {
+      const i = data.chunk ?? 0;
       const u = src.replace("market-data.json", `market-listings-${i}.json`);
-      const rl = await refreshMarketListings({ data: { url: u, role: adminRole } }).catch(() => ({ ok: false, count: 0 }));
-      listings += rl.count ?? 0;
+      const r = await refreshMarketListings({ data: { url: u, role: adminRole, pipelineSecret: ps } });
+      return { ok: r.ok, step, chunk: i, listings: r.count, message: r.message };
     }
-    let ph = 0;
-    for (let i = 0; i < (r1.phChunks ?? 0); i++) {
+    if (step === "pricehistory") {
+      const i = data.chunk ?? 0;
       const u = src.replace("market-data.json", `market-pricehistory-${i}.json`);
-      const rp = await refreshMarketPriceHistory({ data: { url: u, role: adminRole } }).catch(() => ({ ok: false, count: 0 }));
-      ph += rp.count ?? 0;
+      const r = await refreshMarketPriceHistory({ data: { url: u, role: adminRole, pipelineSecret: ps } });
+      return { ok: r.ok, step, chunk: i, ph: r.count, message: r.message };
     }
+    // step === "compute" — AVM sa počíta z inzerátov, preto AŽ po ingeste listings
     const avm = await computeAvmIndex().catch(() => 0);
     const obm = await computeObecMarket().catch(() => 0);
-    return { ok: true, opps: r1.opps, listings, ph, chunks: r1.chunks, avm, obm };
+    return { ok: true, step: "compute", avm, obm };
   });
 
 export type PricePoint = { day: string; price_eur: number | null; ppm2: number | null };
