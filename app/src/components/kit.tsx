@@ -1,5 +1,28 @@
-import { critLabel, outcomeLabel } from "../lib/domain";
+import { critLabel, outcomeLabel, freshnessOf, FRESH_COLOR } from "../lib/domain";
 import type { CSSProperties, ReactNode } from "react";
+
+// ——— Sviežosť trhových dát — viditeľný „k dátumu" + varovanie pri zastaranosti ———
+// Keď trh zostarne (scraper stojí), AVM a skóre ticho prestanú zodpovedať realite. Tento odznak to
+// prizná priamo tam, kde sa dáta používajú na rozhodnutie (/rano, /ceny).
+export function MarketFreshness({
+  asOf, kind = "trh", stale, critical, className = "",
+}: { asOf: string | null | undefined; kind?: string; stale?: number; critical?: number; className?: string }) {
+  const f = freshnessOf(asOf, { stale, critical });
+  const color = FRESH_COLOR[f.level];
+  const dateTxt = asOf ? String(asOf).slice(0, 10) : null;
+  return (
+    <span className={"inline-flex flex-col " + className}>
+      <Badge color={color}>
+        {kind} k {dateTxt ?? "—"}{f.ageDays != null ? ` · ${f.label}` : ""}
+      </Badge>
+      {f.level === "critical" ? (
+        <span className="mt-1 text-[11px]" style={{ color }}>
+          Dáta sú staré {f.ageDays} dní — AVM a skóre nemusia zodpovedať realite.
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
 // ——— Ikony (inline SVG, žiadna externá závislosť) ———
 const PATHS: Record<string, ReactNode> = {

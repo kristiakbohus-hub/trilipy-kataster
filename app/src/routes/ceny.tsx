@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities, refreshMarketData, refreshMarketListings, refreshMarketPriceHistory, getMarketListings, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
-import { Card, Disclaimer, SectionHeader, Badge } from "../components/kit";
+import { Card, Disclaimer, SectionHeader, Badge, MarketFreshness } from "../components/kit";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
 // Viď pamäť cf_app_ssr_loader_leak.
@@ -165,8 +165,9 @@ function CenyPage() {
         {PTYPES.map((p) => (
           <button key={p.id} onClick={() => setPtype(p.id)} className={`rounded-full border px-3 py-1 ${ptype === p.id ? "border-green bg-green/10 text-green" : "border-line text-muted hover:text-fg"}`}>{p.label}</button>
         ))}
-        <span className="ml-auto text-xs text-muted">
-          {stats.latest ? `Posledný index: ${stats.latest}` : "Zatiaľ bez dát"}{stats.meta.last_refresh ? ` · refresh ${String(stats.meta.last_refresh).slice(0, 16)}` : ""}
+        <span className="ml-auto flex items-center gap-2 text-xs text-muted">
+          <MarketFreshness asOf={stats.meta.generated ?? stats.latest} kind="Trh" />
+          {stats.meta.last_refresh ? <span>refresh {String(stats.meta.last_refresh).slice(0, 16)}</span> : null}
         </span>
       </div>
 

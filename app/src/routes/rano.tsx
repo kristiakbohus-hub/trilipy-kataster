@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { getMorningBriefing, getFollowUps, type ContactRow } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { parcelLabel, plural } from "../lib/domain";
-import { Badge, Card, Icon, Stat } from "../components/kit";
+import { Badge, Card, Icon, Stat, MarketFreshness } from "../components/kit";
 
 type Brief = Awaited<ReturnType<typeof getMorningBriefing>>;
 const eur = (n: number | null) => (n == null ? "—" : n.toLocaleString("sk-SK", { maximumFractionDigits: 0 }) + " €");
@@ -50,7 +50,10 @@ function RanoPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="font-display text-2xl font-bold tracking-tight text-fg">{greet} 👋</h1>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <h1 className="font-display text-2xl font-bold tracking-tight text-fg">{greet} 👋</h1>
+          <MarketFreshness asOf={b.today} kind="Inzercia" />
+        </div>
         <p className="mt-1 text-sm text-muted">Dnes {dnes} — čo je dôležité, koho zavolať, kde je príležitosť. Všetko na jednom mieste.</p>
       </div>
 

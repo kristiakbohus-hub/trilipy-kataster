@@ -509,3 +509,32 @@ export function parcelLabel(code: string | null | undefined): string {
   const sub = Number(s.slice(-4));
   return sub ? `${base}/${sub}` : base;
 }
+
+// ——— Sviežosť dát (trh) — aby zastaranosť bola VIDITEĽNÁ ———
+// Dôvod: trhový scraper raz ticho zomrel na mesiac (vypnutý launchd agent) a appka celý ten čas
+// ukazovala staré AVM/skóre, akoby boli aktuálne. Sviežosť musí byť signál, nie skrytý fakt.
+// Prahy: scraper má bežať denne, takže >7 dní = niečo drhne, >14 dní = zjavne mŕtve.
+export type FreshLevel = "fresh" | "stale" | "critical" | "unknown";
+export type Freshness = { ageDays: number | null; level: FreshLevel; label: string };
+
+export function freshnessOf(
+  dateIso: string | null | undefined,
+  opts: { stale?: number; critical?: number } = {},
+): Freshness {
+  if (!dateIso) return { ageDays: null, level: "unknown", label: "bez dát" };
+  const raw = String(dateIso).trim().replace(" ", "T");
+  // „YYYY-MM-DD" → poludnie UTC, aby časové pásmo neposúvalo deň; plné timestampy ako UTC.
+  const iso = raw.length <= 10 ? `${raw}T12:00:00Z` : /[zZ]|[+-]\d\d:?\d\d$/.test(raw) ? raw : `${raw}Z`;
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return { ageDays: null, level: "unknown", label: "bez dát" };
+  const ageDays = Math.max(0, Math.floor((Date.now() - t) / 86400000));
+  const stale = opts.stale ?? 7;
+  const critical = opts.critical ?? 14;
+  const level: FreshLevel = ageDays >= critical ? "critical" : ageDays >= stale ? "stale" : "fresh";
+  const label = ageDays === 0 ? "dnes" : ageDays === 1 ? "včera" : `pred ${plural(ageDays, "dňom", "dňami", "dňami")}`;
+  return { ageDays, level, label };
+}
+
+export const FRESH_COLOR: Record<FreshLevel, string> = {
+  fresh: "#3c9a63", stale: "#9a7b3e", critical: "#c0493f", unknown: "#8b8b8b",
+};
