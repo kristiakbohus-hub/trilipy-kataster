@@ -5609,10 +5609,11 @@ export const ingestBuyerLeads = createServerFn({ method: "POST" })
   });
 
 export const buyerMatchesForLead = createServerFn({ method: "POST" })
-  .validator(z.object({ secret: z.string(), externalId: z.string().min(1).max(100) }))
+  .validator(z.object({ secret: z.string(), externalId: z.string().max(100) }))
   .handler(async ({ data }): Promise<{ ok: boolean; requestId?: number; land?: BuyerLandMatch[]; listings?: BuyerListingMatch[]; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };   // secret VŽDY prvý
+    if (!data.externalId.trim()) return { ok: false, message: "Chýba externalId." };
     const r = (await q<BuyerRequest>("SELECT * FROM buyer_requests WHERE source='os_tri_lipy' AND external_id=?", [data.externalId]))[0];
     if (!r) return { ok: false, message: "Záujemca s týmto externalId nie je v evidencii." };
     const dss = await q<DsRow>("SELECT id, ku_code, ku_name, region FROM datasets").catch(() => []);
