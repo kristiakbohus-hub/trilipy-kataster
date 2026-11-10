@@ -1,32 +1,23 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
+import { useAuth } from "./auth-context";
 import type { Role } from "./domain";
 
-// Demo rolový kontext. Nejde o reálnu autentifikáciu — je to ilustračný model
-// rolových oprávnení (owner-sensitive gating, export, podpis) v súlade so
-// stratégiou. Rola sa drží na klientovi a perzistuje v localStorage.
-
-const DEFAULT_ROLE: Role = "analytik";
-const STORAGE_KEY = "tlkc.role";
+// Rola pre ROZHRANIE (čo ukázať) = rola prihláseného účtu z /api/auth (users.role v D1).
+//
+// Predtým to bol demo kontext s rolou v localStorage a predvolenou „analytik": prepínač sa už nikde
+// nepoužíval, takže každý — aj nový viewer — videl rozhranie analytika (export, pipeline) a server
+// mu to potom odmietol, a admin nevidel admin prvky (review 2026-11-10). Autorizácia je aj tak
+// výlučne na serveri (rola zo session); tu ide len o to, aby UI ukazovalo to, čo účet naozaj smie.
+// Rolu mení admin v GDPR → Používatelia a roly; zmena sa prejaví po ďalšom načítaní appky.
 
 type Ctx = { role: Role; setRole: (r: Role) => void };
-const RoleContext = createContext<Ctx>({ role: DEFAULT_ROLE, setRole: () => {} });
+const RoleContext = createContext<Ctx>({ role: "viewer", setRole: () => {} });
 
 export function RoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRoleState] = useState<Role>(DEFAULT_ROLE);
-
-  // Hydratácia z localStorage až v efekte (SSR-safe).
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = window.localStorage.getItem(STORAGE_KEY) as Role | null;
-    if (saved) setRoleState(saved);
-  }, []);
-
-  const setRole = useCallback((r: Role) => {
-    setRoleState(r);
-    if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, r);
-  }, []);
-
-  return <RoleContext.Provider value={{ role, setRole }}>{children}</RoleContext.Provider>;
+  const { user } = useAuth();
+  const role: Role = user?.role ?? "viewer";
+  // setRole ostáva kvôli kompatibilite volajúcich, ale rolu na klientovi meniť nejde (nemá to význam).
+  return <RoleContext.Provider value={{ role, setRole: () => {} }}>{children}</RoleContext.Provider>;
 }
 
 export function useRole() {
