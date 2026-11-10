@@ -24,14 +24,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const SRC = join(HERE, "..", "src", "lib", "api", "kataster.functions.ts");
 
 // Výnimky — každá má dôvod, prečo nepotrebuje session rolu. Pridanie sem je vedomé rozhodnutie.
+// (prihlásenie/registrácia/odhlásenie už nie sú server funkcie — bežia cez /api/auth, src/lib/auth.server.ts)
 const WRITE_EXCEPTIONS = new Map([
-  ["registerUser", "zakladá účet — autorizuje allowlist + heslo, session ešte neexistuje"],
-  ["loginUser", "overuje heslo a VYTVÁRA session — nemôže ju vyžadovať vopred"],
-  ["logoutUser", "maže session podľa VLASTNÉHO tokenu (DELETE … WHERE token = data.token) — držba tokenu je autorizácia"],
   ["esknIdentify", "zápis len do reg_cache (read-through cache VEREJNÝCH ÚGKK/ESKN dát na súradnici); nevracia identitu vlastníka"],
 ]);
 
 const src = readFileSync(SRC, "utf8");
+
+// Invariant 0 — BRÁNA: každé volanie /_serverFn/* musí overiť session v request middleware (src/start.ts).
+// Bez nej bolo 69 zo 161 funkcií volateľných z internetu bez prihlásenia (review 2026-11-10).
+const START = readFileSync(join(HERE, "..", "src", "start.ts"), "utf8");
+const gateOk = /\/_serverFn\//.test(START) && /userForToken\(/.test(START) && /requestMiddleware:\s*\[[^\]]*sessionGate/.test(START);
+if (!gateOk) {
+  console.error("\n✗ authz-guard: src/start.ts nemá session bránu pre /_serverFn/* v requestMiddleware — server funkcie by boli verejné.\n");
+  process.exit(1);
+}
 
 // Rozsekaj na funkcie: telo = od `export const NAME = createServerFn` po ďalší taký začiatok (alebo EOF).
 const starts = [...src.matchAll(/^export const (\w+) = createServerFn/gm)];

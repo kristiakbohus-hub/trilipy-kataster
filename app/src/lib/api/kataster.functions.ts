@@ -759,33 +759,19 @@ export const runReadinessRecheck = createServerFn({ method: "POST" })
     return { ok: true, message: verdict };
   });
 
-export const getAudit = createServerFn({ method: "GET" }).handler(async () => {
-  return await q<AuditRow>("SELECT * FROM audit_log ORDER BY id DESC LIMIT 40");
-});
-
-// ——— Fáza 4: Auth (9.26) — no-anonymous gate ———
-// DEMO prístupová fráza. Pred handoffom rotovať (blocked_for_handoff). Fráza sa
-// validuje na serveri; na klient sa nikdy neposiela.
-const DEMO_PASSPHRASE = "trilipy";
-export const login = createServerFn({ method: "POST" })
-  .validator(z.object({ passphrase: z.string() }))
-  .handler(async ({ data }): Promise<{ ok: boolean }> => {
-    return { ok: data.passphrase.trim().toLowerCase() === DEMO_PASSPHRASE };
+export const getAudit = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<AuditRow[]> => {
+    // len admin: bol verejný GET bez prihlásenia a obsahoval aj mená žiadateľov o GDPR výmaz
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return [];
+    return await q<AuditRow>("SELECT * FROM audit_log ORDER BY id DESC LIMIT 40");
   });
 
-// ——— Reálne účty (email+heslo), PBKDF2 (Web Crypto), session tokeny ———
-function hexOf(buf: ArrayBuffer | Uint8Array): string {
-  const b = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  return [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
-}
-function randHex(n: number): string { return hexOf(crypto.getRandomValues(new Uint8Array(n))); }
-async function pbkdf2(password: string, saltHex: string): Promise<string> {
-  const salt = Uint8Array.from(saltHex.match(/../g)!.map((h) => parseInt(h, 16)));
-  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
-  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" }, key, 256);
-  return hexOf(bits);
-}
-const SESSION_MS = 30 * 24 * 3600 * 1000;
+// ——— Auth ———
+// Prihlásenie, registrácia a odhlásenie bežia cez POST /api/auth (src/lib/auth.server.ts), nie ako
+// server funkcie: každé volanie /_serverFn/* overuje session brána v src/start.ts. Odstránené:
+// demo `login` s natvrdo zapísanou frázou a server funkcie registerUser/loginUser/getMe/logoutUser.
 export type AuthUser = { id: string; email: string; name: string | null; role: Role };
 async function userFromToken(token: string): Promise<AuthUser | null> {
   if (!token) return null;
@@ -816,27 +802,6 @@ async function roleFromToken(token: string | undefined): Promise<Role> {
 async function requireUser(token: string | undefined): Promise<AuthUser | null> {
   return token ? await userFromToken(token).catch(() => null) : null;
 }
-
-export const registerUser = createServerFn({ method: "POST" })
-  .validator(z.object({ email: z.string().email(), password: z.string().min(6), name: z.string().optional() }))
-  .handler(async ({ data }): Promise<{ ok: boolean; token?: string; user?: AuthUser; message?: string }> => {
-    const email = data.email.trim().toLowerCase();
-    if ((await q<{ id: string }>("SELECT id FROM users WHERE email = ?", [email])).length) return { ok: false, message: "Účet s týmto emailom už existuje." };
-    // Registrácia LEN na pozvanie — email musí byť na allowliste (signup_allowlist, migrácia 0063).
-    // Fail-open pred migráciou (tabuľka ešte neexistuje), aby sa nezamkla registrácia pred nasadením gate-u.
-    try {
-      const allowed = (await q<{ e: string }>("SELECT email AS e FROM signup_allowlist WHERE email = ? LIMIT 1", [email])).length > 0;
-      if (!allowed) return { ok: false, message: "Registrácia je len na pozvanie. Požiadaj admina, nech pridá tvoj email do prístupov." };
-    } catch { /* signup_allowlist ešte neexistuje (pred 0063) — dočasne povoľ */ }
-    const salt = randHex(16); const hash = await pbkdf2(data.password, salt); const id = crypto.randomUUID();
-    const n = (await q<{ n: number }>("SELECT COUNT(*) n FROM users", []))[0]?.n ?? 0;
-    const role: Role = n === 0 ? "admin" : "analytik";   // prvý účet = admin
-    await q("INSERT INTO users (id,email,name,pass_hash,salt,role) VALUES (?,?,?,?,?,?)", [id, email, data.name?.trim() || null, hash, salt, role]);
-    const token = randHex(24); const now = Date.now();
-    await q("INSERT INTO sessions (token,user_id,created_at,expires_at) VALUES (?,?,?,?)", [token, id, now, now + SESSION_MS]);
-    await q("INSERT INTO activity (user_id,author,action,detail) VALUES (?,?,?,?)", [id, data.name?.trim() || email, "auth.register", `Nový účet ${email} (${role})`]);
-    return { ok: true, token, user: { id, email, name: data.name?.trim() || null, role } };
-  });
 
 // ——— Prístup: allowlist povolených registrácií (kto sa vôbec smie zaregistrovať) — admin ———
 export type AllowedSignup = { email: string; note: string | null; created_at: string | null };
@@ -869,22 +834,47 @@ export const removeAllowedSignup = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const loginUser = createServerFn({ method: "POST" })
-  .validator(z.object({ email: z.string().email(), password: z.string() }))
-  .handler(async ({ data }): Promise<{ ok: boolean; token?: string; user?: AuthUser; message?: string }> => {
-    const email = data.email.trim().toLowerCase();
-    const u = (await q<{ id: string; email: string; name: string | null; pass_hash: string; salt: string; role: string }>("SELECT id,email,name,pass_hash,salt,role FROM users WHERE email = ?", [email]))[0];
-    if (!u || (await pbkdf2(data.password, u.salt)) !== u.pass_hash) return { ok: false, message: "Nesprávny email alebo heslo." };
-    const token = randHex(24); const now = Date.now();
-    await q("INSERT INTO sessions (token,user_id,created_at,expires_at) VALUES (?,?,?,?)", [token, u.id, now, now + SESSION_MS]);
-    return { ok: true, token, user: { id: u.id, email: u.email, name: u.name, role: u.role as Role } };
+// ——— Používatelia a roly (admin) ———
+// Nový účet je od 2026-11-10 VIEWER (bez mien vlastníkov); vyššiu rolu pridelí admin tu.
+export type UserRow = { id: string; email: string; name: string | null; role: string; created_at: string | null; last_login: number | null; sessions: number };
+export const listUsers = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ access: boolean; users: UserRow[] }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { access: false, users: [] };
+    const users = await q<UserRow>(
+      `SELECT u.id, u.email, u.name, u.role, u.created_at,
+              (SELECT MAX(created_at) FROM sessions s WHERE s.user_id = u.id) AS last_login,
+              (SELECT COUNT(*) FROM sessions s WHERE s.user_id = u.id AND s.expires_at > ?) AS sessions
+       FROM users u ORDER BY u.created_at`, [Date.now()]);
+    return { access: true, users };
   });
-export const getMe = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string() }))
-  .handler(async ({ data }): Promise<AuthUser | null> => userFromToken(data.token));
-export const logoutUser = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string() }))
-  .handler(async ({ data }): Promise<{ ok: boolean }> => { await q("DELETE FROM sessions WHERE token = ?", [data.token]); return { ok: true }; });
+export const setUserRole = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), userId: z.string(), newRole: roleSchema }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže meniť roly." };
+    if (data.userId === u.id && data.newRole !== "admin") {
+      const admins = (await q<{ n: number }>("SELECT COUNT(*) n FROM users WHERE role = 'admin'"))[0]?.n ?? 0;
+      if (admins <= 1) return { ok: false, message: "Si jediný admin — najprv urob adminom niekoho iného." };
+    }
+    const t = (await q<{ email: string }>("SELECT email FROM users WHERE id = ?", [data.userId]))[0];
+    if (!t) return { ok: false, message: "Používateľ neexistuje." };
+    await q("UPDATE users SET role = ? WHERE id = ?", [data.newRole, data.userId]);
+    await logAudit("user.role", u.role, `Rola ${t.email} → ${data.newRole}`);
+    return { ok: true };
+  });
+export const revokeUserSessions = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), userId: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; removed?: number; message?: string }> => {
+    const u = await userFromToken(data.token);
+    if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže rušiť relácie." };
+    const n = (await q<{ n: number }>("SELECT COUNT(*) n FROM sessions WHERE user_id = ?", [data.userId]))[0]?.n ?? 0;
+    await q("DELETE FROM sessions WHERE user_id = ?", [data.userId]);
+    const t = (await q<{ email: string }>("SELECT email FROM users WHERE id = ?", [data.userId]))[0];
+    await logAudit("user.revoke", u.role, `Odhlásené všade: ${t?.email ?? data.userId} (${n} relácií)`);
+    return { ok: true, removed: n };
+  });
 
 // ——— Kolaborácia: komentáre / watchlisty / denník / notifikácie ———
 async function notifyWatchers(subjectType: string, subjectId: string, exceptUserId: string, kind: string, body: string) {
@@ -2965,7 +2955,8 @@ export const submitDataSubjectRequest = createServerFn({ method: "POST" })
     if (data.kind === "objection" || data.kind === "erasure") {
       await q("INSERT INTO suppression (kind,key,orig,reason) VALUES ('name',?,?,?)", [normName(data.subjectName), data.subjectName.trim(), data.kind]);
     }
-    await logAudit("gdpr.request", u.role, `Žiadosť ${data.kind}: ${data.subjectName.trim()}`);
+    // do auditu NIE meno dotknutej osoby — len ID žiadosti (meno je v data_subject_requests, len pre admina)
+    await logAudit("gdpr.request", u.role, `Žiadosť ${data.kind} #${r[0]?.id ?? "?"}`);
     return { ok: true, id: r[0]?.id };
   });
 export const listDataSubjectRequests = createServerFn({ method: "POST" })
@@ -2987,7 +2978,7 @@ export const applyErasure = createServerFn({ method: "POST" })
     await q("DELETE FROM lv_owners WHERE lower(name) LIKE ?", [like]);
     await q("INSERT INTO suppression (kind,key,orig,reason) VALUES ('name',?,?,'erasure')", [normName(data.subjectName), data.subjectName.trim()]);
     await q("UPDATE data_subject_requests SET status='resolved', resolved_at=datetime('now') WHERE id=?", [data.requestId]);
-    await logAudit("gdpr.erasure", u.role, `Výmaz: ${data.subjectName.trim()} (${n} záznamov lv_owners)`);
+    await logAudit("gdpr.erasure", u.role, `Výmaz podľa žiadosti #${data.requestId} (${n} záznamov lv_owners)`);
     return { ok: true, removed: n };
   });
 export const getDataSubjectRecord = createServerFn({ method: "POST" })
@@ -3012,10 +3003,19 @@ export const exportBackup = createServerFn({ method: "POST" })
     const tables = (await q<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' ORDER BY name",
     )).map((t) => t.name);
+    // BEZ tajomstiev: záloha obsahovala živé session tokeny (30 dní vydávať sa za kohokoľvek),
+    // hashe hesiel a market_meta.alert_secret (zápis do všetkých ingest endpointov).
+    const SKIP = new Set(["sessions"]);
     const dump: Record<string, unknown[]> = {};
     for (const t of tables) {
+      if (SKIP.has(t)) continue;
       try { dump[t] = await q<Record<string, unknown>>(`SELECT * FROM ${t}`); } catch { dump[t] = []; }
     }
+    if (dump.users) dump.users = dump.users.map((r) => { const { pass_hash: _p, salt: _s, ...rest } = r as Record<string, unknown>; return rest; });
+    if (dump.market_meta) dump.market_meta = dump.market_meta.map((r) => {
+      const row = r as Record<string, unknown>;
+      return /secret|token|key/i.test(String(row.key ?? "")) ? { ...row, value: "[odstránené]" } : row;
+    });
     await logAudit("backup.export", role, `Záloha D1: ${tables.length} tabuliek.`);
     return { ok: true, json: JSON.stringify({ app: "tri-lipy-kataster", exported_at: new Date().toISOString(), tables: dump }) };
   });

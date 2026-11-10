@@ -1,0 +1,44 @@
+import { createFileRoute } from "@tanstack/react-router";
+import { authLogin, authLogout, authRegister, clearCookie, sessionCookie, tokenFromRequest, userForToken } from "../lib/auth.server";
+
+// POST /api/auth  { action: "login" | "register" | "me" | "logout", ... }
+// Prihlásenie NEMÔŽE byť server funkcia: každé volanie /_serverFn/* overuje session request middleware
+// (src/start.ts), takže bez session by sa nedalo prihlásiť. Odpoveď nastaví/zmaže HttpOnly cookie.
+// „me" overí token z cookie alebo z tela (starší používatelia majú token len v localStorage)
+// a cookie dosadí — prechod na novú bránu je tak pre prihlásených bez odhlásenia.
+export const Route = createFileRoute("/api/auth")({
+  server: {
+    handlers: {
+      POST: async ({ request }) => {
+        let body: { action?: string; email?: string; password?: string; name?: string; token?: string } = {};
+        try { body = (await request.json()) as typeof body; } catch { /* prázdne telo */ }
+        const ip = request.headers.get("cf-connecting-ip") ?? "unknown";
+        const json = (obj: unknown, status = 200, cookie?: string) =>
+          new Response(JSON.stringify(obj), {
+            status,
+            headers: { "content-type": "application/json", "cache-control": "no-store", ...(cookie ? { "set-cookie": cookie } : {}) },
+          });
+        switch (body.action) {
+          case "login":
+          case "register": {
+            const r = body.action === "login"
+              ? await authLogin(body.email ?? "", body.password ?? "", ip)
+              : await authRegister(body.email ?? "", body.password ?? "", body.name, ip);
+            return json({ ok: r.ok, token: r.token, user: r.user, message: r.message }, r.status, r.ok && r.token ? sessionCookie(r.token) : undefined);
+          }
+          case "me": {
+            const t = tokenFromRequest(request, body.token);
+            const u = await userForToken(t);
+            return u && t ? json({ ok: true, user: u }, 200, sessionCookie(t)) : json({ ok: false }, 401, clearCookie());
+          }
+          case "logout": {
+            await authLogout(tokenFromRequest(request, body.token));
+            return json({ ok: true }, 200, clearCookie());
+          }
+          default:
+            return json({ ok: false, message: "Neznáma akcia." }, 400);
+        }
+      },
+    },
+  },
+});

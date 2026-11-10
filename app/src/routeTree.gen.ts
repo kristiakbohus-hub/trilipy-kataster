@@ -57,6 +57,7 @@ import { Route as ApiIngestScenarioRunRouteImport } from './routes/api.ingest-sc
 import { Route as ApiIngestSettlementRouteImport } from './routes/api.ingest-settlement'
 import { Route as ApiIngestParcelZoningRouteImport } from './routes/api.ingest-parcel-zoning'
 import { Route as ApiIngestMarketRouteImport } from './routes/api.ingest-market'
+import { Route as ApiAuthRouteImport } from './routes/api.auth'
 import { Route as ApiIngestDatasetRouteImport } from './routes/api.ingest-dataset'
 import { Route as VlastniciRouteImport } from './routes/vlastnici'
 import { Route as DealsRouteImport } from './routes/deals'
@@ -303,6 +304,11 @@ const ApiIngestMarketRoute = ApiIngestMarketRouteImport.update({
   path: '/api/ingest-market',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthRoute = ApiAuthRouteImport.update({
+  id: '/api/auth',
+  path: '/api/auth',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIngestDatasetRoute = ApiIngestDatasetRouteImport.update({
   id: '/api/ingest-dataset',
   path: '/api/ingest-dataset',
@@ -373,6 +379,7 @@ export interface FileRoutesByFullPath {
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
   '/api/ingest-market': typeof ApiIngestMarketRoute
+  '/api/auth': typeof ApiAuthRoute
   '/api/ingest-dataset': typeof ApiIngestDatasetRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
@@ -428,6 +435,7 @@ export interface FileRoutesByTo {
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
   '/api/ingest-market': typeof ApiIngestMarketRoute
+  '/api/auth': typeof ApiAuthRoute
   '/api/ingest-dataset': typeof ApiIngestDatasetRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
@@ -484,6 +492,7 @@ export interface FileRoutesById {
   '/api/ingest-landsearch': typeof ApiIngestLandsearchRoute
   '/api/ingest-parcel-zoning': typeof ApiIngestParcelZoningRoute
   '/api/ingest-market': typeof ApiIngestMarketRoute
+  '/api/auth': typeof ApiAuthRoute
   '/api/ingest-dataset': typeof ApiIngestDatasetRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/reporty/$id': typeof ReportyIdRoute
@@ -541,6 +550,7 @@ export interface FileRouteTypes {
     | '/api/ingest-landsearch'
     | '/api/ingest-parcel-zoning'
     | '/api/ingest-market'
+    | '/api/auth'
     | '/api/ingest-dataset'
     | '/sitemap.xml'
     | '/reporty/$id'
@@ -596,6 +606,7 @@ export interface FileRouteTypes {
     | '/api/ingest-landsearch'
     | '/api/ingest-parcel-zoning'
     | '/api/ingest-market'
+    | '/api/auth'
     | '/api/ingest-dataset'
     | '/sitemap.xml'
     | '/reporty/$id'
@@ -651,6 +662,7 @@ export interface FileRouteTypes {
     | '/api/ingest-landsearch'
     | '/api/ingest-parcel-zoning'
     | '/api/ingest-market'
+    | '/api/auth'
     | '/api/ingest-dataset'
     | '/sitemap.xml'
     | '/reporty/$id'
@@ -704,6 +716,7 @@ export interface RootRouteChildren {
   ApiIngestLandsearchRoute: typeof ApiIngestLandsearchRoute
   ApiIngestParcelZoningRoute: typeof ApiIngestParcelZoningRoute
   ApiIngestMarketRoute: typeof ApiIngestMarketRoute
+  ApiAuthRoute: typeof ApiAuthRoute
   ApiIngestDatasetRoute: typeof ApiIngestDatasetRoute
   ReportyIdRoute: typeof ReportyIdRoute
   VypisDatasetIdLvNoRoute: typeof VypisDatasetIdLvNoRoute
@@ -786,6 +799,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ingest-market'
       fullPath: '/api/ingest-market'
       preLoaderRoute: typeof ApiIngestMarketRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth': {
+      id: '/api/auth'
+      path: '/api/auth'
+      fullPath: '/api/auth'
+      preLoaderRoute: typeof ApiAuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-dataset': {
@@ -1139,6 +1159,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiIngestLandsearchRoute: ApiIngestLandsearchRoute,
   ApiIngestParcelZoningRoute: ApiIngestParcelZoningRoute,
   ApiIngestMarketRoute: ApiIngestMarketRoute,
+  ApiAuthRoute: ApiAuthRoute,
   ApiIngestDatasetRoute: ApiIngestDatasetRoute,
   ReportyIdRoute: ReportyIdRoute,
   VypisDatasetIdLvNoRoute: VypisDatasetIdLvNoRoute,

@@ -1,8 +1,23 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
-import { loginUser, registerUser, getMe, logoutUser, type AuthUser } from "./api/kataster.functions";
+import type { AuthUser } from "./auth.server";
 
-// Reálne účty (email+heslo). Session token v localStorage, používateľ overený na serveri (getMe).
+// Reálne účty (email+heslo) cez POST /api/auth. Server nastaví HttpOnly cookie, ktorú overuje brána
+// pre všetky server funkcie (src/start.ts). Kópia tokenu v localStorage ostáva pre funkcie, ktoré
+// berú `data.token` (rola zo session); pri štarte „me" dosadí cookie aj starším reláciám.
 const TOKEN_KEY = "tlkc.token";
+
+type AuthResp = { ok: boolean; token?: string; user?: AuthUser; message?: string };
+async function authCall(body: Record<string, unknown>): Promise<AuthResp> {
+  try {
+    const r = await fetch("/api/auth", {
+      method: "POST", credentials: "same-origin",
+      headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    return (await r.json()) as AuthResp;
+  } catch {
+    return { ok: false, message: "Server je nedostupný. Skús to znova." };
+  }
+}
 
 type Ctx = {
   user: AuthUser | null;
@@ -34,8 +49,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const t = readToken();
     setToken(t);
     if (!t) { setAuthed(false); return; }
-    getMe({ data: { token: t } })
-      .then((u) => { setUser(u); setAuthed(!!u); if (!u) { try { window.localStorage.removeItem(TOKEN_KEY); } catch { /* noop */ } } })
+    authCall({ action: "me", token: t })
+      .then((r) => {
+        const u = r.ok ? r.user ?? null : null;
+        setUser(u); setAuthed(!!u);
+        if (!u) { try { window.localStorage.removeItem(TOKEN_KEY); } catch { /* noop */ } }
+      })
       .catch(() => setAuthed(false));
   }, []);
 
@@ -45,20 +64,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
-    const r = await loginUser({ data: { email, password } });
+    const r = await authCall({ action: "login", email, password });
     if (r.ok && r.token && r.user) persist(r.token, r.user);
     return { ok: r.ok, message: r.message };
   }, [persist]);
 
   const register = useCallback(async (email: string, password: string, name: string) => {
-    const r = await registerUser({ data: { email, password, name } });
+    const r = await authCall({ action: "register", email, password, name });
     if (r.ok && r.token && r.user) persist(r.token, r.user);
     return { ok: r.ok, message: r.message };
   }, [persist]);
 
   const signOut = useCallback(() => {
     const t = readToken();
-    if (t) void logoutUser({ data: { token: t } }).catch(() => {});
+    void authCall({ action: "logout", token: t });
     try { window.localStorage.removeItem(TOKEN_KEY); } catch { /* noop */ }
     setToken(null); setUser(null); setAuthed(false);
   }, []);

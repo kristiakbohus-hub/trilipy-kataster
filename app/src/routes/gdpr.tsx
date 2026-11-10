@@ -1,8 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
-import { submitDataSubjectRequest, listDataSubjectRequests, applyErasure, getDataSubjectRecord, listAllowedSignups, addAllowedSignup, removeAllowedSignup, type DsrRow, type AllowedSignup } from "../lib/api/kataster.functions";
+import { submitDataSubjectRequest, listDataSubjectRequests, applyErasure, getDataSubjectRecord, listAllowedSignups, addAllowedSignup, removeAllowedSignup, listUsers, setUserRole, revokeUserSessions, type DsrRow, type AllowedSignup, type UserRow } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
 import { useAuth } from "../lib/auth-context";
+import { ROLES, type Role } from "../lib/domain";
 
 export const Route = createFileRoute("/gdpr")({
   head: () => ({ meta: [{ title: "GDPR — práva dotknutých osôb — TRI LIPY KATASTER CORE" }] }),
@@ -26,11 +27,13 @@ function GdprPage() {
   const [allow, setAllow] = useState<Awaited<ReturnType<typeof listAllowedSignups>> | null>(null);
   const [newEmail, setNewEmail] = useState("");
   const [newNote, setNewNote] = useState("");
+  const [users, setUsers] = useState<Awaited<ReturnType<typeof listUsers>> | null>(null);
 
   const refresh = useCallback(() => {
     if (!token) return;
     listDataSubjectRequests({ data: { token } }).then(setData).catch(() => {});
     listAllowedSignups({ data: { token } }).then(setAllow).catch(() => {});
+    listUsers({ data: { token } }).then(setUsers).catch(() => {});
   }, [token]);
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -64,6 +67,18 @@ function GdprPage() {
     if (!window.confirm(`Odobrať ${email} z povolených registrácií? (existujúci účet tým nezmizne)`)) return;
     const r = await removeAllowedSignup({ data: { token: token!, email } });
     setMsg(r.ok ? "Email odobraný z prístupov." : (r.message ?? "Zlyhalo.")); refresh();
+  }
+
+  async function changeRole(u: UserRow, role: Role) {
+    if (role === u.role) return;
+    if (!window.confirm(`Zmeniť rolu ${u.email} z „${u.role}" na „${role}"?`)) return;
+    const r = await setUserRole({ data: { token: token!, userId: u.id, newRole: role } });
+    setMsg(r.ok ? `Rola ${u.email} → ${role}.` : (r.message ?? "Zlyhalo.")); refresh();
+  }
+  async function revoke(u: UserRow) {
+    if (!window.confirm(`Odhlásiť ${u.email} na všetkých zariadeniach?`)) return;
+    const r = await revokeUserSessions({ data: { token: token!, userId: u.id } });
+    setMsg(r.ok ? `Odhlásené: ${r.removed ?? 0} relácií.` : (r.message ?? "Zlyhalo.")); refresh();
   }
 
   const isAdmin = data?.access === true;
@@ -175,6 +190,34 @@ function GdprPage() {
               </table>
             </div>
           ) : <div className="mt-2 text-sm text-muted">Zoznam je prázdny — nikto sa nemôže zaregistrovať.</div>}
+        </Card>
+      ) : null}
+
+      {isAdmin && users?.access ? (
+        <Card className="p-4">
+          <SectionHeader title={`Používatelia a roly (${users.users.length})`} hint="nový účet je viewer — bez mien vlastníkov" />
+          <p className="mt-1 text-[12px] text-muted">Po registrácii má každý rolu viewer. Mená vlastníkov uvidí až s rolou analytik, geodet, manažér alebo admin.</p>
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted"><th className="px-2 py-1">Email</th><th className="px-2 py-1">Meno</th><th className="px-2 py-1">Rola</th><th className="px-2 py-1">Posledné prihlásenie</th><th className="px-2 py-1">Relácie</th><th className="px-2 py-1"></th></tr></thead>
+              <tbody className="divide-y divide-line">
+                {users.users.map((u: UserRow) => (
+                  <tr key={u.id}>
+                    <td className="px-2 py-1 text-fg">{u.email}</td>
+                    <td className="px-2 py-1 text-muted">{u.name ?? "—"}</td>
+                    <td className="px-2 py-1">
+                      <select value={u.role} onChange={(e) => void changeRole(u, e.target.value as Role)} className="rounded-md border border-line bg-paper px-2 py-1 text-sm text-fg">
+                        {ROLES.map((r) => <option key={r.id} value={r.id}>{r.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-2 py-1 text-[11px] text-muted">{u.last_login ? new Date(u.last_login).toLocaleString("sk-SK") : "—"}</td>
+                    <td className="px-2 py-1 text-[11px] text-muted">{u.sessions}</td>
+                    <td className="px-2 py-1"><button onClick={() => void revoke(u)} disabled={!u.sessions} className="rounded-md border border-line px-2 py-0.5 text-xs text-fg hover:border-ink disabled:opacity-40">Odhlásiť všade</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </Card>
       ) : null}
     </div>
