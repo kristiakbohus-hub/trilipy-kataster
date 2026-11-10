@@ -15,6 +15,7 @@ import { QUALITY_META, decSk } from "../lib/domain";
 import { regulativFromZone, regulativByCode, proxyZone, developmentCalc } from "../lib/development";
 import { useCalibDev } from "../lib/calib";
 import { DocumentsPanel } from "../components/documents-panel";
+import type { LetterJob, LetterRecipient } from "../lib/letters";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek.
 // Viď pamäť cf_app_ssr_loader_leak.
@@ -378,7 +379,8 @@ function ReportPage() {
       </Section>
 
       <Section title="Kto by mohol kúpiť">
-        <BuyersSection datasetId={datasetId} parcelNo={parcelNo} token={token} />
+        <BuyersSection datasetId={datasetId} parcelNo={parcelNo} token={token}
+          kuName={(ds?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "").trim() || null} areaM2={parcel?.area_m2 ?? null} />
       </Section>
 
       <Section title="Dostupnosť (doprava · vybavenosť)">
@@ -472,8 +474,9 @@ function Muted({ children }: { children: ReactNode }) {
 // KUPUJÚCI (plán vlastníka 2026-11-10): ku každému pozemku rovno aj možní kupci — zhodný dopyt
 // z evidencie, susedia, ľudia a firmy, ktoré v k.ú. nedávno kupovali alebo tu vlastnia majetok.
 // Odvodený záujem, nie potvrdený dopyt. Kontakty osôb appka nedohľadáva (len adresa z katastra).
-function BuyersSection({ datasetId, parcelNo, token }: { datasetId: string; parcelNo: string; token: string | null }) {
+function BuyersSection({ datasetId, parcelNo, token, kuName, areaM2 }: { datasetId: string; parcelNo: string; token: string | null; kuName: string | null; areaM2: number | null }) {
   const [b, setB] = useState<ParcelBuyers | null>(null);
+  const [sel, setSel] = useState<Map<string, LetterRecipient>>(new Map());
   useEffect(() => {
     if (!token) return;
     getParcelBuyers({ data: { token, datasetId, parcelNo } }).then(setB).catch(() => setB(null));
@@ -481,12 +484,24 @@ function BuyersSection({ datasetId, parcelNo, token }: { datasetId: string; parc
   if (!b) return <Muted>Hľadám možných kupcov…</Muted>;
   if (!b.ok) return <Muted>{b.message ?? "Kupcov sa nepodarilo zistiť."}</Muted>;
   const masked = b.access !== "full";
-  const Person = ({ o }: { o: ParcelBuyers["recentBuyers"][number] }) => (
-    <li className="flex justify-between gap-2 border-b border-line/40 py-0.5">
-      <span className="min-w-0">{o.name}{o.isCompany ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span>
-      <span className="shrink-0 text-muted">{[o.obec, o.detail, `LV ${o.lvNo}`].filter(Boolean).join(" · ")}</span>
-    </li>
+  const toggle = (r: LetterRecipient) => setSel((prev) => { const m = new Map(prev); if (m.has(r.key)) m.delete(r.key); else m.set(r.key, r); return m; });
+  const Pick = ({ r }: { r: LetterRecipient }) => (
+    <input type="checkbox" className="mr-1.5 align-middle print:hidden" checked={sel.has(r.key)} onChange={() => toggle(r)} aria-label={`Vybrať na list: ${r.label.split(",")[0]}`} />
   );
+  const Person = ({ o, group }: { o: ParcelBuyers["recentBuyers"][number]; group: LetterRecipient["group"] }) => {
+    const r: LetterRecipient = { key: `${group}:${o.lvNo}:${o.name}`, label: o.name, group, lvNo: o.lvNo };
+    return (
+      <li className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+        <span className="min-w-0"><Pick r={r} />{o.name}{o.isCompany ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span>
+        <span className="shrink-0 text-muted">{[o.obec, o.detail, `LV ${o.lvNo}`].filter(Boolean).join(" · ")}</span>
+      </li>
+    );
+  };
+  function prepare() {
+    const job: LetterJob = { datasetId, parcelNo, kuName, areaM2, recipients: [...sel.values()] };
+    try { sessionStorage.setItem("tl.letters", JSON.stringify(job)); } catch { /* bez úložiska list nevznikne */ }
+    window.location.href = "/listy";
+  }
   return (
     <div className="space-y-3 text-xs">
       <div>
@@ -502,35 +517,47 @@ function BuyersSection({ datasetId, parcelNo, token }: { datasetId: string; parc
       <div>
         <div className="font-medium text-fg">Susedia — vlastníci priľahlých parciel ({b.neighborsCount})</div>
         {b.neighbors.length === 0 ? <Muted>{masked && b.neighborsCount ? "Mená susedov vidí len rola s plným prístupom." : "Susedné parcely s inými vlastníkmi sa nenašli."}</Muted> : (
-          <ul>{b.neighbors.flatMap((n) => n.owners.map((o, i) => <Person key={`${n.parcelNo}-${i}`} o={{ ...o, detail: `parc. ${n.parcelNo}` }} />))}</ul>
+          <ul>{b.neighbors.flatMap((n) => n.owners.map((o, i) => <Person key={`${n.parcelNo}-${i}`} group="sused" o={{ ...o, detail: `parc. ${n.parcelNo}` }} />))}</ul>
         )}
       </div>
       <div>
         <div className="font-medium text-fg">Nedávno kupovali v tomto k.ú. — od {b.recentFromYear} ({b.recentBuyersCount})</div>
         {b.recentBuyers.length === 0 ? <Muted>{masked && b.recentBuyersCount ? "Mená osôb vidí len rola s plným prístupom." : "V zázname nie sú kúpy z posledných rokov."}</Muted> : (
-          <ul>{b.recentBuyers.map((o, i) => <Person key={i} o={o} />)}</ul>
+          <ul>{b.recentBuyers.map((o, i) => <Person key={i} group="kupec" o={o} />)}</ul>
         )}
       </div>
       <div>
         <div className="font-medium text-fg">Firmy s majetkom v tomto k.ú. ({b.companies.length})</div>
         {b.companies.length === 0 ? <Muted>Žiadne firmy s majetkom v k.ú.</Muted> : (
-          <ul>{b.companies.map((c, i) => (
-            <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
-              <span className="min-w-0">{c.name}{c.ico ? <span className="text-muted"> · IČO {c.ico}</span> : null}</span>
-              <span className="shrink-0 text-muted">{c.category} · {c.lvCount} LV</span>
-            </li>))}</ul>
+          <ul>{b.companies.map((c, i) => {
+            const r: LetterRecipient = { key: `firma:${c.ico ?? c.name}`, label: c.name, group: "firma", lvNo: null };
+            return (
+              <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+                <span className="min-w-0"><Pick r={r} />{c.name}{c.ico ? <span className="text-muted"> · IČO {c.ico}</span> : null}</span>
+                <span className="shrink-0 text-muted">{c.category} · {c.lvCount} LV</span>
+              </li>);
+          })}</ul>
         )}
       </div>
       <div>
         <div className="font-medium text-fg">Firmy z registra so sídlom v okrese{b.okres ? ` ${b.okres}` : ""} ({b.registryFirms.length})</div>
         {b.registryFirms.length === 0 ? <Muted>Zoznam firiem z registra (RPO) pre tento okres ešte nie je načítaný.</Muted> : (
-          <ul>{b.registryFirms.map((f) => (
-            <li key={f.ico} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
-              <span className="min-w-0">{f.name}<span className="text-muted"> · IČO {f.ico}</span></span>
-              <span className="shrink-0 text-muted">{[f.category, f.obec, f.established ? `od ${f.established.slice(0, 4)}` : null].filter(Boolean).join(" · ")}</span>
-            </li>))}</ul>
+          <ul>{b.registryFirms.map((f) => {
+            const r: LetterRecipient = { key: `register:${f.ico}`, label: [f.name, f.obec].filter(Boolean).join(", "), group: "register", lvNo: null };
+            return (
+              <li key={f.ico} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+                <span className="min-w-0"><Pick r={r} />{f.name}<span className="text-muted"> · IČO {f.ico}</span></span>
+                <span className="shrink-0 text-muted">{[f.category, f.obec, f.established ? `od ${f.established.slice(0, 4)}` : null].filter(Boolean).join(" · ")}</span>
+              </li>);
+          })}</ul>
         )}
       </div>
+      {sel.size > 0 ? (
+        <div className="flex items-center gap-2 print:hidden">
+          <button onClick={prepare} className="rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-cream">Pripraviť listy ({sel.size})</button>
+          <button onClick={() => setSel(new Map())} className="text-xs text-muted hover:text-fg">Zrušiť výber</button>
+        </div>
+      ) : <p className="text-[11px] text-muted print:hidden">Zaškrtni adresátov a appka pripraví listy na tlač s adresou z katastra.</p>}
       <p className="text-[11px] text-muted">
         Susedia a nedávni kupci sú odvodený záujem (môžu mať dôvod kúpiť), nie potvrdený dopyt. Kontakt na osoby
         appka nedohľadáva — oslovenie listom na adresu z katastra; ľudia s GDPR námietkou sú vyradení.

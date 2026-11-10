@@ -3672,7 +3672,7 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
 // tomu istému alebo zabudnúť na toho, kto povedal „o rok".
 // `owner_name` je OWNER-SENSITIVE ako lv_owners → čítanie rolovo gatované, zápis cez rolu zo session.
 export const CONTACT_CHANNELS = ["list", "telefon", "email", "osobne", "ine"] as const;
-export const CONTACT_OUTCOMES = ["nezastihnuty", "zaujem", "nezaujem", "rozmysli", "dohoda", "odmietol"] as const;
+export const CONTACT_OUTCOMES = ["odoslane", "nezastihnuty", "zaujem", "nezaujem", "rozmysli", "dohoda", "odmietol"] as const;   // odoslane = list odoslaný, čaká na odpoveď
 export type ContactRow = {
   id: number; dataset_id: string | null; lv_no: number | null; parcel_no: string | null;
   owner_name: string | null; channel: string; outcome: string; note: string | null;

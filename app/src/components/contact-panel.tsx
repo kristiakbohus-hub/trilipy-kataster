@@ -11,12 +11,12 @@ const CHANNEL_LABEL: Record<string, string> = {
   list: "list", telefon: "telefón", email: "e-mail", osobne: "osobne", ine: "iné",
 };
 const OUTCOME_LABEL: Record<string, string> = {
-  nezastihnuty: "nezastihnutý", zaujem: "záujem", nezaujem: "bez záujmu",
+  odoslane: "list odoslaný — čaká na odpoveď", nezastihnuty: "nezastihnutý", zaujem: "záujem", nezaujem: "bez záujmu",
   rozmysli: "rozmyslí si to", dohoda: "dohoda", odmietol: "odmietol",
 };
 const OUTCOME_COLOR: Record<string, string> = {
   zaujem: "#5b7a58", dohoda: "#3f5a3c", rozmysli: "#9a7b3e",
-  nezastihnuty: "#8a8a8a", nezaujem: "#9c4a40", odmietol: "#9c4a40",
+  odoslane: "#6b7a8a", nezastihnuty: "#8a8a8a", nezaujem: "#9c4a40", odmietol: "#9c4a40",
 };
 
 export function ContactPanel({ datasetId, lvNo, ownerNames, role }: {
