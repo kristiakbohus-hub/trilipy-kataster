@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import {
   getDatasets, getParcelByNo, getLvDetail, getParcelAccessibility, getParcelLimits,
   getUpDocs, getLocalityMedian, getParcelZone, getMarketListingsNear, esknIdentify,
-  getProperty360, getLvLegal,
+  getProperty360, getLvLegal, getParcelBuyers, type ParcelBuyers,
 } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -377,6 +377,10 @@ function ReportPage() {
         ) : <Muted>Žiadne inzeráty v okolí.</Muted>}
       </Section>
 
+      <Section title="Kto by mohol kúpiť">
+        <BuyersSection datasetId={datasetId} parcelNo={parcelNo} token={token} />
+      </Section>
+
       <Section title="Dostupnosť (doprava · vybavenosť)">
         {access ? (
           <div className="grid grid-cols-2 gap-x-6 text-sm">
@@ -463,4 +467,64 @@ function Grid({ rows }: { rows: [string, string][] }) {
 }
 function Muted({ children }: { children: ReactNode }) {
   return <div className="text-xs text-muted">{children}</div>;
+}
+
+// KUPUJÚCI (plán vlastníka 2026-11-10): ku každému pozemku rovno aj možní kupci — zhodný dopyt
+// z evidencie, susedia, ľudia a firmy, ktoré v k.ú. nedávno kupovali alebo tu vlastnia majetok.
+// Odvodený záujem, nie potvrdený dopyt. Kontakty osôb appka nedohľadáva (len adresa z katastra).
+function BuyersSection({ datasetId, parcelNo, token }: { datasetId: string; parcelNo: string; token: string | null }) {
+  const [b, setB] = useState<ParcelBuyers | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    getParcelBuyers({ data: { token, datasetId, parcelNo } }).then(setB).catch(() => setB(null));
+  }, [token, datasetId, parcelNo]);
+  if (!b) return <Muted>Hľadám možných kupcov…</Muted>;
+  if (!b.ok) return <Muted>{b.message ?? "Kupcov sa nepodarilo zistiť."}</Muted>;
+  const masked = b.access !== "full";
+  const Person = ({ o }: { o: ParcelBuyers["recentBuyers"][number] }) => (
+    <li className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+      <span className="min-w-0">{o.name}{o.isCompany ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span>
+      <span className="shrink-0 text-muted">{[o.obec, o.detail, `LV ${o.lvNo}`].filter(Boolean).join(" · ")}</span>
+    </li>
+  );
+  return (
+    <div className="space-y-3 text-xs">
+      <div>
+        <div className="font-medium text-fg">Zhodný dopyt z evidencie ({b.requests.length})</div>
+        {b.requests.length === 0 ? <Muted>Žiadny aktívny dopyt na pozemok v tejto lokalite a výmere. <Link to="/kupci" className="text-brand hover:underline print:hidden">Pridať záujemcu →</Link></Muted> : (
+          <ul>{b.requests.map((r) => (
+            <li key={r.id} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+              <span className="min-w-0"><b>{r.name}</b> <span className="text-muted">({r.kind}){r.contact ? ` · ${r.contact}` : ""}</span></span>
+              <span className="shrink-0 text-muted">{r.area_min ?? ""}–{r.area_max ?? ""} m² · do {r.budget_max ? `${Math.round(r.budget_max).toLocaleString("sk-SK")} €` : "—"}</span>
+            </li>))}</ul>
+        )}
+      </div>
+      <div>
+        <div className="font-medium text-fg">Susedia — vlastníci priľahlých parciel ({b.neighborsCount})</div>
+        {b.neighbors.length === 0 ? <Muted>{masked && b.neighborsCount ? "Mená susedov vidí len rola s plným prístupom." : "Susedné parcely s inými vlastníkmi sa nenašli."}</Muted> : (
+          <ul>{b.neighbors.flatMap((n) => n.owners.map((o, i) => <Person key={`${n.parcelNo}-${i}`} o={{ ...o, detail: `parc. ${n.parcelNo}` }} />))}</ul>
+        )}
+      </div>
+      <div>
+        <div className="font-medium text-fg">Nedávno kupovali v tomto k.ú. — od {b.recentFromYear} ({b.recentBuyersCount})</div>
+        {b.recentBuyers.length === 0 ? <Muted>{masked && b.recentBuyersCount ? "Mená osôb vidí len rola s plným prístupom." : "V zázname nie sú kúpy z posledných rokov."}</Muted> : (
+          <ul>{b.recentBuyers.map((o, i) => <Person key={i} o={o} />)}</ul>
+        )}
+      </div>
+      <div>
+        <div className="font-medium text-fg">Firmy s majetkom v tomto k.ú. ({b.companies.length})</div>
+        {b.companies.length === 0 ? <Muted>Žiadne firmy s majetkom v k.ú.</Muted> : (
+          <ul>{b.companies.map((c, i) => (
+            <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+              <span className="min-w-0">{c.name}{c.ico ? <span className="text-muted"> · IČO {c.ico}</span> : null}</span>
+              <span className="shrink-0 text-muted">{c.category} · {c.lvCount} LV</span>
+            </li>))}</ul>
+        )}
+      </div>
+      <p className="text-[11px] text-muted">
+        Susedia a nedávni kupci sú odvodený záujem (môžu mať dôvod kúpiť), nie potvrdený dopyt. Kontakt na osoby
+        appka nedohľadáva — oslovenie listom na adresu z katastra; ľudia s GDPR námietkou sú vyradení.
+      </p>
+    </div>
+  );
 }

@@ -26,6 +26,7 @@ import { Route as KalibraciaRouteImport } from './routes/kalibracia'
 import { Route as PoklesyRouteImport } from './routes/poklesy'
 import { Route as RanoRouteImport } from './routes/rano'
 import { Route as WatchlistRouteImport } from './routes/watchlist'
+import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as KontrolaRouteImport } from './routes/kontrola'
 import { Route as ZmenyRouteImport } from './routes/zmeny'
 import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
@@ -147,6 +148,11 @@ const RanoRoute = RanoRouteImport.update({
 const WatchlistRoute = WatchlistRouteImport.update({
   id: '/watchlist',
   path: '/watchlist',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KupciRoute = KupciRouteImport.update({
+  id: '/kupci',
+  path: '/kupci',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ZmenyRoute = ZmenyRouteImport.update({
@@ -362,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/poklesy': typeof PoklesyRoute
   '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
+  '/kupci': typeof KupciRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -418,6 +425,7 @@ export interface FileRoutesByTo {
   '/poklesy': typeof PoklesyRoute
   '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
+  '/kupci': typeof KupciRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -475,6 +483,7 @@ export interface FileRoutesById {
   '/poklesy': typeof PoklesyRoute
   '/rano': typeof RanoRoute
   '/watchlist': typeof WatchlistRoute
+  '/kupci': typeof KupciRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -533,6 +542,7 @@ export interface FileRouteTypes {
     | '/poklesy'
     | '/rano'
     | '/watchlist'
+    | '/kupci'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -589,6 +599,7 @@ export interface FileRouteTypes {
     | '/poklesy'
     | '/rano'
     | '/watchlist'
+    | '/kupci'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -645,6 +656,7 @@ export interface FileRouteTypes {
     | '/poklesy'
     | '/rano'
     | '/watchlist'
+    | '/kupci'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -698,6 +710,7 @@ export interface RootRouteChildren {
   PoklesyRoute: typeof PoklesyRoute
   RanoRoute: typeof RanoRoute
   WatchlistRoute: typeof WatchlistRoute
+  KupciRoute: typeof KupciRoute
   ZmenyRoute: typeof ZmenyRoute
   KontrolaRoute: typeof KontrolaRoute
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
@@ -955,6 +968,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WatchlistRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/kupci': {
+      id: '/kupci'
+      path: '/kupci'
+      fullPath: '/kupci'
+      preLoaderRoute: typeof KupciRouteImport
+      parentRoute: typeof rootRouteImport
+    }
 
     '/zmeny': {
       id: '/zmeny'
@@ -1141,6 +1161,7 @@ const rootRouteChildren: RootRouteChildren = {
   PoklesyRoute: PoklesyRoute,
   RanoRoute: RanoRoute,
   WatchlistRoute: WatchlistRoute,
+  KupciRoute: KupciRoute,
   ZmenyRoute: ZmenyRoute,
   KontrolaRoute: KontrolaRoute,
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,

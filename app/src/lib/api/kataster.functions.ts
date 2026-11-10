@@ -5225,3 +5225,285 @@ export const getLocalityMedian = createServerFn({ method: "POST" })
       [data.okres, data.ptype, data.deal ?? "predaj"]))[0];
     return { median: r?.median_eur_m2 ?? null, p25: r?.p25 ?? null, p75: r?.p75 ?? null, day: r?.day ?? null, cnt: r?.cnt ?? null };
   });
+
+// ═══════════════ KUPUJÚCI — kupci ku pozemku + evidencia dopytu s párovaním ═══════════════
+// Plán vlastníka (2026-11-10): popri pozemkoch rovno aj kupujúci. Deal-sourcing má dve strany —
+// nájsť pozemok nestačí, treba vedieť, komu ho ponúknuť, a pre koho hľadať.
+// Zdroje: kataster (susedia, nedávne kúpy v k.ú., firmy s majetkom v k.ú.) + vlastná evidencia dopytu.
+// HRANICA: appka NEdohľadáva telefóny/emaily fyzických osôb — kontakt je z katastra (adresa na list)
+// alebo ručne zadaný. Mená osôb len pre rolu s plným prístupom; GDPR námietka (suppression) vyraďuje.
+// Susedia a nedávni kupci sú ODVODENÝ záujem (môžu mať dôvod kúpiť), nie potvrdený dopyt.
+
+export const BUYER_KINDS = ["osoba", "firma", "developer", "stavebna_firma", "investor"] as const;
+export const BUYER_PTYPES = ["pozemok", "byt", "dom", "chata", "komercne"] as const;
+export const BUYER_PURPOSES = ["residential", "retail", "industrial", "rekreacia"] as const;
+export type BuyerRequest = {
+  id: number; kind: string; name: string; ico: string | null; contact: string | null; source: string;
+  ptype: string; purpose: string | null; area_min: number | null; area_max: number | null; budget_max: number | null;
+  locations: string | null; timeframe: string | null; note: string | null; status: string;
+  author: string | null; created_at: string; updated_at: string;
+};
+const buyerFields = {
+  kind: z.enum(BUYER_KINDS), name: z.string().trim().min(2).max(200),
+  ico: z.string().trim().max(20).optional(), contact: z.string().trim().max(300).optional(),
+  ptype: z.enum(BUYER_PTYPES), purpose: z.enum(BUYER_PURPOSES).optional(),
+  areaMin: z.number().min(0).max(1e8).optional(), areaMax: z.number().min(0).max(1e8).optional(),
+  budgetMax: z.number().min(0).max(1e10).optional(),
+  locations: z.string().trim().max(500).optional(), timeframe: z.string().trim().max(100).optional(),
+  note: z.string().trim().max(2000).optional(),
+};
+
+const asciiLow = (s: string | null | undefined) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+/** „Žilina, 874825, okres Čadca" → ["zilina","874825","cadca"] */
+function locTokens(s: string | null | undefined): string[] {
+  return (s ?? "").split(/[,;\n]+/).map((t) => asciiLow(t).replace(/^(okres|k\.?\s*u\.?|obec)\s+/, "").trim()).filter((t) => t.length >= 2);
+}
+type DsRow = { id: string; ku_code: string | null; ku_name: string | null; region: string | null };
+const dsOkres = (d: DsRow) => asciiLow((d.region ?? "").split("·")[0]).replace(/^okres\s+/, "").trim();
+/** Patrí dataset (k.ú.) do lokalít dopytu? Prázdne lokality = celé územie appky. */
+function dsInLocations(d: DsRow, toks: string[]): boolean {
+  if (!toks.length) return true;
+  const code = d.ku_code ?? d.id.replace(/^kn-/, "");
+  const name = asciiLow(d.ku_name).replace(/^k\.?\s*u\.?\s*/, "");
+  const okres = dsOkres(d);
+  return toks.some((t) => t === code || t === name || t === okres);
+}
+
+/** Môže rola zapisovať do evidencie (viewer nie). */
+function canEditBuyers(role: Role) { return role !== "viewer"; }
+
+export const listBuyerRequests = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; canEdit: boolean; rows: BuyerRequest[] }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, canEdit: false, rows: [] };
+    const full = ownerAccess(u.role) === "full";
+    const rows = await q<BuyerRequest>(
+      "SELECT * FROM buyer_requests ORDER BY CASE status WHEN 'aktivny' THEN 0 WHEN 'pozastaveny' THEN 1 ELSE 2 END, updated_at DESC LIMIT 300").catch(() => []);
+    // kontakt na OSOBU je osobný údaj → len plný prístup; firmy/developeri sú verejné subjekty
+    return { ok: true, canEdit: canEditBuyers(u.role), rows: full ? rows : rows.map((r) => (r.kind === "osoba" ? { ...r, contact: r.contact ? "—" : null } : r)) };
+  });
+
+export const saveBuyerRequest = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number().int().optional(), ...buyerFields }))
+  .handler(async ({ data }): Promise<{ ok: boolean; id?: number; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    if (!canEditBuyers(u.role)) return { ok: false, message: "Rola viewer nemôže meniť evidenciu dopytu." };
+    if (data.areaMin != null && data.areaMax != null && data.areaMin > data.areaMax) return { ok: false, message: "Výmera od je väčšia ako do." };
+    const vals = [data.kind, data.name, data.ico || null, data.contact || null, data.ptype, data.purpose ?? null,
+      data.areaMin ?? null, data.areaMax ?? null, data.budgetMax ?? null, data.locations || null, data.timeframe || null, data.note || null];
+    if (data.id) {
+      await q(`UPDATE buyer_requests SET kind=?, name=?, ico=?, contact=?, ptype=?, purpose=?, area_min=?, area_max=?, budget_max=?,
+               locations=?, timeframe=?, note=?, updated_at=datetime('now') WHERE id=?`, [...vals, data.id]);
+      await logAudit("buyer.update", u.role, `Dopyt #${data.id} upravený`);
+      return { ok: true, id: data.id };
+    }
+    const r = await q<{ id: number }>(
+      `INSERT INTO buyer_requests (kind,name,ico,contact,ptype,purpose,area_min,area_max,budget_max,locations,timeframe,note,user_id,author)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`, [...vals, u.id, u.name || u.email]);
+    await logAudit("buyer.create", u.role, `Nový dopyt #${r[0]?.id ?? "?"} (${data.kind}, ${data.ptype})`);
+    return { ok: true, id: r[0]?.id };
+  });
+
+export const setBuyerRequestStatus = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number().int(), status: z.enum(["aktivny", "pozastaveny", "uzavrety"]) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u || !canEditBuyers(u.role)) return { ok: false, message: "Bez oprávnenia." };
+    await q("UPDATE buyer_requests SET status=?, updated_at=datetime('now') WHERE id=?", [data.status, data.id]);
+    await logAudit("buyer.status", u.role, `Dopyt #${data.id} → ${data.status}`);
+    return { ok: true };
+  });
+
+export const deleteBuyerRequest = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number().int() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u || !canEditBuyers(u.role)) return { ok: false, message: "Bez oprávnenia." };
+    await q("DELETE FROM buyer_requests WHERE id=?", [data.id]);
+    await logAudit("buyer.delete", u.role, `Dopyt #${data.id} zmazaný`);
+    return { ok: true };
+  });
+
+// ——— Párovanie dopytu: pozemkové príležitosti (land-search) + trhové inzeráty ———
+export type BuyerLandMatch = { kodKu: string; kuName: string | null; datasetId: string | null; verdict: string; quality: number | null; areaM2: number | null; parcels: string | null; zone: string | null; purpose: string | null };
+export type BuyerListingMatch = { title: string | null; url: string | null; obec: string | null; okres: string | null; ptype: string | null; areaM2: number | null; priceEur: number | null; ppm2: number | null; lastSeen: string | null };
+const LISTING_PTYPES: Record<string, string[]> = { pozemok: ["pozemok"], byt: ["byt"], dom: ["dom"], chata: ["chata", "chalupa"], komercne: [] };
+
+async function matchBuyer(r: BuyerRequest, dss: DsRow[]): Promise<{ land: BuyerLandMatch[]; listings: BuyerListingMatch[] }> {
+  const toks = locTokens(r.locations);
+  const inLoc = dss.filter((d) => dsInLocations(d, toks));
+  const codes = inLoc.map((d) => d.ku_code ?? d.id.replace(/^kn-/, ""));
+  let land: BuyerLandMatch[] = [];
+  if (r.ptype === "pozemok" && codes.length) {
+    const purpose = r.purpose === "rekreacia" ? "residential" : r.purpose;   // rekreačný pozemok = profil bývania
+    const cond = [`kod_ku IN (${codes.map(() => "?").join(",")})`, "verdict IN ('MATCH','PROVISIONAL')"];
+    const args: unknown[] = [...codes];
+    if (purpose) { cond.push("purpose = ?"); args.push(purpose); }
+    if (r.area_min != null) { cond.push("area_m2 >= ?"); args.push(r.area_min); }
+    if (r.area_max != null) { cond.push("area_m2 <= ?"); args.push(r.area_max); }
+    const rows = await q<{ kod_ku: string; ku_name: string | null; verdict: string; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; purpose: string | null }>(
+      `SELECT kod_ku, ku_name, verdict, quality, area_m2, parcels, zone, purpose FROM landsearch_results WHERE ${cond.join(" AND ")}
+       ORDER BY (verdict='MATCH') DESC, quality DESC LIMIT 20`, args).catch(() => []);
+    const dsByCode = new Map(inLoc.map((d) => [d.ku_code ?? d.id.replace(/^kn-/, ""), d.id]));
+    land = rows.map((x) => ({ kodKu: x.kod_ku, kuName: x.ku_name, datasetId: dsByCode.get(x.kod_ku) ?? null, verdict: x.verdict, quality: x.quality, areaM2: x.area_m2, parcels: x.parcels, zone: x.zone, purpose: x.purpose }));
+  }
+  let listings: BuyerListingMatch[] = [];
+  const pts = LISTING_PTYPES[r.ptype] ?? [];
+  if (pts.length) {
+    const cond = [`ptype IN (${pts.map(() => "?").join(",")})`, "deal = 'predaj'", "removed_at IS NULL", "last_seen >= date('now','-45 days')"];
+    const args: unknown[] = [...pts];
+    if (r.budget_max != null) { cond.push("price_eur <= ?"); args.push(r.budget_max); }
+    if (r.area_min != null) { cond.push("area_m2 >= ?"); args.push(r.area_min); }
+    if (r.area_max != null) { cond.push("area_m2 <= ?"); args.push(r.area_max); }
+    const rows = await q<{ title: string | null; url: string | null; obec: string | null; okres: string | null; ptype: string | null; area_m2: number | null; price_eur: number | null; ppm2: number | null; last_seen: string | null }>(
+      `SELECT title, url, obec, okres, ptype, area_m2, price_eur, ppm2, last_seen FROM market_listings WHERE ${cond.join(" AND ")}
+       ORDER BY last_seen DESC LIMIT 400`, args).catch(() => []);
+    // lokalita inzerátu = obec alebo okres (inzeráty nemajú presnú parcelu — dok. 05 LI11)
+    const okresy = new Set(inLoc.map(dsOkres));
+    const obce = new Set(inLoc.map((d) => asciiLow(d.ku_name).replace(/^k\.?\s*u\.?\s*/, "")));
+    listings = rows
+      .filter((x) => !toks.length || toks.includes(asciiLow(x.obec)) || toks.includes(asciiLow(x.okres)) || obce.has(asciiLow(x.obec)) || okresy.has(asciiLow(x.okres)))
+      .slice(0, 20)
+      .map((x) => ({ title: x.title, url: x.url, obec: x.obec, okres: x.okres, ptype: x.ptype, areaM2: x.area_m2, priceEur: x.price_eur, ppm2: x.ppm2, lastSeen: x.last_seen }));
+  }
+  return { land, listings };
+}
+
+export const matchBuyerRequest = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number().int() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; land: BuyerLandMatch[]; listings: BuyerListingMatch[]; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, land: [], listings: [], message: "Neprihlásený." };
+    const r = (await q<BuyerRequest>("SELECT * FROM buyer_requests WHERE id=?", [data.id]))[0];
+    if (!r) return { ok: false, land: [], listings: [], message: "Dopyt neexistuje." };
+    const dss = await q<DsRow>("SELECT id, ku_code, ku_name, region FROM datasets").catch(() => []);
+    return { ok: true, ...(await matchBuyer(r, dss)) };
+  });
+
+// ——— Kupci ku konkrétnej parcele ———
+export type BuyerPerson = { name: string; isCompany: boolean; obec: string | null; lvNo: number; detail?: string };
+export type BuyerCompany = { name: string; ico: string | null; lvCount: number; category: string };
+export type ParcelBuyers = {
+  ok: boolean; access: OwnerAccess; message?: string;
+  neighbors: { parcelNo: string; lvNo: number | null; owners: BuyerPerson[] }[];
+  neighborsCount: number;
+  recentBuyers: BuyerPerson[]; recentBuyersCount: number; recentFromYear: number;
+  companies: BuyerCompany[];
+  requests: BuyerRequest[];
+};
+
+function geoBbox(gj: string | null): [number, number, number, number] | null {
+  if (!gj) return null;
+  try {
+    const g = JSON.parse(gj) as { coordinates?: unknown };
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    const walk = (c: unknown): void => {
+      if (Array.isArray(c) && c.length >= 2 && typeof c[0] === "number" && typeof c[1] === "number") {
+        const x = c[0], y = c[1];
+        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+        return;
+      }
+      if (Array.isArray(c)) for (const e of c) walk(e);
+    };
+    walk(g.coordinates);
+    return Number.isFinite(x0) ? [x0, y0, x1, y1] : null;
+  } catch { return null; }
+}
+// Štát, obec, cirkev, SPF, urbár, pozemkové spoločenstvo — nie sú kupci na trhu (urbár/PS kupuje zriedka
+// a len v rámci spoločenstva). Firmy, s.r.o., a.s., družstvá ostávajú.
+const NOT_MARKET_BUYER = /slovensk[áa] republika|slovensk[ýy] pozemkov|\bspf\b|\bobec\b|\bmesto\b|cirk|farnos|biskup|urb[áa]r|pozemkov[ée] spolo|spolo[čc]enstvo|lesy sr|slovensk[áa] spr[áa]va ciest|železnice|vodohospod/i;
+function buyerCategory(name: string): string {
+  const n = name.toLowerCase();
+  if (/develop|real\s*estate|reality|realit|property|projekt|invest/.test(n)) return "developer / investor";
+  if (/stav|build|constr|bau|montáž|montaz/.test(n)) return "stavebná firma";
+  if (/dru[žz]stv|agro|po[ľl]nohosp|farm/.test(n)) return "poľnohospodár";
+  return "firma";
+}
+
+export const getParcelBuyers = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string(), parcelNo: z.string() }))
+  .handler(async ({ data }): Promise<ParcelBuyers> => {
+    const empty: ParcelBuyers = { ok: false, access: "denied", neighbors: [], neighborsCount: 0, recentBuyers: [], recentBuyersCount: 0, recentFromYear: 0, companies: [], requests: [] };
+    const u = await requireUser(data.token);
+    if (!u) return { ...empty, message: "Neprihlásený." };
+    const access = ownerAccess(u.role);
+    const p = (await q<{ id: string; lv_no: number | null; area_m2: number | null; centroid_lat: number | null; centroid_lng: number | null; geometry_json: string | null }>(
+      "SELECT id, lv_no, area_m2, centroid_lat, centroid_lng, geometry_json FROM parcels WHERE dataset_id=? AND parcel_no=? LIMIT 1",
+      [data.datasetId, data.parcelNo]))[0];
+    if (!p) return { ...empty, access, message: "Parcela nie je v datasete." };
+    const ds = (await q<DsRow>("SELECT id, ku_code, ku_name, region FROM datasets WHERE id=?", [data.datasetId]))[0] ?? null;
+    const kod = ds?.ku_code ?? data.datasetId.replace(/^kn-/, "");
+    const suppressed = await suppressedNameSet();
+    const isSupp = (nm: string) => {
+      const toks = nm.split(",")[0].trim().split(/\s+/);
+      return suppressed.has(normName(nm.split(",")[0])) || (toks.length >= 2 && suppressed.has(normName(`${toks[1]} ${toks[0]}`)));
+    };
+    const ownersOf = async (lvs: number[]) => {
+      if (!lvs.length) return new Map<number, BuyerPerson[]>();
+      const rows = await q<{ lv_no: number; name: string; is_company: number; addr_obec: string | null }>(
+        `SELECT lv_no, name, is_company, addr_obec FROM lv_owners WHERE dataset_id=? AND lv_no IN (${lvs.map(() => "?").join(",")})`,
+        [data.datasetId, ...lvs]).catch(() => []);
+      const m = new Map<number, BuyerPerson[]>();
+      for (const r of rows) {
+        if (isSupp(r.name)) continue;
+        const arr = m.get(r.lv_no) ?? []; arr.push({ name: r.name, isCompany: !!r.is_company, obec: r.addr_obec, lvNo: r.lv_no }); m.set(r.lv_no, arr);
+      }
+      return m;
+    };
+    // osoby len pre plný prístup; firmy (verejné subjekty) vidí každý prihlásený
+    const visible = (arr: BuyerPerson[]) => (access === "full" ? arr : arr.filter((o) => o.isCompany));
+
+    // 1) SUSEDIA — parcely, ktorých obrys (bbox) sa dotýka parcely; iné LV než parcela sama
+    const bb = geoBbox(p.geometry_json);
+    let neighbors: ParcelBuyers["neighbors"] = [];
+    if (bb && p.centroid_lat != null && p.centroid_lng != null) {
+      const padLat = (bb[3] - bb[1]) / 2 + 0.004, padLng = (bb[2] - bb[0]) / 2 + 0.006;
+      const cands = await q<{ id: string; parcel_no: string; lv_no: number | null; geometry_json: string | null }>(
+        `SELECT id, parcel_no, lv_no, geometry_json FROM parcels WHERE dataset_id=? AND centroid_lat BETWEEN ? AND ? AND centroid_lng BETWEEN ? AND ? AND id <> ? LIMIT 1500`,
+        [data.datasetId, p.centroid_lat - padLat, p.centroid_lat + padLat, p.centroid_lng - padLng, p.centroid_lng + padLng, p.id]).catch(() => []);
+      const tol = 0.00003;   // ~2–3 m
+      const touch = cands.filter((c) => {
+        const b = geoBbox(c.geometry_json);
+        return !!b && b[0] <= bb[2] + tol && bb[0] <= b[2] + tol && b[1] <= bb[3] + tol && bb[1] <= b[3] + tol;
+      }).filter((c) => c.lv_no != null && c.lv_no !== p.lv_no);
+      const om = await ownersOf([...new Set(touch.map((c) => c.lv_no as number))]);
+      neighbors = touch.map((c) => ({ parcelNo: c.parcel_no, lvNo: c.lv_no, owners: om.get(c.lv_no as number) ?? [] }))
+        .filter((n) => n.owners.length).slice(0, 40);
+    }
+    const neighborsCount = neighbors.reduce((s, n) => s + n.owners.length, 0);
+
+    // 2) NEDÁVNI KUPCI v k.ú. — vlastníci LV, na ktorých je zapísaná kúpa za posledné ~2 roky
+    const fromYear = new Date().getUTCFullYear() - 2;
+    const lvRows = await q<{ lv_number: string; y: number }>(
+      `SELECT lv_number, MAX(registration_year) y FROM asset_acquisitions WHERE kod_ku=? AND acquisition_kind='sale' AND registration_year >= ?
+       GROUP BY lv_number ORDER BY y DESC LIMIT 60`, [kod, fromYear]).catch(() => []);
+    const yByLv = new Map(lvRows.map((r) => [Number(r.lv_number), r.y]));
+    const bm = await ownersOf([...yByLv.keys()].filter((n) => Number.isFinite(n) && n !== p.lv_no));
+    const recentAll: BuyerPerson[] = [];
+    for (const [lv, arr] of bm) for (const o of arr) recentAll.push({ ...o, detail: `kúpa zapísaná ${yByLv.get(lv) ?? "?"}` });
+
+    // 3) FIRMY s majetkom v k.ú. (aktívni hráči: developeri, stavebné firmy, investori)
+    const comp = await q<{ name: string; ico: string | null; n: number }>(
+      `SELECT MIN(name) name, ico, COUNT(DISTINCT lv_no) n FROM lv_owners WHERE dataset_id=? AND is_company=1
+       GROUP BY COALESCE(NULLIF(ico,''), name) ORDER BY n DESC LIMIT 80`, [data.datasetId]).catch(() => []);
+    const companies = comp.filter((c) => !NOT_MARKET_BUYER.test(c.name)).slice(0, 25)
+      .map((c) => ({ name: c.name, ico: c.ico, lvCount: c.n, category: buyerCategory(c.name) }));
+
+    // 4) ZHODNÝ DOPYT z evidencie
+    const reqs = await q<BuyerRequest>("SELECT * FROM buyer_requests WHERE status='aktivny' AND ptype='pozemok'").catch(() => []);
+    const requests = reqs.filter((r) => (!ds || dsInLocations(ds, locTokens(r.locations)))
+      && (r.area_min == null || (p.area_m2 ?? 0) >= r.area_min * 0.5)        // parcela môže byť časť celku
+      && (r.area_max == null || (p.area_m2 ?? 0) <= r.area_max))
+      .map((r) => (access === "full" || r.kind !== "osoba" ? r : { ...r, contact: r.contact ? "—" : null }));
+
+    await logAudit("buyers.parcel", u.role, `Kupci k parcele ${data.parcelNo} (${data.datasetId})`, data.datasetId);
+    return {
+      ok: true, access,
+      neighbors: access === "full" ? neighbors : neighbors.map((n) => ({ ...n, owners: visible(n.owners) })).filter((n) => n.owners.length),
+      neighborsCount,
+      recentBuyers: visible(recentAll).slice(0, 40), recentBuyersCount: recentAll.length, recentFromYear: fromYear,
+      companies, requests,
+    };
+  });
