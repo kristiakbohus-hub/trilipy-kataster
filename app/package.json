@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "vite dev",
     "dev:design": "HF_DESIGN_INSPECTOR=1 vite dev --mode design",
-    "build": "bun scripts/authz-guard.mjs && ( tsc --noEmit & p1=$!; vite build & p2=$!; wait $p1 && wait $p2 )",
+    "build": "bun scripts/authz-guard.mjs && bun scripts/phrase-guard.mjs && ( tsc --noEmit & p1=$!; vite build & p2=$!; wait $p1 && wait $p2 )",
     "test:authz": "bun scripts/authz-guard.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",

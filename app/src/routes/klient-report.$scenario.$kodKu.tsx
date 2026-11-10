@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getClientReport, type ClientReport } from "../lib/api/kataster.functions";
+import { getClientReport, logReportExport, listReportExports, type ClientReport, type ReportExportRow } from "../lib/api/kataster.functions";
+import { useAuth } from "../lib/auth-context";
 import { Card, CriteriaMatrix, Disclaimer } from "../components/kit";
 import { critLabel, critLabelKnown, reasonSk, type AppPath } from "../lib/domain";
 
@@ -72,11 +73,52 @@ function Sec({ id, title, children }: { id: string; title: string; children: Rea
 }
 const M = ({ children }: { children: React.ReactNode }) => <p className="text-sm text-muted">{children}</p>;
 
+type ExportFormat = "json" | "csv" | "print";
+const FORMAT_LABEL: Record<ExportFormat, string> = { json: "JSON", csv: "CSV (Excel)", print: "tlač / PDF" };
+
+// Bunka CSV: úvodzovky + ochrana pred vzorcom (dok. 10 §7: „pri CSV chráň pred interpretáciou
+// útočného obsahu ako vzorca"). Text z enginov alebo inzerátov začínajúci =, +, -, @ by Excel spustil.
+function csvCell(v: unknown): string {
+  let s = v == null ? "" : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+// Tabuľkový export (dok. 16 + dok. 10 E06): tie isté hodnoty a statusy ako tlač a JSON, vrátane revízie.
+function reportCsv(r: ClientReport): string {
+  const head: (string | number | null)[][] = [
+    ["Zákazka", SCENARIO_LABEL[r.scenario] ?? r.scenario],
+    ["Územie", `${r.kuName ?? r.kodKu} (kód ${r.kodKu})`],
+    ["Stav dát (as_of)", r.asOf],
+    ["Revízia výsledku", r.revision],
+    ["Preukázané zhody", r.nMatch], ["Podmienené", r.nProvisional],
+    ["Úplnosť", r.completeness.truncated
+      ? `orezané: ${r.completeness.shown} z ${r.completeness.found} nájdených`
+      : r.completeness.found != null ? `všetky nájdené (${r.completeness.shown})` : "neevidované"],
+    ["Povaha", "Informatívny analytický podklad z dostupných zdrojov — nie úradný výpis, znalecký posudok ani právne stanovisko."],
+  ];
+  const cols = ["ID", "Klasifikácia", ...r.colLabels, "Dôvod"];
+  const ordered = [...r.shortlist.filter((x) => x.classification === "MATCH"), ...r.shortlist.filter((x) => x.classification !== "MATCH")];
+  const body = ordered.map((x) => [x.id, x.classification === "MATCH" ? "zhoda" : "podmienené", ...x.cols.map((c) => c.value), reasonSk(x.reason ?? "")]);
+  const lines = [...head.map((row) => row.map(csvCell).join(";")), "", cols.map(csvCell).join(";"), ...body.map((row) => row.map(csvCell).join(";"))];
+  return "\uFEFF" + lines.join("\r\n");
+}
+
 function ClientReportPage() {
   const { scenario, kodKu } = Route.useParams();
   const [r, setR] = useState<ClientReport | null>(null);
   const [ready, setReady] = useState(false);
   const [exportErr, setExportErr] = useState<string | null>(null);
+  const { token } = useAuth();
+  // Vydanie reportu = komu a na aký účel (dok. 16). Bez toho sa export nespustí.
+  const [dlg, setDlg] = useState<ExportFormat | null>(null);
+  const [recipient, setRecipient] = useState("");
+  const [purpose, setPurpose] = useState("");
+  const [busyExp, setBusyExp] = useState(false);
+  const [exports, setExports] = useState<ReportExportRow[]>([]);
+  useEffect(() => {
+    if (!token) return;
+    listReportExports({ data: { token, scenario, kodKu } }).then(setExports).catch(() => {});
+  }, [token, scenario, kodKu]);
   useEffect(() => {
     getClientReport({ data: { scenario, kodKu } }).then(setR).catch(() => {}).finally(() => setReady(true));
   }, [scenario, kodKu]);
@@ -94,18 +136,32 @@ function ClientReportPage() {
   // TypeScript to zúženie dovnútra neprenesie (TS18047). Preto lokálna kópia — rovnaká pasca ako
   // pri `const cc = c` v dossieri.
   const rep = r;
-  function exportJson() {
+  function download(content: string, mime: string, ext: string) {
+    const blob = new Blob([content], { type: mime });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `klient-report-${rep.scenario}-${rep.kodKu}-${rep.resultHash}.${ext}`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
+  async function confirmExport() {
+    if (!dlg || !token) return;
+    if (recipient.trim().length < 2 || purpose.trim().length < 3) { setExportErr("Vyplň, komu report ide a na aký účel."); return; }
+    setBusyExp(true); setExportErr(null);
     try {
-      const blob = new Blob([JSON.stringify(rep, null, 2)], { type: "application/json" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `klient-report-${rep.scenario}-${rep.kodKu}-${rep.resultHash}.json`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      // Najprv záznam, potom export — vydanie bez stopy nevznikne.
+      const lr = await logReportExport({ data: { token, scenario: rep.scenario, kodKu: rep.kodKu, format: dlg, resultHash: rep.resultHash, recipient: recipient.trim(), purpose: purpose.trim() } });
+      if (!lr.ok) { setExportErr(lr.message ?? "Vydanie sa nepodarilo zaevidovať — export neprebehol."); return; }
+      const fmt = dlg;
+      setDlg(null);
+      listReportExports({ data: { token, scenario: rep.scenario, kodKu: rep.kodKu } }).then(setExports).catch(() => {});
+      if (fmt === "json") download(JSON.stringify(rep, null, 2), "application/json", "json");
+      else if (fmt === "csv") download(reportCsv(rep), "text/csv;charset=utf-8", "csv");
+      else setTimeout(() => window.print(), 50);
     } catch (e) {
       // Dok. 16: „Export sa označí ako neúspešný, ak príslušný finálny formát nevznikol."
-      setExportErr(e instanceof Error ? e.message : "Export JSON zlyhal.");
-    }
+      setExportErr(e instanceof Error ? e.message : "Export zlyhal.");
+    } finally { setBusyExp(false); }
   }
   const match = r.shortlist.filter((x) => x.classification === "MATCH");
   const prov = r.shortlist.filter((x) => x.classification === "PROVISIONAL");
@@ -118,14 +174,37 @@ function ClientReportPage() {
           {/* Dok. 16 žiada aj STROJOVO čitateľný výstup, nie len stránku na tlač. JSON nesie ten
               istý `result_hash` ako vytlačená verzia, takže sa dá dokázať, že ide o ten istý
               výsledok — a ak sa súbor nevytvorí, povieme to, nie aby to vyzeralo ako hotové. */}
-          <button onClick={exportJson} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
+          <button onClick={() => setDlg("csv")} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
+            Stiahnuť CSV
+          </button>
+          <button onClick={() => setDlg("json")} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
             Stiahnuť JSON
           </button>
-          <button onClick={() => window.print()} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
+          <button onClick={() => setDlg("print")} className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:bg-surface-2">
             Tlačiť / uložiť PDF
           </button>
         </span>
       </div>
+
+      {dlg ? (
+        <Card className="space-y-2 p-4 print:hidden">
+          <div className="text-sm font-medium text-fg">Vydanie reportu — {FORMAT_LABEL[dlg]}</div>
+          <p className="text-xs text-muted">Každé vydanie sa eviduje: komu report ide a na aký účel (aj pri internom použití). Záznam nesie revíziu {rep.resultHash}, takže sa dá dohľadať, ktorú verziu výsledku kto dostal.</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-xs text-muted">Komu
+              <input value={recipient} onChange={(e) => setRecipient(e.target.value)} placeholder="napr. klient s.r.o. / interné" className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-1.5 text-sm text-fg" />
+            </label>
+            <label className="text-xs text-muted">Účel
+              <input value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="napr. podklad k ponuke pozemkov" className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-1.5 text-sm text-fg" />
+            </label>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => void confirmExport()} disabled={busyExp} className="rounded-md bg-ink px-3 py-1.5 text-xs font-medium text-cream disabled:opacity-50">{busyExp ? "…" : "Zaevidovať a vydať"}</button>
+            <button onClick={() => { setDlg(null); setExportErr(null); }} className="text-xs text-muted hover:text-fg">Zrušiť</button>
+            {exportErr ? <span className="text-xs" style={{ color: "#9c4a40" }}>{exportErr}</span> : null}
+          </div>
+        </Card>
+      ) : null}
 
       <Sec id="A." title="Identifikácia a zhrnutie">
         <table className="w-full"><tbody>
@@ -135,14 +214,21 @@ function ClientReportPage() {
           <tr><td className="py-0.5 pr-3 text-muted">Preukázané zhody</td><td className="tabular-nums">{num(r.nMatch)}</td></tr>
           <tr><td className="py-0.5 pr-3 text-muted">Podmienené (na preskúmanie)</td><td className="tabular-nums">{num(r.nProvisional)}</td></tr>
           <tr><td className="py-0.5 pr-3 text-muted">Vylúčené</td><td className="tabular-nums">{run ? num(run.n_rejected) : "neevidované pre tento beh"}</td></tr>
+          <tr><td className="py-0.5 pr-3 text-muted">Úplnosť zoznamu</td><td>{r.completeness.truncated
+            ? <b style={{ color: "#a4553a" }}>orezaný — v reporte {num(r.completeness.shown)} z {num(r.completeness.found)} nájdených</b>
+            : r.completeness.found != null ? `všetky nájdené (${num(r.completeness.shown)})` : "neevidované — úplnosť sa nedá potvrdiť"}</td></tr>
           <tr><td className="py-0.5 pr-3 text-muted">Revízia výsledku</td>
               <td className="font-mono text-xs">{r.revision}</td></tr>
           <tr><td className="py-0.5 pr-3 text-muted">Vykreslené</td>
               <td className="tabular-nums text-xs">{r.generatedAt}</td></tr>
         </tbody></table>
-        {exportErr ? (
-          <p className="mt-1 text-xs" style={{ color: "#9c4a40" }}>Export zlyhal: {exportErr}</p>
+        {r.completeness.truncated ? (
+          <p className="mt-1 text-xs" style={{ color: "#a4553a" }}>
+            Zoznam <b>nie je úplný</b>: do appky sa zapisuje len najlepších {num(r.completeness.shown)} celkov
+            (podľa skóre) z {num(r.completeness.found)} nájdených. Výsledky platia v tomto rozsahu, nie ako všetky možnosti v území.
+          </p>
         ) : null}
+        {r.emptyReason ? <p className="mt-1 text-xs" style={{ color: "#a4553a" }}><b>Prečo je zoznam prázdny:</b> {r.emptyReason}</p> : null}
         <p className="mt-1 text-xs text-muted">
           Revízia je kontrolný súčet <b>analytického obsahu</b> — čas vykreslenia doň nevstupuje.
           Vytlačená aj strojová (JSON) verzia preto nesú ten istý súčet; ak sa líšia, nie je to
@@ -208,7 +294,7 @@ function ClientReportPage() {
       </Sec>
 
       <Sec id="D." title={`Shortlist — preukázané zhody (${match.length})`}>
-        {match.length === 0 ? <M>Žiadne preukázané zhody.</M> : (
+        {match.length === 0 ? <M>Žiadne preukázané zhody.{r.emptyReason ? ` ${r.emptyReason}` : prov.length ? " Podmienení kandidáti sú uvedení nižšie." : ""}</M> : (
           <table className="w-full text-xs"><thead>
             <tr className="border-b border-line text-left text-muted">
               <th className="py-1 pr-2">ID</th>
@@ -313,7 +399,36 @@ function ClientReportPage() {
           <tr><td className="py-0.5 pr-3 text-muted">Pôda a odvod</td><td>BPEJ podľa NV 58/2013</td></tr>
           <tr><td className="py-0.5 pr-3 text-muted">Beh scenára</td><td className="tabular-nums">{run?.as_of ?? "—"}</td></tr>
           <tr><td className="py-0.5 pr-3 text-muted">Rozsah exportu</td><td>bez osobných údajov vlastníkov (iba počty)</td></tr>
+          <tr><td className="py-0.5 pr-3 text-muted">Kontrola formulácií</td><td>{r.phraseIssues.length === 0
+            ? "texty kandidátov neobsahujú zakázané tvrdenia (dok. 16 §4)"
+            : <b style={{ color: "#9c4a40" }}>{r.phraseIssues.length} typ(y) tvrdení bez dôkazu — pred vydaním opraviť</b>}</td></tr>
         </tbody></table>
+        {r.phraseIssues.length ? (
+          <ul className="mt-2 space-y-1 text-xs">
+            {r.phraseIssues.map((p) => (
+              <li key={p.id} className="border-b border-line/40 pb-1">
+                <b>„{p.claim}"</b> — {p.n}× (napr. {p.sample}). Správne: {p.use}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        <div className="mt-3 print:hidden">
+          <div className="text-xs font-medium text-fg">Vydania tohto reportu</div>
+          {exports.length === 0 ? <p className="text-xs text-muted">Zatiaľ nevydaný.</p> : (
+            <table className="mt-1 w-full text-xs"><tbody>
+              {exports.map((e) => (
+                <tr key={e.id} className="border-b border-line/40">
+                  <td className="py-0.5 pr-2 tabular-nums text-muted">{e.created_at.slice(0, 16)}</td>
+                  <td className="pr-2">{FORMAT_LABEL[e.format as ExportFormat] ?? e.format}</td>
+                  <td className="pr-2">{e.recipient}</td>
+                  <td className="pr-2 text-muted">{e.purpose}</td>
+                  <td className="pr-2 font-mono text-muted">{e.result_hash}</td>
+                  <td className="text-muted">{e.author ?? ""}</td>
+                </tr>
+              ))}
+            </tbody></table>
+          )}
+        </div>
       </Sec>
 
       <Disclaimer>

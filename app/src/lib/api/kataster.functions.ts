@@ -20,6 +20,7 @@ import type {
   ZoningFinding,
   ZoningSource,
 } from "../domain";
+import { phraseIssues, type PhraseIssue } from "../phrases";
 import { accessTimesLabel, plural, zoneLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode } from "../development";
 
@@ -1392,6 +1393,13 @@ export type ClientReport = {
   resultHash: string;        // SHA-256 (16 znakov) analytického obsahu
   revision: string;          // as_of dát + hash — čo klient cituje
   generatedAt: string;       // čas vykreslenia; do hashu NEvstupuje
+  // Úplnosť (dok. 05 LI12/ZA10, dok. 10 E19): koľko engine našiel vs. koľko report ukazuje. Push
+  // land-searchu posiela najviac 25–40 celkov na profil — bez tohto by report mlčky tvrdil úplnosť.
+  completeness: { found: number | null; shown: number; truncated: boolean };
+  // Prečo je výsledok prázdny (dok. 10 E09) — „0 kandidátov" má rôzny pôvod a rôznu obchodnú hodnotu.
+  emptyReason: string | null;
+  // Zakázané formulácie (dok. 16 §4) v texte z enginov — kontrolované kódom, nie ručne.
+  phraseIssues: PhraseIssue[];
 };
 // SHA-256 → prvých 16 hex znakov. Stačí na identitu výsledku; nie je to kryptografický podpis.
 async function sha256Hex(txt: string): Promise<string> {
@@ -1548,8 +1556,21 @@ export const getClientReport = createServerFn({ method: "POST" })
       uncertainties: [...unc].map(([text, n]) => ({ text, n })).sort((a, b) => b.n - a.n),
       zoningSources: [...zs].map(([src, n]) => ({ src, n })).sort((a, b) => b.n - a.n),
       run: run && { examined: run.examined, nRejected: run.n_rejected, nPushed: run.n_pushed },
+      completeness: (() => {
+        const found = run && (run.n_match != null || run.n_provisional != null) ? (run.n_match ?? 0) + (run.n_provisional ?? 0) : null;
+        return { found, shown: rows.length, truncated: found != null && rows.length < found };
+      })(),
+      emptyReason: rows.length > 0 ? null
+        : !run ? "Beh scenára pre toto územie nie je evidovaný — nedá sa povedať, či sa hľadalo; prázdny zoznam NIE JE dôkaz, že tu nič nie je."
+        : (run.examined ?? 0) === 0 ? "Engine nemal čo preveriť — pre scenár chýbajú vstupné dáta (napr. nadobúdacie tituly, zdroj územného plánu alebo mapové podklady)."
+        : ((run.n_match ?? 0) + (run.n_provisional ?? 0)) > 0 ? "Engine kandidátov našiel, ale do appky sa nezapísali (zápis sa nedokončil) — výsledok je neúplný, treba zopakovať zápis."
+        : `Všetkých ${run.examined} preverených kandidátov engine vylúčil — dôvody sú v časti F.`,
     };
     const resultHash = await sha256Hex(JSON.stringify(jadro));
+    const issues = phraseIssues([
+      ...rows.flatMap((r) => [r.title, r.subtitle, r.reason, ...r.cols.map((c) => c.value)]),
+      ...jadro.uncertainties.map((u) => u.text),
+    ]);
     return {
       ...jadro,
       kuName: kuName ?? run?.ku_name ?? null,
@@ -1559,7 +1580,34 @@ export const getClientReport = createServerFn({ method: "POST" })
       resultHash,
       revision: `${asOf ?? "bez-dat"}·${resultHash}`,
       generatedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
+      phraseIssues: issues,
     };
+  });
+
+// ——— Evidencia vydaní klientskeho reportu (dok. 16: oprávnený príjemca a účel) ———
+export type ReportExportRow = { id: number; format: string; result_hash: string; recipient: string; purpose: string; author: string | null; created_at: string };
+export const logReportExport = createServerFn({ method: "POST" })
+  .validator(z.object({
+    token: z.string(), scenario: z.string().max(40), kodKu: z.string().max(20),
+    format: z.enum(["json", "csv", "print"]), resultHash: z.string().max(64),
+    recipient: z.string().trim().min(2).max(200), purpose: z.string().trim().min(3).max(300),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    await q("INSERT INTO report_exports (scenario,kod_ku,format,result_hash,recipient,purpose,user_id,author) VALUES (?,?,?,?,?,?,?,?)",
+      [data.scenario, data.kodKu, data.format, data.resultHash, data.recipient, data.purpose, u.id, u.name || u.email]);
+    await logAudit("report.export", u.role, `Report ${data.scenario}/${data.kodKu} (${data.format}, rev ${data.resultHash}) → ${data.recipient}`);
+    return { ok: true };
+  });
+export const listReportExports = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), scenario: z.string().max(40), kodKu: z.string().max(20) }))
+  .handler(async ({ data }): Promise<ReportExportRow[]> => {
+    const u = await requireUser(data.token);
+    if (!u) return [];
+    return q<ReportExportRow>(
+      "SELECT id, format, result_hash, recipient, purpose, author, created_at FROM report_exports WHERE scenario = ? AND kod_ku = ? ORDER BY id DESC LIMIT 50",
+      [data.scenario, data.kodKu]).catch(() => []);
   });
 
 // ——— Štatistika behu scenára (dok. 16 §3 F: „Prečo iné kandidáty neprešli") ———
