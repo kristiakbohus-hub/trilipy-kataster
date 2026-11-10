@@ -11,7 +11,7 @@ export const Route = createFileRoute("/api/ingest-buyer-leads")({
         let body: { rows?: unknown } = {};
         try { body = (await request.json()) as typeof body; } catch { /* prázdne */ }
         const rows = Array.isArray(body.rows) ? body.rows : [];
-        let r: { ok: boolean; upserted?: number; message?: string };
+        let r: { ok: boolean; upserted?: number; skippedErased?: number; message?: string };
         try { r = await ingestBuyerLeads({ data: { secret, rows: rows as never } }); }
         catch { r = { ok: false, message: "Neplatné údaje záujemcu (skontroluj povinné polia a hodnoty)." }; }
         return new Response(JSON.stringify(r), { status: r.ok ? 200 : r.message === "unauthorized" ? 401 : 400, headers: { "content-type": "application/json" } });

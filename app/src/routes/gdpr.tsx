@@ -32,6 +32,9 @@ function GdprPage() {
   const [eraseReq, setEraseReq] = useState<DsrRow | null>(null);
   const [eraseRows, setEraseRows] = useState<Awaited<ReturnType<typeof getDataSubjectRecord>>["rows"]>([]);
   const [eraseSel, setEraseSel] = useState<Set<number>>(new Set());
+  // tá istá osoba v evidencii dopytu (kupci) — ručne zadaná alebo lead z OS TRI LIPY
+  const [eraseBuyers, setEraseBuyers] = useState<Awaited<ReturnType<typeof getDataSubjectRecord>>["buyers"]>([]);
+  const [eraseBuyerSel, setEraseBuyerSel] = useState<Set<number>>(new Set());
 
   const refresh = useCallback(() => {
     if (!token) return;
@@ -53,19 +56,25 @@ function GdprPage() {
     } finally { setBusy(false); }
   }
   async function openErase(req: DsrRow) {
-    setEraseReq(req); setEraseSel(new Set()); setEraseRows([]);
+    setEraseReq(req); setEraseSel(new Set()); setEraseRows([]); setEraseBuyers([]); setEraseBuyerSel(new Set());
     const r = await getDataSubjectRecord({ data: { token: token!, name: req.subject_name, ku: req.subject_ku ?? undefined, lv: req.subject_lv ?? undefined } });
-    setEraseRows(r.rows);
+    setEraseRows(r.rows); setEraseBuyers(r.buyers ?? []);
   }
   function toggleErase(id: number) {
     setEraseSel((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   }
+  function toggleBuyer(id: number) {
+    setEraseBuyerSel((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
+  const eraseCount = eraseSel.size + eraseBuyerSel.size;
   async function erase() {
-    if (!eraseReq || !eraseSel.size) return;
-    if (!window.confirm(`Natrvalo vymazať ${eraseSel.size} ${eraseSel.size === 1 ? "záznam" : eraseSel.size < 5 ? "záznamy" : "záznamov"} vlastníka (žiadosť #${eraseReq.id})? Nedá sa to vrátiť a pri ďalšom importe sa tieto záznamy nevrátia.`)) return;
-    const r = await applyErasure({ data: { token: token!, requestId: eraseReq.id, ownerIds: [...eraseSel] } });
-    setMsg(r.ok ? `Výmaz hotový — odstránených ${r.removed} záznamov vlastníka${r.work ? ` a ${r.work} pracovných záznamov (kontakty, úlohy)` : ""}.` : (r.message ?? "Zlyhalo."));
-    if (r.ok) { setEraseReq(null); setEraseRows([]); setEraseSel(new Set()); }
+    if (!eraseReq || !eraseCount) return;
+    const parts = [eraseSel.size ? `${eraseSel.size} ${eraseSel.size === 1 ? "záznam" : eraseSel.size < 5 ? "záznamy" : "záznamov"} vlastníka` : null,
+      eraseBuyerSel.size ? `${eraseBuyerSel.size} ${eraseBuyerSel.size === 1 ? "záznam" : eraseBuyerSel.size < 5 ? "záznamy" : "záznamov"} v evidencii dopytu` : null].filter(Boolean).join(" a ");
+    if (!window.confirm(`Natrvalo vymazať ${parts} (žiadosť #${eraseReq.id})? Nedá sa to vrátiť a pri ďalšom importe ani poslaní z OS TRI LIPY sa tieto záznamy nevrátia.`)) return;
+    const r = await applyErasure({ data: { token: token!, requestId: eraseReq.id, ownerIds: [...eraseSel], buyerIds: [...eraseBuyerSel] } });
+    setMsg(r.ok ? `Výmaz hotový — odstránených ${r.removed ?? 0} záznamov vlastníka${r.work ? `, ${r.work} pracovných záznamov (kontakty, úlohy)` : ""}${r.buyers ? `, ${r.buyers} v evidencii dopytu` : ""}.` : (r.message ?? "Zlyhalo."));
+    if (r.ok) { setEraseReq(null); setEraseRows([]); setEraseSel(new Set()); setEraseBuyers([]); setEraseBuyerSel(new Set()); }
     refresh();
   }
   async function doLookup() {
@@ -161,7 +170,7 @@ function GdprPage() {
           <div className="mt-4 rounded-md border border-line p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <div className="text-sm font-medium text-fg">Výmaz — žiadosť #{eraseReq.id}: {eraseReq.subject_name}</div>
-              <button onClick={() => { setEraseReq(null); setEraseRows([]); }} className="text-xs text-muted hover:text-fg">Zrušiť</button>
+              <button onClick={() => { setEraseReq(null); setEraseRows([]); setEraseBuyers([]); }} className="text-xs text-muted hover:text-fg">Zrušiť</button>
             </div>
             <p className="mt-1 text-[12px] text-muted">Zaškrtni len záznamy, ktoré patria tejto osobe — rovnaké meno môžu mať aj iní ľudia (over dátum narodenia, rodné priezvisko a adresu). Zmažú sa iba zaškrtnuté a ďalší import k.ú. ich nevráti.</p>
             {eraseRows.length ? (
@@ -184,9 +193,34 @@ function GdprPage() {
                   </tbody>
                 </table>
               </div>
-            ) : <div className="mt-2 text-sm text-muted">Žiadny záznam s týmto menom{eraseReq.subject_ku ? " v zadanom k.ú." : ""} — nie je čo mazať (osoba je v suppression, nebude oslovená).</div>}
+            ) : <div className="mt-2 text-sm text-muted">V katastri žiadny záznam s týmto menom{eraseReq.subject_ku ? " v zadanom k.ú." : ""}.</div>}
+            {eraseBuyers.length ? (
+              <div className="mt-3">
+                <div className="text-[11px] uppercase tracking-wide text-muted">Evidencia dopytu (kupci)</div>
+                <div className="mt-1 max-h-60 overflow-auto">
+                  <table className="w-full text-sm">
+                    <thead><tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
+                      <th className="px-2 py-1"></th><th className="px-2 py-1">Meno</th><th className="px-2 py-1">Dopyt</th><th className="px-2 py-1">Lokality</th><th className="px-2 py-1">Zdroj</th><th className="px-2 py-1">Zadané</th>
+                    </tr></thead>
+                    <tbody className="divide-y divide-line">
+                      {eraseBuyers.map((b) => (
+                        <tr key={b.id} className={eraseBuyerSel.has(b.id) ? "bg-cream" : ""}>
+                          <td className="px-2 py-1"><input type="checkbox" checked={eraseBuyerSel.has(b.id)} onChange={() => toggleBuyer(b.id)} aria-label={`Vybrať dopyt #${b.id} ${b.name}`} /></td>
+                          <td className="px-2 py-1 text-fg">{b.name}{b.contact ? <span className="block text-[11px] text-muted">{b.contact}</span> : null}</td>
+                          <td className="px-2 py-1 text-[12px] text-muted">#{b.id} · {b.ptype} · {b.status}</td>
+                          <td className="px-2 py-1 text-[12px] text-muted">{b.locations || "kdekoľvek"}</td>
+                          <td className="px-2 py-1 text-[12px] text-muted">{b.source === "os_tri_lipy" ? "OS TRI LIPY" : "ručne"}</td>
+                          <td className="px-2 py-1 text-[12px] text-muted">{b.created_at?.slice(0, 10)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+            {!eraseRows.length && !eraseBuyers.length ? <div className="mt-1 text-[12px] text-muted">Nie je čo mazať — osoba je v suppression a nebude oslovená.</div> : null}
             <div className="mt-2 flex items-center gap-2">
-              <button onClick={() => void erase()} disabled={!eraseSel.size} className="rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-cream disabled:opacity-40">Vymazať vybrané ({eraseSel.size})</button>
+              <button onClick={() => void erase()} disabled={!eraseCount} className="rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-cream disabled:opacity-40">Vymazať vybrané ({eraseCount})</button>
               {eraseRows.length >= 300 ? <span className="text-[11px] text-muted">Zobrazených prvých 300 — zúž žiadosť o k.ú. alebo LV.</span> : null}
             </div>
           </div>
@@ -202,8 +236,9 @@ function GdprPage() {
           </div>
           {lookup ? (
             <div className="mt-2 text-[12px] text-muted">
-              Nájdených záznamov: <b className="text-fg">{lookup.rows.length}</b>{lookup.suppressed ? " · v suppression (neoslovovať)" : ""}.
+              Nájdených záznamov v katastri: <b className="text-fg">{lookup.rows.length}</b> · v evidencii dopytu: <b className="text-fg">{lookup.buyers?.length ?? 0}</b>{lookup.suppressed ? " · v suppression (neoslovovať)" : ""}.
               {lookup.rows.length ? <div className="mt-1 max-h-48 overflow-auto rounded border border-line p-2 font-mono text-[11px] text-fg">{lookup.rows.map((r) => <div key={r.id}>{r.name}{r.birth_date ? ` (${r.birth_date})` : ""} · {r.dataset_id} LV{r.lv_no} · {[r.addr_obec, r.addr_cislo, r.addr_psc].filter(Boolean).join(", ")}</div>)}</div> : null}
+              {lookup.buyers?.length ? <div className="mt-1 max-h-40 overflow-auto rounded border border-line p-2 font-mono text-[11px] text-fg">{lookup.buyers.map((b) => <div key={b.id}>dopyt #{b.id} · {b.name} · {b.ptype} · {b.locations || "kdekoľvek"} · {b.source === "os_tri_lipy" ? "OS TRI LIPY" : "ručne"}{b.contact ? ` · ${b.contact}` : ""} · {b.created_at?.slice(0, 10)}</div>)}</div> : null}
             </div>
           ) : null}
         </Card>

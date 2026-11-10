@@ -3073,17 +3073,34 @@ export const listDataSubjectRequests = createServerFn({ method: "POST" })
 // a záznam musí obsahovať KAŽDÉ z nich (poradie „Ján Novák" vs „Novák Ján" nevadí). SQLite `lower()`
 // nezmenší diakritiku (Š, Č…), preto sa každé slovo skúša aj v zadanom tvare. Je to len NÁHĽAD —
 // o tom, čo patrí danej osobe, rozhoduje admin zaškrtnutím (rovnaké meno môžu mať dvaja ľudia).
-async function findSubjectRows(name: string, ku?: string | null, lv?: string | null) {
+function subjectNameCond(name: string): { cond: string[]; args: unknown[] } | null {
   const toks = name.trim().split(/\s+/).filter((t) => t.length >= 2).slice(0, 5);
-  if (!toks.length) return [];
+  if (!toks.length) return null;
   const cond: string[] = []; const args: unknown[] = [];
   for (const t of toks) { cond.push("(name LIKE ? OR lower(name) LIKE ?)"); args.push(`%${t}%`, `%${t.toLowerCase()}%`); }
+  return { cond, args };
+}
+async function findSubjectRows(name: string, ku?: string | null, lv?: string | null) {
+  const nc = subjectNameCond(name);
+  if (!nc) return [];
+  const { cond, args } = nc;
   if (ku && ku.trim()) { cond.push("dataset_id LIKE ?"); args.push(`%${ku.trim()}%`); }
   const lvn = lv && /^\d+$/.test(lv.trim()) ? Number(lv.trim()) : null;
   if (lvn != null) { cond.push("lv_no = ?"); args.push(lvn); }
   return q<{ id: number; dataset_id: string; lv_no: number; name: string; born_name: string | null; birth_date: string | null; addr_obec: string | null; addr_cislo: string | null; addr_psc: string | null; is_company: number; share: string | null }>(
     `SELECT id, dataset_id, lv_no, name, born_name, birth_date, addr_obec, addr_cislo, addr_psc, is_company, share FROM lv_owners WHERE ${cond.join(" AND ")} ORDER BY dataset_id, lv_no LIMIT 300`, args);
 }
+// Tá istá osoba v EVIDENCII DOPYTU (kupci, migrácia 0090) — zadaná ručne alebo prišla ako lead z OS TRI LIPY.
+// Bez filtra k.ú./LV: dopyt nie je viazaný na LV a „lokality" sú voľný text.
+export type SubjectBuyerRow = { id: number; name: string; kind: string; source: string; external_id: string | null; ptype: string; locations: string | null; contact: string | null; status: string; created_at: string };
+async function findSubjectBuyers(name: string): Promise<SubjectBuyerRow[]> {
+  const nc = subjectNameCond(name);
+  if (!nc) return [];
+  return q<SubjectBuyerRow>(
+    `SELECT id, name, kind, source, external_id, ptype, locations, contact, status, created_at FROM buyer_requests WHERE ${nc.cond.join(" AND ")} ORDER BY id DESC LIMIT 100`, nc.args).catch(() => []);
+}
+// Vymazaný lead z OS TRI LIPY — kľúč v suppression, aby ho ďalšie poslanie z OS nevrátilo.
+const erasedBuyerKey = (source: string, externalId: string) => `${source}:${externalId}`;
 // Kľúč vymazaného záznamu vlastníka — nesie ho suppression, aby ho ďalší import k.ú. nevrátil.
 const erasedKey = (datasetId: string, lvNo: number, name: string) => `${datasetId}:${lvNo}:${normName(name)}`;
 
@@ -3093,42 +3110,62 @@ const erasedKey = (datasetId: string, lvNo: number, name: string) => `${datasetI
 // zaškrtol (podľa id), a každý dostane trvalý záznam v suppression (kind='erased_owner'), ktorý
 // ingestDataset rešpektuje. Meno pre „neoslovovať" sa berie zo žiadosti v DB, nie z požiadavky.
 export const applyErasure = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string(), requestId: z.number().int(), ownerIds: z.array(z.number().int()).min(1).max(300) }))
-  .handler(async ({ data }): Promise<{ ok: boolean; removed?: number; work?: number; message?: string }> => {
+  .validator(z.object({ token: z.string(), requestId: z.number().int(), ownerIds: z.array(z.number().int()).max(300).default([]),
+    buyerIds: z.array(z.number().int()).max(100).default([]) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; removed?: number; work?: number; buyers?: number; message?: string }> => {
     const u = await userFromToken(data.token);
     if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže vykonať výmaz." };
     const req = (await q<{ id: number; kind: string; subject_name: string; status: string }>(
       "SELECT id, kind, subject_name, status FROM data_subject_requests WHERE id = ?", [data.requestId]))[0];
     if (!req || req.kind !== "erasure") return { ok: false, message: "Žiadosť o výmaz neexistuje." };
     const ids = [...new Set(data.ownerIds)];
+    const bids = [...new Set(data.buyerIds)];
+    if (!ids.length && !bids.length) return { ok: false, message: "Nie je vybraný žiadny záznam." };
     const ph = ids.map(() => "?").join(",");
-    const rows = await q<{ id: number; dataset_id: string; lv_no: number; name: string }>(
-      `SELECT id, dataset_id, lv_no, name FROM lv_owners WHERE id IN (${ph})`, ids);
-    if (!rows.length) return { ok: false, message: "Vybrané záznamy už neexistujú." };
+    const rows = ids.length ? await q<{ id: number; dataset_id: string; lv_no: number; name: string }>(
+      `SELECT id, dataset_id, lv_no, name FROM lv_owners WHERE id IN (${ph})`, ids) : [];
+    const bph = bids.map(() => "?").join(",");
+    const buyers = bids.length ? await q<{ id: number; source: string; external_id: string | null }>(
+      `SELECT id, source, external_id FROM buyer_requests WHERE id IN (${bph})`, bids).catch(() => []) : [];
+    if (!rows.length && !buyers.length) return { ok: false, message: "Vybrané záznamy už neexistujú." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nedostupná." };
-    const stmts = [
+    const ownerStmts = rows.length ? [
       ...rows.map((r) => DB.prepare("INSERT INTO suppression (kind,key,orig,reason) VALUES ('erased_owner',?,?,?)")
         .bind(erasedKey(r.dataset_id, r.lv_no, r.name), `${r.dataset_id} LV${r.lv_no}`, `erasure #${req.id}`)),
       DB.prepare(`DELETE FROM lv_owners WHERE id IN (${ph})`).bind(...rows.map((r) => r.id)),
-      // tie isté osoby v pracovných záznamoch (záznam kontaktu, úlohy dealu) — len PRESNÁ zhoda k.ú.+LV+meno
+    ] : [];
+    // tie isté osoby v pracovných záznamoch (záznam kontaktu, úlohy dealu) — len PRESNÁ zhoda k.ú.+LV+meno
+    const workStmts = [
       ...rows.map((r) => DB.prepare("DELETE FROM contact_log WHERE dataset_id = ? AND lv_no = ? AND owner_name = ?").bind(r.dataset_id, r.lv_no, r.name)),
       ...rows.map((r) => DB.prepare("DELETE FROM deal_tasks WHERE owner_name = ? AND deal_id IN (SELECT id FROM deals WHERE dataset_id = ? AND lv_no = ?)").bind(r.name, r.dataset_id, r.lv_no)),
+    ];
+    // evidencia dopytu: záznam + jeho videné zhody; lead z OS TRI LIPY dostane kľúč, aby sa ďalším poslaním nevrátil
+    const bIds = buyers.map((b) => b.id);
+    const buyerStmts = buyers.length ? [
+      ...buyers.filter((b) => b.source !== "manual" && b.external_id).map((b) =>
+        DB.prepare("INSERT INTO suppression (kind,key,orig,reason) VALUES ('erased_buyer',?,?,?)")
+          .bind(erasedBuyerKey(b.source, b.external_id as string), `dopyt #${b.id}`, `erasure #${req.id}`)),
+      DB.prepare(`DELETE FROM buyer_match_seen WHERE request_id IN (${bIds.map(() => "?").join(",")})`).bind(...bIds),
+      DB.prepare(`DELETE FROM buyer_requests WHERE id IN (${bIds.map(() => "?").join(",")})`).bind(...bIds),
+    ] : [];
+    const stmts = [
+      ...ownerStmts, ...workStmts, ...buyerStmts,
       DB.prepare("INSERT INTO suppression (kind,key,orig,reason) SELECT 'name',?,?,'erasure' WHERE NOT EXISTS (SELECT 1 FROM suppression WHERE kind='name' AND key=?)")
         .bind(normName(req.subject_name), req.subject_name, normName(req.subject_name)),
       DB.prepare("UPDATE data_subject_requests SET status='resolved', resolved_at=datetime('now') WHERE id=?").bind(req.id),
     ];
     const res = await DB.batch(stmts);   // jedna transakcia — buď všetko, alebo nič
-    const work = res.slice(rows.length + 1, rows.length + 1 + 2 * rows.length).reduce((acc, x) => acc + (x.meta?.changes ?? 0), 0);
-    await logAudit("gdpr.erasure", u.role, `Výmaz podľa žiadosti #${req.id} (${rows.length} záznamov lv_owners, ${work} pracovných záznamov)`);
-    return { ok: true, removed: rows.length, work };
+    const work = res.slice(ownerStmts.length, ownerStmts.length + workStmts.length).reduce((acc, x) => acc + (x.meta?.changes ?? 0), 0);
+    await logAudit("gdpr.erasure", u.role, `Výmaz podľa žiadosti #${req.id} (${rows.length} záznamov lv_owners, ${work} pracovných záznamov, ${buyers.length} záznamov evidencie dopytu)`);
+    return { ok: true, removed: rows.length, work, buyers: buyers.length };
   });
 export const getDataSubjectRecord = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string(), name: z.string().min(2), ku: z.string().optional(), lv: z.string().optional() }))
-  .handler(async ({ data }): Promise<{ access: boolean; rows: Awaited<ReturnType<typeof findSubjectRows>>; suppressed: boolean }> => {
+  .handler(async ({ data }): Promise<{ access: boolean; rows: Awaited<ReturnType<typeof findSubjectRows>>; buyers: SubjectBuyerRow[]; suppressed: boolean }> => {
     const u = await userFromToken(data.token);
-    if (!u || u.role !== "admin") return { access: false, rows: [], suppressed: false };
-    return { access: true, rows: await findSubjectRows(data.name, data.ku, data.lv), suppressed: await isSuppressed(data.name) };
+    if (!u || u.role !== "admin") return { access: false, rows: [], buyers: [], suppressed: false };
+    return { access: true, rows: await findSubjectRows(data.name, data.ku, data.lv), buyers: await findSubjectBuyers(data.name), suppressed: await isSuppressed(data.name) };
   });
 
 // ——— Bod 4: záloha D1 (export-only, gated admin/manažér) ———
@@ -5590,22 +5627,26 @@ const leadRow = z.object({
 });
 export const ingestBuyerLeads = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), rows: z.array(leadRow).max(200) }))
-  .handler(async ({ data }): Promise<{ ok: boolean; upserted?: number; message?: string }> => {
+  .handler(async ({ data }): Promise<{ ok: boolean; upserted?: number; skippedErased?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
     if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    // GDPR: lead vymazaný na žiadosť osoby sa ďalším poslaním z OS nevráti (kľúč source:externalId v suppression)
+    const erased = new Set((await q<{ key: string }>("SELECT key FROM suppression WHERE kind='erased_buyer'").catch(() => [])).map((x) => x.key));
+    const rowsOk = data.rows.filter((r) => !erased.has(erasedBuyerKey("os_tri_lipy", r.externalId)));
     const stmt = DB.prepare(`INSERT INTO buyer_requests (source,external_id,kind,name,ico,contact,ptype,purpose,area_min,area_max,budget_max,locations,timeframe,financing,note,status,author)
       VALUES ('os_tri_lipy',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'OS TRI LIPY')
       ON CONFLICT(source, external_id) WHERE external_id IS NOT NULL DO UPDATE SET kind=excluded.kind, name=excluded.name, ico=excluded.ico,
         contact=excluded.contact, ptype=excluded.ptype, purpose=excluded.purpose, area_min=excluded.area_min, area_max=excluded.area_max,
         budget_max=excluded.budget_max, locations=excluded.locations, timeframe=excluded.timeframe, financing=excluded.financing,
         note=excluded.note, status=excluded.status, updated_at=datetime('now')`);
-    const batch = data.rows.map((r) => stmt.bind(r.externalId, r.kind, r.name, r.ico ?? null, r.contact ?? null, r.ptype, r.purpose ?? null,
+    const batch = rowsOk.map((r) => stmt.bind(r.externalId, r.kind, r.name, r.ico ?? null, r.contact ?? null, r.ptype, r.purpose ?? null,
       r.areaMin ?? null, r.areaMax ?? null, r.budgetMax ?? null, r.locations ?? null, r.timeframe ?? null, r.financing ?? null, r.note ?? null, r.status ?? "aktivny"));
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
-    await logAudit("buyer.os_ingest", "system", `OS TRI LIPY: ${data.rows.length} záujemcov`);
-    return { ok: true, upserted: data.rows.length };
+    const skippedErased = data.rows.length - rowsOk.length;
+    await logAudit("buyer.os_ingest", "system", `OS TRI LIPY: ${rowsOk.length} záujemcov${skippedErased ? `, ${skippedErased} vynechaných (GDPR výmaz)` : ""}`);
+    return { ok: true, upserted: rowsOk.length, skippedErased };
   });
 
 export const buyerMatchesForLead = createServerFn({ method: "POST" })
