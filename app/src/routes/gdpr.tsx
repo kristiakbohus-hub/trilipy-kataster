@@ -28,6 +28,10 @@ function GdprPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newNote, setNewNote] = useState("");
   const [users, setUsers] = useState<Awaited<ReturnType<typeof listUsers>> | null>(null);
+  // výmaz: náhľad nájdených záznamov → admin zaškrtne, čo naozaj patrí osobe → zmažú sa len tie
+  const [eraseReq, setEraseReq] = useState<DsrRow | null>(null);
+  const [eraseRows, setEraseRows] = useState<Awaited<ReturnType<typeof getDataSubjectRecord>>["rows"]>([]);
+  const [eraseSel, setEraseSel] = useState<Set<number>>(new Set());
 
   const refresh = useCallback(() => {
     if (!token) return;
@@ -48,10 +52,21 @@ function GdprPage() {
       setName(""); setKu(""); setLv(""); setReason(""); refresh();
     } finally { setBusy(false); }
   }
-  async function erase(id: number, subjectName: string) {
-    if (!window.confirm(`Vymazať záznamy vlastníka „${subjectName}" z lv_owners? Nevratné.`)) return;
-    const r = await applyErasure({ data: { token: token!, requestId: id, subjectName } });
-    setMsg(r.ok ? `Výmaz hotový — odstránených ${r.removed} záznamov.` : (r.message ?? "Zlyhalo.")); refresh();
+  async function openErase(req: DsrRow) {
+    setEraseReq(req); setEraseSel(new Set()); setEraseRows([]);
+    const r = await getDataSubjectRecord({ data: { token: token!, name: req.subject_name, ku: req.subject_ku ?? undefined, lv: req.subject_lv ?? undefined } });
+    setEraseRows(r.rows);
+  }
+  function toggleErase(id: number) {
+    setEraseSel((prev) => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  }
+  async function erase() {
+    if (!eraseReq || !eraseSel.size) return;
+    if (!window.confirm(`Natrvalo vymazať ${eraseSel.size} ${eraseSel.size === 1 ? "záznam" : eraseSel.size < 5 ? "záznamy" : "záznamov"} vlastníka (žiadosť #${eraseReq.id})? Nedá sa to vrátiť a pri ďalšom importe sa tieto záznamy nevrátia.`)) return;
+    const r = await applyErasure({ data: { token: token!, requestId: eraseReq.id, ownerIds: [...eraseSel] } });
+    setMsg(r.ok ? `Výmaz hotový — odstránených ${r.removed} záznamov vlastníka${r.work ? ` a ${r.work} pracovných záznamov (kontakty, úlohy)` : ""}.` : (r.message ?? "Zlyhalo."));
+    if (r.ok) { setEraseReq(null); setEraseRows([]); setEraseSel(new Set()); }
+    refresh();
   }
   async function doLookup() {
     if (lookupName.trim().length < 2) return;
@@ -135,13 +150,47 @@ function GdprPage() {
                     <td className="px-2 py-1 text-fg">{r.subject_name}</td>
                     <td className="px-2 py-1 text-muted">{[r.subject_ku, r.subject_lv].filter(Boolean).join(" / ") || "—"}</td>
                     <td className="px-2 py-1">{r.status === "resolved" ? <span className="text-green">vybavené</span> : <span className="text-muted">nové</span>}</td>
-                    <td className="px-2 py-1">{r.kind === "erasure" && r.status !== "resolved" ? <button onClick={() => void erase(r.id, r.subject_name)} className="rounded-md border border-line px-2 py-0.5 text-xs text-fg hover:border-ink">Vybaviť výmaz</button> : null}</td>
+                    <td className="px-2 py-1">{r.kind === "erasure" && r.status !== "resolved" ? <button onClick={() => void openErase(r)} className="rounded-md border border-line px-2 py-0.5 text-xs text-fg hover:border-ink">Vybaviť výmaz</button> : null}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : <div className="mt-2 text-sm text-muted">Žiadne žiadosti.</div>}
+        {isAdmin && eraseReq ? (
+          <div className="mt-4 rounded-md border border-line p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div className="text-sm font-medium text-fg">Výmaz — žiadosť #{eraseReq.id}: {eraseReq.subject_name}</div>
+              <button onClick={() => { setEraseReq(null); setEraseRows([]); }} className="text-xs text-muted hover:text-fg">Zrušiť</button>
+            </div>
+            <p className="mt-1 text-[12px] text-muted">Zaškrtni len záznamy, ktoré patria tejto osobe — rovnaké meno môžu mať aj iní ľudia (over dátum narodenia, rodné priezvisko a adresu). Zmažú sa iba zaškrtnuté a ďalší import k.ú. ich nevráti.</p>
+            {eraseRows.length ? (
+              <div className="mt-2 max-h-80 overflow-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="border-b border-line text-left text-[11px] uppercase tracking-wide text-muted">
+                    <th className="px-2 py-1"></th><th className="px-2 py-1">Meno</th><th className="px-2 py-1">Narodenie / rodné</th><th className="px-2 py-1">Adresa</th><th className="px-2 py-1">k.ú. / LV</th><th className="px-2 py-1">Podiel</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-line">
+                    {eraseRows.map((o) => (
+                      <tr key={o.id} className={eraseSel.has(o.id) ? "bg-cream" : ""}>
+                        <td className="px-2 py-1"><input type="checkbox" checked={eraseSel.has(o.id)} onChange={() => toggleErase(o.id)} aria-label={`Vybrať ${o.name}, LV ${o.lv_no}`} /></td>
+                        <td className="px-2 py-1 text-fg">{o.name}</td>
+                        <td className="px-2 py-1 text-[12px] text-muted">{[o.birth_date, o.born_name ? `rod. ${o.born_name}` : null].filter(Boolean).join(" · ") || "—"}</td>
+                        <td className="px-2 py-1 text-[12px] text-muted">{[o.addr_obec, o.addr_cislo, o.addr_psc].filter(Boolean).join(", ") || "—"}</td>
+                        <td className="px-2 py-1 text-[12px] text-muted">{o.dataset_id} · LV {o.lv_no}</td>
+                        <td className="px-2 py-1 text-[12px] text-muted">{o.share ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : <div className="mt-2 text-sm text-muted">Žiadny záznam s týmto menom{eraseReq.subject_ku ? " v zadanom k.ú." : ""} — nie je čo mazať (osoba je v suppression, nebude oslovená).</div>}
+            <div className="mt-2 flex items-center gap-2">
+              <button onClick={() => void erase()} disabled={!eraseSel.size} className="rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-cream disabled:opacity-40">Vymazať vybrané ({eraseSel.size})</button>
+              {eraseRows.length >= 300 ? <span className="text-[11px] text-muted">Zobrazených prvých 300 — zúž žiadosť o k.ú. alebo LV.</span> : null}
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       {isAdmin ? (
@@ -154,7 +203,7 @@ function GdprPage() {
           {lookup ? (
             <div className="mt-2 text-[12px] text-muted">
               Nájdených záznamov: <b className="text-fg">{lookup.rows.length}</b>{lookup.suppressed ? " · v suppression (neoslovovať)" : ""}.
-              {lookup.rows.length ? <div className="mt-1 max-h-48 overflow-auto rounded border border-line p-2 font-mono text-[11px] text-fg">{lookup.rows.map((r, i) => <div key={i}>{String(r.name)} · {String(r.dataset_id)} LV{String(r.lv_no)} · {[r.addr_obec, r.addr_cislo, r.addr_psc].filter(Boolean).join(", ")}</div>)}</div> : null}
+              {lookup.rows.length ? <div className="mt-1 max-h-48 overflow-auto rounded border border-line p-2 font-mono text-[11px] text-fg">{lookup.rows.map((r) => <div key={r.id}>{r.name}{r.birth_date ? ` (${r.birth_date})` : ""} · {r.dataset_id} LV{r.lv_no} · {[r.addr_obec, r.addr_cislo, r.addr_psc].filter(Boolean).join(", ")}</div>)}</div> : null}
             </div>
           ) : null}
         </Card>

@@ -2994,27 +2994,66 @@ export const listDataSubjectRequests = createServerFn({ method: "POST" })
     const suppressionCount = (await q<{ n: number }>("SELECT COUNT(*) n FROM suppression"))[0]?.n ?? 0;
     return { access: true, requests, suppressionCount };
   });
+// Hľadanie záznamov osoby (náhľad pred výmazom aj právo na prístup čl. 15). Meno sa rozdelí na slová
+// a záznam musí obsahovať KAŽDÉ z nich (poradie „Ján Novák" vs „Novák Ján" nevadí). SQLite `lower()`
+// nezmenší diakritiku (Š, Č…), preto sa každé slovo skúša aj v zadanom tvare. Je to len NÁHĽAD —
+// o tom, čo patrí danej osobe, rozhoduje admin zaškrtnutím (rovnaké meno môžu mať dvaja ľudia).
+async function findSubjectRows(name: string, ku?: string | null, lv?: string | null) {
+  const toks = name.trim().split(/\s+/).filter((t) => t.length >= 2).slice(0, 5);
+  if (!toks.length) return [];
+  const cond: string[] = []; const args: unknown[] = [];
+  for (const t of toks) { cond.push("(name LIKE ? OR lower(name) LIKE ?)"); args.push(`%${t}%`, `%${t.toLowerCase()}%`); }
+  if (ku && ku.trim()) { cond.push("dataset_id LIKE ?"); args.push(`%${ku.trim()}%`); }
+  const lvn = lv && /^\d+$/.test(lv.trim()) ? Number(lv.trim()) : null;
+  if (lvn != null) { cond.push("lv_no = ?"); args.push(lvn); }
+  return q<{ id: number; dataset_id: string; lv_no: number; name: string; born_name: string | null; birth_date: string | null; addr_obec: string | null; addr_cislo: string | null; addr_psc: string | null; is_company: number; share: string | null }>(
+    `SELECT id, dataset_id, lv_no, name, born_name, birth_date, addr_obec, addr_cislo, addr_psc, is_company, share FROM lv_owners WHERE ${cond.join(" AND ")} ORDER BY dataset_id, lv_no LIMIT 300`, args);
+}
+// Kľúč vymazaného záznamu vlastníka — nesie ho suppression, aby ho ďalší import k.ú. nevrátil.
+const erasedKey = (datasetId: string, lvNo: number, name: string) => `${datasetId}:${lvNo}:${normName(name)}`;
+
+// VÝMAZ (čl. 17). Predtým: `DELETE … WHERE lower(name) LIKE '%meno%'` naprieč VŠETKÝMI k.ú. — výmaz
+// „Ján Novák" by zmazal aj „Ján Nováková", „Jána Nováka ml." a každého menovca (nevratne), a ďalší
+// import k.ú. by vymazanú osobu aj tak vrátil. Teraz sa mažú LEN záznamy, ktoré admin v náhľade
+// zaškrtol (podľa id), a každý dostane trvalý záznam v suppression (kind='erased_owner'), ktorý
+// ingestDataset rešpektuje. Meno pre „neoslovovať" sa berie zo žiadosti v DB, nie z požiadavky.
 export const applyErasure = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string(), requestId: z.number(), subjectName: z.string().min(2) }))
-  .handler(async ({ data }): Promise<{ ok: boolean; removed?: number; message?: string }> => {
+  .validator(z.object({ token: z.string(), requestId: z.number().int(), ownerIds: z.array(z.number().int()).min(1).max(300) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; removed?: number; work?: number; message?: string }> => {
     const u = await userFromToken(data.token);
     if (!u || u.role !== "admin") return { ok: false, message: "Len admin môže vykonať výmaz." };
-    const like = `%${data.subjectName.trim().toLowerCase()}%`;
-    const n = (await q<{ n: number }>("SELECT COUNT(*) n FROM lv_owners WHERE lower(name) LIKE ?", [like]))[0]?.n ?? 0;
-    await q("DELETE FROM lv_owners WHERE lower(name) LIKE ?", [like]);
-    await q("INSERT INTO suppression (kind,key,orig,reason) VALUES ('name',?,?,'erasure')", [normName(data.subjectName), data.subjectName.trim()]);
-    await q("UPDATE data_subject_requests SET status='resolved', resolved_at=datetime('now') WHERE id=?", [data.requestId]);
-    await logAudit("gdpr.erasure", u.role, `Výmaz podľa žiadosti #${data.requestId} (${n} záznamov lv_owners)`);
-    return { ok: true, removed: n };
+    const req = (await q<{ id: number; kind: string; subject_name: string; status: string }>(
+      "SELECT id, kind, subject_name, status FROM data_subject_requests WHERE id = ?", [data.requestId]))[0];
+    if (!req || req.kind !== "erasure") return { ok: false, message: "Žiadosť o výmaz neexistuje." };
+    const ids = [...new Set(data.ownerIds)];
+    const ph = ids.map(() => "?").join(",");
+    const rows = await q<{ id: number; dataset_id: string; lv_no: number; name: string }>(
+      `SELECT id, dataset_id, lv_no, name FROM lv_owners WHERE id IN (${ph})`, ids);
+    if (!rows.length) return { ok: false, message: "Vybrané záznamy už neexistujú." };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nedostupná." };
+    const stmts = [
+      ...rows.map((r) => DB.prepare("INSERT INTO suppression (kind,key,orig,reason) VALUES ('erased_owner',?,?,?)")
+        .bind(erasedKey(r.dataset_id, r.lv_no, r.name), `${r.dataset_id} LV${r.lv_no}`, `erasure #${req.id}`)),
+      DB.prepare(`DELETE FROM lv_owners WHERE id IN (${ph})`).bind(...rows.map((r) => r.id)),
+      // tie isté osoby v pracovných záznamoch (záznam kontaktu, úlohy dealu) — len PRESNÁ zhoda k.ú.+LV+meno
+      ...rows.map((r) => DB.prepare("DELETE FROM contact_log WHERE dataset_id = ? AND lv_no = ? AND owner_name = ?").bind(r.dataset_id, r.lv_no, r.name)),
+      ...rows.map((r) => DB.prepare("DELETE FROM deal_tasks WHERE owner_name = ? AND deal_id IN (SELECT id FROM deals WHERE dataset_id = ? AND lv_no = ?)").bind(r.name, r.dataset_id, r.lv_no)),
+      DB.prepare("INSERT INTO suppression (kind,key,orig,reason) SELECT 'name',?,?,'erasure' WHERE NOT EXISTS (SELECT 1 FROM suppression WHERE kind='name' AND key=?)")
+        .bind(normName(req.subject_name), req.subject_name, normName(req.subject_name)),
+      DB.prepare("UPDATE data_subject_requests SET status='resolved', resolved_at=datetime('now') WHERE id=?").bind(req.id),
+    ];
+    const res = await DB.batch(stmts);   // jedna transakcia — buď všetko, alebo nič
+    const work = res.slice(rows.length + 1, rows.length + 1 + 2 * rows.length).reduce((acc, x) => acc + (x.meta?.changes ?? 0), 0);
+    await logAudit("gdpr.erasure", u.role, `Výmaz podľa žiadosti #${req.id} (${rows.length} záznamov lv_owners, ${work} pracovných záznamov)`);
+    return { ok: true, removed: rows.length, work };
   });
 export const getDataSubjectRecord = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string(), name: z.string().min(2) }))
-  .handler(async ({ data }): Promise<{ access: boolean; rows: Array<Record<string, string | number | null>>; suppressed: boolean }> => {
+  .validator(z.object({ token: z.string(), name: z.string().min(2), ku: z.string().optional(), lv: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ access: boolean; rows: Awaited<ReturnType<typeof findSubjectRows>>; suppressed: boolean }> => {
     const u = await userFromToken(data.token);
     if (!u || u.role !== "admin") return { access: false, rows: [], suppressed: false };
-    const rows = await q<Record<string, string | number | null>>(
-      "SELECT dataset_id, lv_no, name, addr_obec, addr_cislo, addr_psc, is_company FROM lv_owners WHERE lower(name) LIKE ? LIMIT 200", [`%${data.name.trim().toLowerCase()}%`]);
-    return { access: true, rows, suppressed: await isSuppressed(data.name) };
+    return { access: true, rows: await findSubjectRows(data.name, data.ku, data.lv), suppressed: await isSuppressed(data.name) };
   });
 
 // ——— Bod 4: záloha D1 (export-only, gated admin/manažér) ———
@@ -3959,7 +3998,9 @@ export const ingestDataset = createServerFn({ method: "POST" })
       for (const p of data.parcels ?? []) stmts.push(DB.prepare("INSERT OR REPLACE INTO parcels (id,dataset_id,parcel_no,kn_type,area_m2,use_type,lv_no,geometry_quality,centroid_lat,centroid_lng,geometry_json,bpej,bpej_skupina) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)").bind(`${did}-${slug(p.parcelNo)}`, did, p.parcelNo, p.knType ?? "C-KN", Math.round(p.areaM2 ?? 0), p.useType ?? null, toInt(p.lvNo), "derived", p.centroidLat ?? null, p.centroidLng ?? null, p.geometryJson ?? null, p.bpej ?? null, p.bpejSkupina ?? null));
       // lvs/lv_owners/bpej_zones: id je INTEGER AUTOINCREMENT → VYNECHAŤ; lv_no INTEGER NOT NULL
       for (const l of data.lvs ?? []) { const lv = toInt(l.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT INTO lvs (dataset_id,lv_no,co_owners,note) VALUES (?,?,?,?)").bind(did, lv, l.coOwners ?? 0, l.note ?? null)); }
-      for (const o of data.owners ?? []) { const lv = toInt(o.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT INTO lv_owners (dataset_id,lv_no,name,share,is_company,birth_date,title,born_name,ico,addr_obec,addr_cislo,addr_psc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(did, lv, o.name ?? "?", o.share ?? null, o.isCompany ?? 0, o.birthDate ?? null, o.title ?? null, o.bornName ?? null, o.ico ?? null, o.addrObec ?? null, o.addrCislo ?? null, o.addrPsc ?? null)); }
+      // GDPR: vlastník vymazaný na žiadosť (čl. 17) sa pri reimporte NEVRÁTI (suppression kind='erased_owner').
+      const erased = new Set((await q<{ key: string }>("SELECT key FROM suppression WHERE kind='erased_owner' AND key LIKE ?", [`${did}:%`]).catch(() => [])).map((r) => r.key));
+      for (const o of data.owners ?? []) { const lv = toInt(o.lvNo); if (lv == null) continue; if (erased.has(erasedKey(did, lv, o.name ?? "?"))) continue; stmts.push(DB.prepare("INSERT INTO lv_owners (dataset_id,lv_no,name,share,is_company,birth_date,title,born_name,ico,addr_obec,addr_cislo,addr_psc) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)").bind(did, lv, o.name ?? "?", o.share ?? null, o.isCompany ?? 0, o.birthDate ?? null, o.title ?? null, o.bornName ?? null, o.ico ?? null, o.addrObec ?? null, o.addrCislo ?? null, o.addrPsc ?? null)); }
       for (const b of data.bpej ?? []) { if (!b.geometryJson) continue; stmts.push(DB.prepare("INSERT INTO bpej_zones (dataset_id,code,skupina,geometry_json) VALUES (?,?,?,?)").bind(did, b.code, b.skupina ?? null, b.geometryJson)); }
       // lv_signals: PK(dataset_id,lv_no); trigger dopočíta signal_score. lv_titles: id AUTOINCREMENT (vynechať), kind+txt NOT NULL
       for (const s of data.signals ?? []) { const lv = toInt(s.lvNo); if (lv == null) continue; stmts.push(DB.prepare("INSERT OR REPLACE INTO lv_signals (dataset_id,lv_no,co_owners,has_spf,dedic,buildable,clean_title,absenter_ratio,total_area) VALUES (?,?,?,?,?,?,?,?,?)").bind(did, lv, s.coOwners ?? null, s.hasSpf ?? null, s.dedic ?? null, s.buildable ?? null, s.cleanTitle ?? null, s.absenterRatio ?? null, s.totalArea ?? null)); }
