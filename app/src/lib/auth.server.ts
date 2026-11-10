@@ -11,13 +11,12 @@
 import { env } from "cloudflare:workers";
 import type { D1Database, KVNamespace } from "@cloudflare/workers-types";
 import type { Role } from "./domain";
+import { SESSION_COOKIE, SESSION_MS, TOKEN_RX, clearCookie, sessionCookie, tokenFromRequest } from "./session-token";
 
 type AuthEnv = { DB?: D1Database; KV?: KVNamespace };
 const E = env as unknown as AuthEnv;
 
-export const SESSION_COOKIE = "tl_session";
-export const SESSION_MS = 30 * 24 * 3600 * 1000;
-const TOKEN_RX = /^[0-9a-f]{48}$/;          // randHex(24)
+export { SESSION_COOKIE, SESSION_MS, clearCookie, sessionCookie, tokenFromRequest };
 export type AuthUser = { id: string; email: string; name: string | null; role: Role };
 
 function hexOf(buf: ArrayBuffer | Uint8Array): string {
@@ -42,16 +41,6 @@ async function exec(sql: string, args: unknown[] = []): Promise<void> {
   await E.DB.prepare(sql).bind(...args).run();
 }
 
-/** Token z HttpOnly cookie, inak z hlavičky Authorization, inak z tela (prechod starých relácií). */
-export function tokenFromRequest(request: Request, bodyToken?: unknown): string | null {
-  const cookie = request.headers.get("cookie") ?? "";
-  const m = cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([0-9a-f]{48})`));
-  if (m) return m[1];
-  const a = (request.headers.get("authorization") ?? "").match(/^Bearer\s+([0-9a-f]{48})$/i);
-  if (a) return a[1].toLowerCase();
-  return typeof bodyToken === "string" && TOKEN_RX.test(bodyToken) ? bodyToken : null;
-}
-
 export async function userForToken(token: string | null): Promise<AuthUser | null> {
   if (!token || !TOKEN_RX.test(token)) return null;
   const r = (await rows<{ id: string; email: string; name: string | null; role: string; expires_at: number }>(
@@ -59,13 +48,6 @@ export async function userForToken(token: string | null): Promise<AuthUser | nul
     [token]))[0];
   if (!r || (r.expires_at ?? 0) < Date.now()) return null;
   return { id: r.id, email: r.email, name: r.name, role: r.role as Role };
-}
-
-export function sessionCookie(token: string): string {
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${Math.floor(SESSION_MS / 1000)}`;
-}
-export function clearCookie(): string {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0`;
 }
 
 async function createSession(userId: string): Promise<string> {

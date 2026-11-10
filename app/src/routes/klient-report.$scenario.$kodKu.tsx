@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getClientReport, logReportExport, listReportExports, type ClientReport, type ReportExportRow } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
+import { csvDocument, csvLine } from "../lib/csv";
 import { Card, CriteriaMatrix, Disclaimer } from "../components/kit";
 import { critLabel, critLabelKnown, reasonSk, type AppPath } from "../lib/domain";
 
@@ -76,13 +77,6 @@ const M = ({ children }: { children: React.ReactNode }) => <p className="text-sm
 type ExportFormat = "json" | "csv" | "print";
 const FORMAT_LABEL: Record<ExportFormat, string> = { json: "JSON", csv: "CSV (Excel)", print: "tlač / PDF" };
 
-// Bunka CSV: úvodzovky + ochrana pred vzorcom (dok. 10 §7: „pri CSV chráň pred interpretáciou
-// útočného obsahu ako vzorca"). Text z enginov alebo inzerátov začínajúci =, +, -, @ by Excel spustil.
-function csvCell(v: unknown): string {
-  let s = v == null ? "" : String(v);
-  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
-  return `"${s.replace(/"/g, '""')}"`;
-}
 // Tabuľkový export (dok. 16 + dok. 10 E06): tie isté hodnoty a statusy ako tlač a JSON, vrátane revízie.
 function reportCsv(r: ClientReport): string {
   const head: (string | number | null)[][] = [
@@ -99,8 +93,7 @@ function reportCsv(r: ClientReport): string {
   const cols = ["ID", "Klasifikácia", ...r.colLabels, "Dôvod"];
   const ordered = [...r.shortlist.filter((x) => x.classification === "MATCH"), ...r.shortlist.filter((x) => x.classification !== "MATCH")];
   const body = ordered.map((x) => [x.id, x.classification === "MATCH" ? "zhoda" : "podmienené", ...x.cols.map((c) => c.value), reasonSk(x.reason ?? "")]);
-  const lines = [...head.map((row) => row.map(csvCell).join(";")), "", cols.map(csvCell).join(";"), ...body.map((row) => row.map(csvCell).join(";"))];
-  return "\uFEFF" + lines.join("\r\n");
+  return csvDocument([...head.map(csvLine), "", csvLine(cols), ...body.map(csvLine)]);
 }
 
 function ClientReportPage() {

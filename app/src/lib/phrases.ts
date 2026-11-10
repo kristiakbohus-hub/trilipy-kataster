@@ -16,7 +16,7 @@ export type ForbiddenPhrase = { id: string; re: RegExp; claim: string; use: stri
 export const FORBIDDEN_PHRASES: ForbiddenPhrase[] = [
   {
     id: "neobyva",
-    re: /vlastn[íi]k\p{L}*\s+(tu|tam|v\s+(byte|nehnuteľnosti))\s+neb[ýy]v|\bneb[ýy]va\s+(tu|v\s+(byte|nehnuteľnosti))/iu,
+    re: /vlastn[íi][kc]\p{L}*\s+(tu|tam|v\s+(byte|nehnuteľnosti))\s+neb[ýy]v|\bneb[ýy]va\s+(tu|v\s+(byte|nehnuteľnosti))/iu,
     claim: "Vlastník tu nebýva.",
     use: "Evidovaná adresa relevantného vlastníka sa podľa zdroja nezhoduje s adresou nehnuteľnosti na uvedenej úrovni presnosti.",
   },
