@@ -278,6 +278,27 @@ type LlmNlFilter = {
 const LLM_LEGAL_COL: Record<string, "inh" | "exek" | "lien" | "sale" | "gift"> = { inheritance: "inh", execution: "exek", lien: "lien", sale: "sale", gift: "gift" };
 const LLM_LEGAL_LABEL: Record<string, string> = { inheritance: "dedičstvo", execution: "exekúcia", lien: "záložné právo", sale: "predaj", gift: "darovanie" };
 
+// A6 (review 2026-11-10): LLM volanie je PLATENÉ (Anthropic API, účet používateľa). Bez limitu by jeden
+// prihlásený účet (alebo ukradnutá session) vedel v slučke minúť ľubovoľnú sumu. Limit na používateľa
+// a deň + celkový denný strop; po vyčerpaní NL padá na pravidlá (bez LLM), nič sa neplatí.
+// KV je eventuálne konzistentné → strop je „mäkký" (± pár dopytov), na kontrolu nákladov stačí.
+const LLM_PER_USER_DAY = 40;
+const LLM_GLOBAL_DAY = 300;
+const LLM_MAX_QUERY_CHARS = 300;
+async function llmQuotaTake(userId: string): Promise<boolean> {
+  const kv = bindings().KV;
+  if (!kv) return false;                            // bez KV nevieme počítať → LLM radšej nevolať
+  const day = new Date().toISOString().slice(0, 10);
+  const ku = `llm:${day}:u:${userId}`, kg = `llm:${day}:all`;
+  const [u, g] = (await Promise.all([kv.get(ku), kv.get(kg)])).map((x) => Number(x) || 0);
+  if (u >= LLM_PER_USER_DAY || g >= LLM_GLOBAL_DAY) return false;
+  await Promise.all([
+    kv.put(ku, String(u + 1), { expirationTtl: 2 * 86400 }),
+    kv.put(kg, String(g + 1), { expirationTtl: 2 * 86400 }),
+  ]);
+  return true;
+}
+
 async function llmParseNl(query: string, apiKey: string): Promise<LlmNlFilter | null> {
   const tool = {
     name: "filter_lv",
@@ -356,8 +377,9 @@ export const nlQuery = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const raw = data.query.trim();
     const s = raw.toLowerCase();
-    // rola zo session, nie od klienta (viď roleFromToken) — `data.role` sa IGNORUJE
-    const role = await roleFromToken(data.token);
+    // rola zo session, nie od klienta — `data.role` sa IGNORUJE; používateľ treba aj pre limit LLM (A6)
+    const me = await requireUser(data.token);
+    const role = (me?.role ?? "viewer") as Role;
 
     // ——— intent: naprieč doménami (LV signály + vlastníci + trhové inzeráty) ———
     const marketIntent = /pred[aá]|kúp|kup\b|prenáj|nájom|najom|inzer|\bcena|cen[yu]\b|€|eur\b|lacn|pod\s*cen|\bbyt|byty|domy|pozem|\bchat|rodinn|za\s*m2|za\s*m²|€\/m/.test(s);
@@ -399,9 +421,12 @@ export const nlQuery = createServerFn({ method: "POST" })
     } else if (/dedič|dedic/.test(s)) { cond.push("sig.dedic = 1"); } // spätná kompat
     if (/s\s*[tť]arch|bremen|nečist|necist/.test(s) && !legalEv) cond.push("sig.clean_title = 0");
     // ——— LLM vrstva (Haiku 5.5): ak je secret ANTHROPIC_API_KEY, nahraď regex-filter presnejším štruktúrovaným. Fallback = regex vyššie. ———
-    let llmUsed = false; let llmReason: string | null = null;
+    let llmUsed = false; let llmReason: string | null = null; let llmLimited = false;
     const _apiKey = bindings().ANTHROPIC_API_KEY;
-    if (_apiKey && data.llm !== false && raw.length >= 3) {
+    if (_apiKey && data.llm !== false && raw.length >= 3 && raw.length <= LLM_MAX_QUERY_CHARS && me) {
+      llmLimited = !(await llmQuotaTake(me.id).catch(() => false));
+    }
+    if (_apiKey && data.llm !== false && raw.length >= 3 && raw.length <= LLM_MAX_QUERY_CHARS && me && !llmLimited) {
       const f = await llmParseNl(raw, _apiKey).catch(() => null);
       if (f && Object.keys(f).length > 0) {
         cond.length = 0; args.length = 0;                 // zahoď regex-filter, použi LLM (presnejší)
@@ -636,6 +661,7 @@ export const nlQuery = createServerFn({ method: "POST" })
       owners,
       market,
       llmUsed,
+      llmLimited,
     };
   });
 
@@ -1090,7 +1116,7 @@ export const runAlertsCron = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string() }))
   .handler(async ({ data }): Promise<{ ok: boolean; checked?: number; newTotal?: number; messages?: string[]; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const r = await runAllAlertsCore();
     return { ok: true, ...r };
   });
@@ -1111,7 +1137,7 @@ export const ingestChanges = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), runId: z.string().optional(), changes: z.array(z.object({ datasetId: z.string().optional(), lvNo: z.number().optional(), parcelNo: z.string().optional(), entity: z.string(), field: z.string().optional(), oldValue: z.string().optional(), newValue: z.string().optional(), changeType: z.string(), importance: z.string().optional() })).max(1000) }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const stmt = DB.prepare("INSERT INTO change_log (dataset_id,lv_no,parcel_no,entity,field,old_value,new_value,change_type,importance,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)");
@@ -1135,7 +1161,7 @@ export const ingestAcquisitions = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1167,7 +1193,7 @@ export const ingestLandsearch = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1203,7 +1229,7 @@ export const ingestSettlement = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1296,7 +1322,7 @@ export const ingestZA = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1558,7 +1584,7 @@ export const ingestScenarioRun = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const stmt = DB.prepare(
@@ -1642,7 +1668,7 @@ export const ingestUP = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1731,7 +1757,7 @@ export const ingestParcelZoning = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -3291,11 +3317,31 @@ const normOkres = (okresRow: unknown, obec: unknown): string | null => {
 // GitHub Action nemá session, len ALERT_SECRET). Bez toho ingestMarketAll volal refresh* s rolou od
 // klienta; po hardeningu rola ide zo session → server-side volanie bez tokenu padlo na „viewer"
 // a ingest do D1 prestal fungovať (origin svieži, D1 zastaraný).
+// A7 (review 2026-11-10): ingest stiahne JSON a ZAPÍŠE ho do D1 (ceny, inzeráty, ÚP číselník). URL prichádzala
+// v požiadavke a nebola obmedzená → stačila rola analytik a vlastná URL a appka by naplnila databázu
+// podvrhnutými cenami/odkazmi. Zdroj musí byť náš repozitár tri-lipy-market (tam publikuje scraper aj Mac).
+// `new URL` normalizuje `..` aj `user@host`, takže porovnanie prefixu po normalizácii je bezpečné.
+const TRUSTED_DATA_PREFIX = "https://raw.githubusercontent.com/kristiakbohus-hub/tri-lipy-market/";
+function trustedDataUrl(url: string | undefined | null): boolean {
+  if (!url) return false;
+  try { const u = new URL(url); return u.protocol === "https:" && u.href.startsWith(TRUSTED_DATA_PREFIX); } catch { return false; }
+}
+const UNTRUSTED_MSG = "Zdroj dát musí byť repozitár tri-lipy-market (raw.githubusercontent.com/kristiakbohus-hub/tri-lipy-market/…).";
+
+// Porovnanie secretu v konštantnom čase (A8) — `!==` skončí na prvom rozdielnom znaku.
+function secretEq(a: string | undefined | null, b: string | undefined | null): boolean {
+  if (!a || !b) return false;
+  const x = new TextEncoder().encode(a), y = new TextEncoder().encode(b);
+  let d = x.length ^ y.length;
+  for (let i = 0; i < Math.max(x.length, y.length); i++) d |= (x[i] ?? 0) ^ (y[i] ?? 0);
+  return d === 0;
+}
+
 async function pipelineAuthed(role: Role, pipelineSecret?: string): Promise<boolean> {
   if (canRunPipeline(role)) return true;
   if (!pipelineSecret) return false;
   const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
-  return !!expected && pipelineSecret === expected;
+  return secretEq(pipelineSecret, expected);
 }
 
 export const refreshMarketData = createServerFn({ method: "POST" })
@@ -3306,9 +3352,11 @@ export const refreshMarketData = createServerFn({ method: "POST" })
     const { DB } = bindings();
     if (!DB) return { ok: false, index: 0, opps: 0, message: "Databáza nedostupná." };
     let url = data.url;
+    if (url && !trustedDataUrl(url)) return { ok: false, index: 0, opps: 0, message: UNTRUSTED_MSG };
     if (url) await DB.prepare("INSERT INTO market_meta (key,value) VALUES ('source_url',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(url).run();
     else url = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
     if (!url) return { ok: false, index: 0, opps: 0, message: "Nie je nastavené zdrojové URL (market-data.json)." };
+    if (!trustedDataUrl(url)) return { ok: false, index: 0, opps: 0, message: UNTRUSTED_MSG };
     let json: unknown;
     try { json = await fetchJsonTimed(url, 15000); } catch (e) { return { ok: false, index: 0, opps: 0, message: e instanceof Error ? e.message : "Fetch zlyhal." }; }
     const j = asObj(json) ?? {};
@@ -3343,6 +3391,7 @@ export const refreshMarketListings = createServerFn({ method: "POST" })
     if (!(await pipelineAuthed(role, data.pipelineSecret))) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
+    if (!trustedDataUrl(data.url)) return { ok: false, count: 0, message: UNTRUSTED_MSG };
     let arr: unknown[];
     try { const j = await fetchJsonTimed(data.url, 20000); arr = Array.isArray(j) ? j : asArr((asObj(j) ?? {}).listings); }
     catch (e) { return { ok: false, count: 0, message: e instanceof Error ? e.message : "Fetch zlyhal." }; }
@@ -3370,6 +3419,7 @@ export const refreshMarketPriceHistory = createServerFn({ method: "POST" })
     if (!(await pipelineAuthed(role, data.pipelineSecret))) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings();
     if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
+    if (!trustedDataUrl(data.url)) return { ok: false, count: 0, message: UNTRUSTED_MSG };
     let arr: unknown[];
     try { const j = await fetchJsonTimed(data.url, 20000); arr = Array.isArray(j) ? j : asArr((asObj(j) ?? {}).history); }
     catch (e) { return { ok: false, count: 0, message: e instanceof Error ? e.message : "Fetch zlyhal." }; }
@@ -3472,7 +3522,7 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!want || data.secret !== want) return { ok: false, message: "unauthorized" };
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     // INSERT OR IGNORE + UNIQUE → opakovaný push to neduplikuje a nepotrebuje reset
@@ -3864,7 +3914,7 @@ export const ingestDataset = createServerFn({ method: "POST" })
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "DB nedostupná" };
     const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
-    if (!expected || data.secret !== expected) return { ok: false, message: "Neplatný secret" };
+    if (!secretEq(data.secret, expected)) return { ok: false, message: "Neplatný secret" };
     const did = `kn-${data.kodKu}`;
     // Cielené premazanie LEN titulov/tiarch — lv_titles nemá unique kľúč, takže opakovaný push bez
     // neho duplikuje riadky. `reset` sa na to použiť nedá, ten zmaže aj parcely, vlastníkov a signály.
@@ -3942,7 +3992,7 @@ export const ingestMarketAll = createServerFn({ method: "POST" })
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "DB nedostupná" };
     const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
-    if (!expected || data.secret !== expected) return { ok: false, message: "Neplatný secret" };
+    if (!secretEq(data.secret, expected)) return { ok: false, message: "Neplatný secret" };
     const src = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
     if (!src) return { ok: false, message: "Chýba source_url v market_meta" };
     const adminRole = "admin" as Role;
@@ -5062,6 +5112,7 @@ export const refreshUpRegistry = createServerFn({ method: "POST" })
     if (!canRunPipeline(role)) return { ok: false, count: 0, message: "Rola nemá oprávnenie." };
     const { DB } = bindings(); if (!DB) return { ok: false, count: 0, message: "Databáza nedostupná." };
     const url = data.url ?? "https://raw.githubusercontent.com/kristiakbohus-hub/tri-lipy-market/main/up-registry.json";
+    if (!trustedDataUrl(url)) return { ok: false, count: 0, message: UNTRUSTED_MSG };
     let j: unknown;
     try { j = await fetchJsonTimed(url, 15000); } catch (e) { return { ok: false, count: 0, message: e instanceof Error ? e.message : "Fetch zlyhal." }; }
     const arr = asArr((asObj(j) ?? {}).registry);

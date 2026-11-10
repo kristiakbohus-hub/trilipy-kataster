@@ -143,7 +143,7 @@ function PrieskumPage() {
 
       {res && !empty ? (
         <div className="flex items-center justify-between gap-2">
-          {res.llmUsed ? <span className="rounded-full border border-brand/40 bg-brand/5 px-2 py-0.5 text-[11px] text-brand" title="Dopyt spracovala AI (Claude Haiku) — rozumie ľubovoľným podmienkam vrátane rokov a právnych udalostí">🤖 AI porozumela dopytu</span> : <span />}
+          {res.llmUsed ? <span className="rounded-full border border-brand/40 bg-brand/5 px-2 py-0.5 text-[11px] text-brand" title="Dopyt spracovala AI (Claude Haiku) — rozumie ľubovoľným podmienkam vrátane rokov a právnych udalostí">🤖 AI porozumela dopytu</span> : res.llmLimited ? <span className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted" title="AI dopyty sú platené, preto majú denný limit. Hľadanie pokračuje podľa pravidiel.">Denný limit AI vyčerpaný — hľadám podľa pravidiel</span> : <span />}
           <button onClick={exportShortlist} className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-fg hover:border-ink" title="Branded prehľad nájdených LV / vlastníkov / inzerátov (.doc) na tlač / poradu">⬇ Export shortlist (.doc)</button>
         </div>
       ) : null}
