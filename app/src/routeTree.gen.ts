@@ -54,6 +54,8 @@ import { Route as ApiIngestObecChangesRouteImport } from './routes/api.ingest-ob
 import { Route as ApiIngestAcquisitionsRouteImport } from './routes/api.ingest-acquisitions'
 import { Route as ApiIngestLandsearchRouteImport } from './routes/api.ingest-landsearch'
 import { Route as ApiIngestZaRouteImport } from './routes/api.ingest-za'
+import { Route as ApiBuyerMatchesRouteImport } from './routes/api.buyer-matches'
+import { Route as ApiIngestBuyerLeadsRouteImport } from './routes/api.ingest-buyer-leads'
 import { Route as ApiIngestBuyerFirmsRouteImport } from './routes/api.ingest-buyer-firms'
 import { Route as ApiIngestUpRouteImport } from './routes/api.ingest-up'
 import { Route as ApiIngestScenarioRunRouteImport } from './routes/api.ingest-scenario-run'
@@ -292,6 +294,16 @@ const ApiIngestZaRoute = ApiIngestZaRouteImport.update({
   path: '/api/ingest-za',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiBuyerMatchesRoute = ApiBuyerMatchesRouteImport.update({
+  id: '/api/buyer-matches',
+  path: '/api/buyer-matches',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestBuyerLeadsRoute = ApiIngestBuyerLeadsRouteImport.update({
+  id: '/api/ingest-buyer-leads',
+  path: '/api/ingest-buyer-leads',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIngestBuyerFirmsRoute = ApiIngestBuyerFirmsRouteImport.update({
   id: '/api/ingest-buyer-firms',
   path: '/api/ingest-buyer-firms',
@@ -359,6 +371,8 @@ export interface FileRoutesByFullPath {
   '/zdedene-byty': typeof ZdedeneBytyRoute
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/buyer-matches': typeof ApiBuyerMatchesRoute
+  '/api/ingest-buyer-leads': typeof ApiIngestBuyerLeadsRoute
   '/api/ingest-buyer-firms': typeof ApiIngestBuyerFirmsRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
@@ -418,6 +432,8 @@ export interface FileRoutesByTo {
   '/zdedene-byty': typeof ZdedeneBytyRoute
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/buyer-matches': typeof ApiBuyerMatchesRoute
+  '/api/ingest-buyer-leads': typeof ApiIngestBuyerLeadsRoute
   '/api/ingest-buyer-firms': typeof ApiIngestBuyerFirmsRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
@@ -478,6 +494,8 @@ export interface FileRoutesById {
   '/zdedene-byty': typeof ZdedeneBytyRoute
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/buyer-matches': typeof ApiBuyerMatchesRoute
+  '/api/ingest-buyer-leads': typeof ApiIngestBuyerLeadsRoute
   '/api/ingest-buyer-firms': typeof ApiIngestBuyerFirmsRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
@@ -539,6 +557,8 @@ export interface FileRouteTypes {
     | '/zdedene-byty'
     | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/buyer-matches'
+    | '/api/ingest-buyer-leads'
     | '/api/ingest-buyer-firms'
     | '/api/ingest-up'
     | '/api/ingest-scenario-run'
@@ -598,6 +618,8 @@ export interface FileRouteTypes {
     | '/zdedene-byty'
     | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/buyer-matches'
+    | '/api/ingest-buyer-leads'
     | '/api/ingest-buyer-firms'
     | '/api/ingest-up'
     | '/api/ingest-scenario-run'
@@ -657,6 +679,8 @@ export interface FileRouteTypes {
     | '/zdedene-byty'
     | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/buyer-matches'
+    | '/api/ingest-buyer-leads'
     | '/api/ingest-buyer-firms'
     | '/api/ingest-up'
     | '/api/ingest-scenario-run'
@@ -713,6 +737,8 @@ export interface RootRouteChildren {
   ZdedeneBytyRoute: typeof ZdedeneBytyRoute
   PodaNaByvanieRoute: typeof PodaNaByvanieRoute
   ApiIngestZaRoute: typeof ApiIngestZaRoute
+  ApiBuyerMatchesRoute: typeof ApiBuyerMatchesRoute
+  ApiIngestBuyerLeadsRoute: typeof ApiIngestBuyerLeadsRoute
   ApiIngestBuyerFirmsRoute: typeof ApiIngestBuyerFirmsRoute
   ApiIngestUpRoute: typeof ApiIngestUpRoute
   ApiIngestScenarioRunRoute: typeof ApiIngestScenarioRunRoute
@@ -915,6 +941,20 @@ declare module '@tanstack/react-router' {
       path: '/api/ingest-za'
       fullPath: '/api/ingest-za'
       preLoaderRoute: typeof ApiIngestZaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/buyer-matches': {
+      id: '/api/buyer-matches'
+      path: '/api/buyer-matches'
+      fullPath: '/api/buyer-matches'
+      preLoaderRoute: typeof ApiBuyerMatchesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-buyer-leads': {
+      id: '/api/ingest-buyer-leads'
+      path: '/api/ingest-buyer-leads'
+      fullPath: '/api/ingest-buyer-leads'
+      preLoaderRoute: typeof ApiIngestBuyerLeadsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-buyer-firms': {
@@ -1180,6 +1220,8 @@ const rootRouteChildren: RootRouteChildren = {
   ZdedeneBytyRoute: ZdedeneBytyRoute,
   PodaNaByvanieRoute: PodaNaByvanieRoute,
   ApiIngestZaRoute: ApiIngestZaRoute,
+  ApiBuyerMatchesRoute: ApiBuyerMatchesRoute,
+  ApiIngestBuyerLeadsRoute: ApiIngestBuyerLeadsRoute,
   ApiIngestBuyerFirmsRoute: ApiIngestBuyerFirmsRoute,
   ApiIngestUpRoute: ApiIngestUpRoute,
   ApiIngestScenarioRunRoute: ApiIngestScenarioRunRoute,

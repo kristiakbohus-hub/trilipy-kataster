@@ -5573,3 +5573,48 @@ export const ingestBuyerFirms = createServerFn({ method: "POST" })
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
     return { ok: true, inserted: data.rows.length };
   });
+
+// ——— OS TRI LIPY → Kataster Core: kvalifikovaný záujemca do evidencie dopytu + jeho zhody ———
+// OS TRI LIPY (iný systém) kvalifikuje leady z Facebooku v 5 oblastiach (potreba, rozpočet, financovanie,
+// čas kúpy, ďalší krok) a podľa jeho dokumentácie si údaje o kupcoch berie z Kataster Core cez API.
+// Kontrakt: 42_NL/KATASTER_CORE_V1_EXECUTION_PACK/23_API_OS_TRI_LIPY_KUPCI.md. Auth = ingest secret.
+const leadRow = z.object({
+  externalId: z.string().min(1).max(100),
+  kind: z.enum(BUYER_KINDS).default("osoba"), name: z.string().trim().min(2).max(200),
+  ico: z.string().max(20).optional(), contact: z.string().max(300).optional(),
+  ptype: z.enum(BUYER_PTYPES), purpose: z.enum(BUYER_PURPOSES).optional(),
+  areaMin: z.number().min(0).max(1e8).optional(), areaMax: z.number().min(0).max(1e8).optional(),
+  budgetMax: z.number().min(0).max(1e10).optional(), locations: z.string().max(500).optional(),
+  timeframe: z.string().max(100).optional(), financing: z.string().max(200).optional(),
+  note: z.string().max(2000).optional(), status: z.enum(["aktivny", "pozastaveny", "uzavrety"]).optional(),
+});
+export const ingestBuyerLeads = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), rows: z.array(leadRow).max(200) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; upserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const stmt = DB.prepare(`INSERT INTO buyer_requests (source,external_id,kind,name,ico,contact,ptype,purpose,area_min,area_max,budget_max,locations,timeframe,financing,note,status,author)
+      VALUES ('os_tri_lipy',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'OS TRI LIPY')
+      ON CONFLICT(source, external_id) WHERE external_id IS NOT NULL DO UPDATE SET kind=excluded.kind, name=excluded.name, ico=excluded.ico,
+        contact=excluded.contact, ptype=excluded.ptype, purpose=excluded.purpose, area_min=excluded.area_min, area_max=excluded.area_max,
+        budget_max=excluded.budget_max, locations=excluded.locations, timeframe=excluded.timeframe, financing=excluded.financing,
+        note=excluded.note, status=excluded.status, updated_at=datetime('now')`);
+    const batch = data.rows.map((r) => stmt.bind(r.externalId, r.kind, r.name, r.ico ?? null, r.contact ?? null, r.ptype, r.purpose ?? null,
+      r.areaMin ?? null, r.areaMax ?? null, r.budgetMax ?? null, r.locations ?? null, r.timeframe ?? null, r.financing ?? null, r.note ?? null, r.status ?? "aktivny"));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    await logAudit("buyer.os_ingest", "system", `OS TRI LIPY: ${data.rows.length} záujemcov`);
+    return { ok: true, upserted: data.rows.length };
+  });
+
+export const buyerMatchesForLead = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), externalId: z.string().min(1).max(100) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; requestId?: number; land?: BuyerLandMatch[]; listings?: BuyerListingMatch[]; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const r = (await q<BuyerRequest>("SELECT * FROM buyer_requests WHERE source='os_tri_lipy' AND external_id=?", [data.externalId]))[0];
+    if (!r) return { ok: false, message: "Záujemca s týmto externalId nie je v evidencii." };
+    const dss = await q<DsRow>("SELECT id, ku_code, ku_name, region FROM datasets").catch(() => []);
+    return { ok: true, requestId: r.id, ...(await matchBuyer(r, dss)) };
+  });
