@@ -53,6 +53,7 @@ import { Route as ApiIngestObecChangesRouteImport } from './routes/api.ingest-ob
 import { Route as ApiIngestAcquisitionsRouteImport } from './routes/api.ingest-acquisitions'
 import { Route as ApiIngestLandsearchRouteImport } from './routes/api.ingest-landsearch'
 import { Route as ApiIngestZaRouteImport } from './routes/api.ingest-za'
+import { Route as ApiIngestBuyerFirmsRouteImport } from './routes/api.ingest-buyer-firms'
 import { Route as ApiIngestUpRouteImport } from './routes/api.ingest-up'
 import { Route as ApiIngestScenarioRunRouteImport } from './routes/api.ingest-scenario-run'
 import { Route as ApiIngestSettlementRouteImport } from './routes/api.ingest-settlement'
@@ -285,6 +286,11 @@ const ApiIngestZaRoute = ApiIngestZaRouteImport.update({
   path: '/api/ingest-za',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestBuyerFirmsRoute = ApiIngestBuyerFirmsRouteImport.update({
+  id: '/api/ingest-buyer-firms',
+  path: '/api/ingest-buyer-firms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIngestUpRoute = ApiIngestUpRouteImport.update({
   id: '/api/ingest-up',
   path: '/api/ingest-up',
@@ -347,6 +353,7 @@ export interface FileRoutesByFullPath {
   '/zdedene-byty': typeof ZdedeneBytyRoute
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/ingest-buyer-firms': typeof ApiIngestBuyerFirmsRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
@@ -404,6 +411,7 @@ export interface FileRoutesByTo {
   '/zdedene-byty': typeof ZdedeneBytyRoute
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/ingest-buyer-firms': typeof ApiIngestBuyerFirmsRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
@@ -462,6 +470,7 @@ export interface FileRoutesById {
   '/zdedene-byty': typeof ZdedeneBytyRoute
   '/poda-na-byvanie': typeof PodaNaByvanieRoute
   '/api/ingest-za': typeof ApiIngestZaRoute
+  '/api/ingest-buyer-firms': typeof ApiIngestBuyerFirmsRoute
   '/api/ingest-up': typeof ApiIngestUpRoute
   '/api/ingest-scenario-run': typeof ApiIngestScenarioRunRoute
   '/api/ingest-settlement': typeof ApiIngestSettlementRoute
@@ -521,6 +530,7 @@ export interface FileRouteTypes {
     | '/zdedene-byty'
     | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/ingest-buyer-firms'
     | '/api/ingest-up'
     | '/api/ingest-scenario-run'
     | '/api/ingest-settlement'
@@ -578,6 +588,7 @@ export interface FileRouteTypes {
     | '/zdedene-byty'
     | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/ingest-buyer-firms'
     | '/api/ingest-up'
     | '/api/ingest-scenario-run'
     | '/api/ingest-settlement'
@@ -635,6 +646,7 @@ export interface FileRouteTypes {
     | '/zdedene-byty'
     | '/poda-na-byvanie'
     | '/api/ingest-za'
+    | '/api/ingest-buyer-firms'
     | '/api/ingest-up'
     | '/api/ingest-scenario-run'
     | '/api/ingest-settlement'
@@ -689,6 +701,7 @@ export interface RootRouteChildren {
   ZdedeneBytyRoute: typeof ZdedeneBytyRoute
   PodaNaByvanieRoute: typeof PodaNaByvanieRoute
   ApiIngestZaRoute: typeof ApiIngestZaRoute
+  ApiIngestBuyerFirmsRoute: typeof ApiIngestBuyerFirmsRoute
   ApiIngestUpRoute: typeof ApiIngestUpRoute
   ApiIngestScenarioRunRoute: typeof ApiIngestScenarioRunRoute
   ApiIngestSettlementRoute: typeof ApiIngestSettlementRoute
@@ -889,6 +902,13 @@ declare module '@tanstack/react-router' {
       path: '/api/ingest-za'
       fullPath: '/api/ingest-za'
       preLoaderRoute: typeof ApiIngestZaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-buyer-firms': {
+      id: '/api/ingest-buyer-firms'
+      path: '/api/ingest-buyer-firms'
+      fullPath: '/api/ingest-buyer-firms'
+      preLoaderRoute: typeof ApiIngestBuyerFirmsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-up': {
@@ -1140,6 +1160,7 @@ const rootRouteChildren: RootRouteChildren = {
   ZdedeneBytyRoute: ZdedeneBytyRoute,
   PodaNaByvanieRoute: PodaNaByvanieRoute,
   ApiIngestZaRoute: ApiIngestZaRoute,
+  ApiIngestBuyerFirmsRoute: ApiIngestBuyerFirmsRoute,
   ApiIngestUpRoute: ApiIngestUpRoute,
   ApiIngestScenarioRunRoute: ApiIngestScenarioRunRoute,
   ApiIngestSettlementRoute: ApiIngestSettlementRoute,

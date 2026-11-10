@@ -521,6 +521,16 @@ function BuyersSection({ datasetId, parcelNo, token }: { datasetId: string; parc
             </li>))}</ul>
         )}
       </div>
+      <div>
+        <div className="font-medium text-fg">Firmy z registra so sídlom v okrese{b.okres ? ` ${b.okres}` : ""} ({b.registryFirms.length})</div>
+        {b.registryFirms.length === 0 ? <Muted>Zoznam firiem z registra (RPO) pre tento okres ešte nie je načítaný.</Muted> : (
+          <ul>{b.registryFirms.map((f) => (
+            <li key={f.ico} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+              <span className="min-w-0">{f.name}<span className="text-muted"> · IČO {f.ico}</span></span>
+              <span className="shrink-0 text-muted">{[f.category, f.obec, f.established ? `od ${f.established.slice(0, 4)}` : null].filter(Boolean).join(" · ")}</span>
+            </li>))}</ul>
+        )}
+      </div>
       <p className="text-[11px] text-muted">
         Susedia a nedávni kupci sú odvodený záujem (môžu mať dôvod kúpiť), nie potvrdený dopyt. Kontakt na osoby
         appka nedohľadáva — oslovenie listom na adresu z katastra; ľudia s GDPR námietkou sú vyradení.

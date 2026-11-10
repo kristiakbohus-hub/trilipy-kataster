@@ -1106,9 +1106,36 @@ async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; 
       "SELECT ku_code, change, title FROM up_changes WHERE detected_at >= datetime('now','-2 days') ORDER BY id DESC LIMIT 20");
     if (ch.length) messages.push(`🗺️ ÚP zmeny (${ch.length}): ` + ch.slice(0, 6).map((c) => `${c.ku_code ?? "?"} ${c.change ?? ""}`.trim()).join(" · "));
   } catch { /* up_changes voliteľné */ }
+  // 3) KUPUJÚCI — nové zhody aktívnych dopytov (pozemkové príležitosti + inzeráty). Prvý prechod dopytu
+  // je základ: zhody sa len zaevidujú. In-app správa ide autorovi dopytu s menom; do Telegramu (skupina)
+  // sa meno OSOBY neposiela — len číslo dopytu (osobný údaj), firmy menom.
+  try {
+    const reqs = await q<BuyerRequest & { user_id: string | null; last_matched: string | null }>(
+      "SELECT * FROM buyer_requests WHERE status='aktivny'");
+    const dss = reqs.length ? await q<DsRow>("SELECT id, ku_code, ku_name, region FROM datasets") : [];
+    for (const r of reqs) {
+      checked++;
+      const m = await matchBuyer(r, dss);
+      const keys = [
+        ...m.land.map((x) => ({ k: `L:${x.kodKu}:${x.parcels ?? ""}:${x.purpose ?? ""}`, t: `${x.kuName ?? x.kodKu} ${Math.round(x.areaM2 ?? 0)} m²` })),
+        ...m.listings.map((x) => ({ k: `M:${x.url ?? x.title ?? ""}`, t: `${x.obec ?? x.okres ?? ""} ${x.priceEur ? Math.round(x.priceEur).toLocaleString("sk-SK") + " €" : ""}`.trim() })),
+      ];
+      const seen = new Set((await q<{ mkey: string }>("SELECT mkey FROM buyer_match_seen WHERE request_id=?", [r.id])).map((x) => x.mkey));
+      const fresh = keys.filter((x) => !seen.has(x.k));
+      for (const x of fresh) await q("INSERT OR IGNORE INTO buyer_match_seen (request_id, mkey) VALUES (?,?)", [r.id, x.k]);
+      const firstRun = r.last_matched == null;
+      await q("UPDATE buyer_requests SET last_matched=datetime('now') WHERE id=?", [r.id]);
+      if (firstRun || !fresh.length) continue;
+      newTotal += fresh.length;
+      const nLand = fresh.filter((x) => x.k.startsWith("L:")).length, nList = fresh.length - nLand;
+      const what = [nLand ? `${nLand} pozemok/pozemky` : "", nList ? `${nList} inzerát(y)` : ""].filter(Boolean).join(", ");
+      if (r.user_id) await q("INSERT INTO notifications (user_id,kind,subject_type,subject_id,body) VALUES (?,?,?,?,?)",
+        [r.user_id, "buyer_match", "buyer", String(r.id), `🤝 Dopyt „${r.name}": nové zhody — ${what}: ` + fresh.slice(0, 5).map((x) => x.t).join(" · ")]);
+      messages.push(`🤝 Dopyt #${r.id} (${r.kind === "osoba" ? "osoba" : r.name}, ${r.ptype}): nové zhody — ${what}`);
+    }
+  } catch { /* buyer_requests voliteľné (pred migráciou 0090/0091) */ }
   // Pozn.: zmeny v katastri (change_log) sa zámerne NEposielajú do Telegramu — zobrazujú sa len
-  // v sekcii „História zmien" na výpise LV (rozhodnutie 2026-09-12). Alerty tu ostávajú len pre
-  // uložené hľadania (saved_search) a ÚP zmeny.
+  // v sekcii „História zmien" na výpise LV (rozhodnutie 2026-09-12).
   return { checked, newTotal, messages };
 }
 
@@ -5385,8 +5412,10 @@ export const matchBuyerRequest = createServerFn({ method: "POST" })
 // ——— Kupci ku konkrétnej parcele ———
 export type BuyerPerson = { name: string; isCompany: boolean; obec: string | null; lvNo: number; detail?: string };
 export type BuyerCompany = { name: string; ico: string | null; lvCount: number; category: string };
+export type BuyerRegistryFirm = { name: string; ico: string; obec: string | null; category: string | null; established: string | null };
 export type ParcelBuyers = {
   ok: boolean; access: OwnerAccess; message?: string;
+  registryFirms: BuyerRegistryFirm[]; okres: string | null;
   neighbors: { parcelNo: string; lvNo: number | null; owners: BuyerPerson[] }[];
   neighborsCount: number;
   recentBuyers: BuyerPerson[]; recentBuyersCount: number; recentFromYear: number;
@@ -5425,7 +5454,7 @@ function buyerCategory(name: string): string {
 export const getParcelBuyers = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string(), datasetId: z.string(), parcelNo: z.string() }))
   .handler(async ({ data }): Promise<ParcelBuyers> => {
-    const empty: ParcelBuyers = { ok: false, access: "denied", neighbors: [], neighborsCount: 0, recentBuyers: [], recentBuyersCount: 0, recentFromYear: 0, companies: [], requests: [] };
+    const empty: ParcelBuyers = { ok: false, access: "denied", registryFirms: [], okres: null, neighbors: [], neighborsCount: 0, recentBuyers: [], recentBuyersCount: 0, recentFromYear: 0, companies: [], requests: [] };
     const u = await requireUser(data.token);
     if (!u) return { ...empty, message: "Neprihlásený." };
     const access = ownerAccess(u.role);
@@ -5491,6 +5520,15 @@ export const getParcelBuyers = createServerFn({ method: "POST" })
     const companies = comp.filter((c) => !NOT_MARKET_BUYER.test(c.name)).slice(0, 25)
       .map((c) => ({ name: c.name, ico: c.ico, lvCount: c.n, category: buyerCategory(c.name) }));
 
+    // 3b) FIRMY Z REGISTRA (RPO) so sídlom v okrese — developeri, stavebné firmy, realitky, investori,
+    // aj keď tu zatiaľ nič nevlastnia. Kategória je z názvu (RPO odbor činnosti neposkytuje).
+    const okresRaw = ((ds?.region ?? "").split("·")[0] ?? "").replace(/^\s*okres\s+/i, "").trim() || null;
+    const known = new Set(companies.map((c) => c.ico).filter(Boolean));
+    const registryFirms = okresRaw ? (await q<BuyerRegistryFirm>(
+      `SELECT name, ico, obec, category, established FROM buyer_firms WHERE okres = ?
+       ORDER BY CASE category WHEN 'developer / investor' THEN 0 WHEN 'stavebná firma' THEN 1 WHEN 'realitná kancelária' THEN 2 ELSE 3 END, established DESC LIMIT 60`,
+      [okresRaw]).catch(() => [])).filter((f) => !known.has(f.ico)).slice(0, 30) : [];
+
     // 4) ZHODNÝ DOPYT z evidencie
     const reqs = await q<BuyerRequest>("SELECT * FROM buyer_requests WHERE status='aktivny' AND ptype='pozemok'").catch(() => []);
     const requests = reqs.filter((r) => (!ds || dsInLocations(ds, locTokens(r.locations)))
@@ -5500,10 +5538,38 @@ export const getParcelBuyers = createServerFn({ method: "POST" })
 
     await logAudit("buyers.parcel", u.role, `Kupci k parcele ${data.parcelNo} (${data.datasetId})`, data.datasetId);
     return {
-      ok: true, access,
+      ok: true, access, registryFirms, okres: okresRaw,
       neighbors: access === "full" ? neighbors : neighbors.map((n) => ({ ...n, owners: visible(n.owners) })).filter((n) => n.owners.length),
       neighborsCount,
       recentBuyers: visible(recentAll).slice(0, 40), recentBuyersCount: recentAll.length, recentFromYear: fromYear,
       companies, requests,
     };
+  });
+
+// ——— Firmy z RPO ako možní kupci (developeri, stavebné firmy, realitky, investori v okrese) ———
+export const ingestBuyerFirms = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    replaceOkres: z.array(z.string()).max(64).optional(),
+    rows: z.array(z.object({
+      ico: z.string().min(6).max(12), name: z.string().min(2).max(300), obec: z.string().max(120).nullable().optional(),
+      okres: z.string().max(120).nullable().optional(), category: z.string().max(60).nullable().optional(),
+      established: z.string().max(20).nullable().optional(),
+    })).max(1000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    if (data.replaceOkres && data.replaceOkres.length) {
+      const ph = data.replaceOkres.map(() => "?").join(",");
+      await DB.prepare(`DELETE FROM buyer_firms WHERE okres IN (${ph})`).bind(...data.replaceOkres).run();
+    }
+    const stmt = DB.prepare(`INSERT INTO buyer_firms (ico,name,obec,okres,category,established,updated_at) VALUES (?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(ico) DO UPDATE SET name=excluded.name, obec=excluded.obec, okres=excluded.okres, category=excluded.category,
+      established=excluded.established, updated_at=datetime('now')`);
+    const batch = data.rows.map((r) => stmt.bind(r.ico, r.name, r.obec ?? null, r.okres ?? null, r.category ?? null, r.established ?? null));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
   });
