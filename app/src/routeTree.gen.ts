@@ -29,6 +29,8 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiIngestConstructionRouteImport } from './routes/api.ingest-construction'
+import { Route as ApiIngestFirmFinanceRouteImport } from './routes/api.ingest-firm-finance'
 import { Route as PTokenRouteImport } from './routes/p.$token'
 import { Route as ApiOfferRouteImport } from './routes/api.offer'
 import { Route as ProblemoveLvRouteImport } from './routes/problemove-lv'
@@ -181,6 +183,16 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestConstructionRoute = ApiIngestConstructionRouteImport.update({
+  id: '/api/ingest-construction',
+  path: '/api/ingest-construction',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestFirmFinanceRoute = ApiIngestFirmFinanceRouteImport.update({
+  id: '/api/ingest-firm-finance',
+  path: '/api/ingest-firm-finance',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PTokenRoute = PTokenRouteImport.update({
@@ -482,6 +494,8 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-construction': typeof ApiIngestConstructionRoute
+  '/api/ingest-firm-finance': typeof ApiIngestFirmFinanceRoute
   '/p/$token': typeof PTokenRoute
   '/api/offer': typeof ApiOfferRoute
   '/problemove-lv': typeof ProblemoveLvRoute
@@ -557,6 +571,8 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-construction': typeof ApiIngestConstructionRoute
+  '/api/ingest-firm-finance': typeof ApiIngestFirmFinanceRoute
   '/p/$token': typeof PTokenRoute
   '/api/offer': typeof ApiOfferRoute
   '/problemove-lv': typeof ProblemoveLvRoute
@@ -633,6 +649,8 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-construction': typeof ApiIngestConstructionRoute
+  '/api/ingest-firm-finance': typeof ApiIngestFirmFinanceRoute
   '/p/$token': typeof PTokenRoute
   '/api/offer': typeof ApiOfferRoute
   '/problemove-lv': typeof ProblemoveLvRoute
@@ -710,6 +728,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-construction'
+    | '/api/ingest-firm-finance'
     | '/p/$token'
     | '/api/offer'
     | '/problemove-lv'
@@ -785,6 +805,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-construction'
+    | '/api/ingest-firm-finance'
     | '/p/$token'
     | '/api/offer'
     | '/problemove-lv'
@@ -860,6 +882,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-construction'
+    | '/api/ingest-firm-finance'
     | '/p/$token'
     | '/api/offer'
     | '/problemove-lv'
@@ -932,6 +956,8 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiIngestConstructionRoute: typeof ApiIngestConstructionRoute
+  ApiIngestFirmFinanceRoute: typeof ApiIngestFirmFinanceRoute
   PTokenRoute: typeof PTokenRoute
   ApiOfferRoute: typeof ApiOfferRoute
   ProblemoveLvRoute: typeof ProblemoveLvRoute
@@ -1244,6 +1270,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZadaniaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ingest-construction': {
+      id: '/api/ingest-construction'
+      path: '/api/ingest-construction'
+      fullPath: '/api/ingest-construction'
+      preLoaderRoute: typeof ApiIngestConstructionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-firm-finance': {
+      id: '/api/ingest-firm-finance'
+      path: '/api/ingest-firm-finance'
+      fullPath: '/api/ingest-firm-finance'
+      preLoaderRoute: typeof ApiIngestFirmFinanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/p/$token': {
       id: '/p/$token'
       path: '/p/$token'
@@ -1527,6 +1567,8 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiIngestConstructionRoute: ApiIngestConstructionRoute,
+  ApiIngestFirmFinanceRoute: ApiIngestFirmFinanceRoute,
   PTokenRoute: PTokenRoute,
   ApiOfferRoute: ApiOfferRoute,
   ProblemoveLvRoute: ProblemoveLvRoute,

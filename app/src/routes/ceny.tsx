@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { decSk } from "../lib/domain";
-import { useEffect, useMemo, useState } from "react";
-import { getPriceStats, type PriceStat } from "../lib/api/kataster.functions";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { getPriceStats, getConstruction, type PriceStat, type ConstructionKu } from "../lib/api/kataster.functions";
 import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities, refreshMarketData, refreshMarketListings, refreshMarketPriceHistory, getMarketListings, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -249,6 +249,7 @@ function CenyPage() {
 
       {/* Realizované ceny z katastra (zmluvy) */}
       <RealizedPrices />
+      <NewConstruction />
 
       {/* Príležitosti */}
       <div className="mt-4">
@@ -396,6 +397,55 @@ function RealizedPrices() {
           </div>
         )}
         <p className="mt-2 text-[11px] text-muted">Zdroj: kataster (ÚGKK SR), cena celej zmluvy. Medián sa ukáže pri aspoň 3 zmluvách. Údaj nie je ocenenie nehnuteľnosti.</p>
+      </Card>
+    </div>
+  );
+}
+
+// NOVÁ VÝSTAVBA ZO SATELITU (bod 27, 2026-11-11): Copernicus HRL Imperviousness — nová zastavaná plocha
+// 2018–2024 po k.ú. a ohniská (zhluky ≥ 1000 m²). Kde sa stavia, tam rastie dopyt po pozemkoch. Diaľnice
+// sa odfiltrujú, rozostavané diaľnice (D3 Svrčinovec) zatiaľ nie.
+function NewConstruction() {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<ConstructionKu[] | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => { if (token) getConstruction({ data: { token } }).then((r) => setRows(r.rows)).catch(() => setRows([])); }, [token]);
+  if (!rows || !rows.length) return null;
+  const f1 = (n: number | null | undefined) => (n == null ? "—" : n.toLocaleString("sk-SK", { maximumFractionDigits: 1 }));
+  return (
+    <div className="mt-4">
+      <SectionHeader title="Nová výstavba zo satelitu (2018–2024)" hint="kde pribudla zastavaná plocha — signál rastúceho dopytu po pozemkoch" />
+      <Card className="p-3">
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-muted">
+              <th className="py-1 pr-3 font-medium">k.ú.</th><th className="py-1 pr-3 text-right font-medium">nová zástavba</th><th className="py-1 pr-3 text-right font-medium">ha / km²</th><th className="py-1 pr-3 text-right font-medium">ohniská</th><th className="py-1 font-medium"></th>
+            </tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <Fragment key={r.kodKu}>
+                  <tr className="border-t border-line/60">
+                    <td className="py-1 pr-3 text-fg">{r.nazov ?? r.kodKu}{r.okres && r.okres !== r.nazov ? <span className="text-muted"> · {r.okres}</span> : null}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{f1(r.newHaBezInfra ?? r.newHa)} ha{r.newHaBezInfra != null && r.newHa > r.newHaBezInfra ? <span className="text-muted"> (+{f1(r.newHa - r.newHaBezInfra)} diaľnica)</span> : null}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{f1(r.intensity)}</td>
+                    <td className="py-1 pr-3 text-right tabular-nums">{r.hotspots}</td>
+                    <td className="py-1 text-right"><button onClick={() => setOpen(open === r.kodKu ? null : r.kodKu)} className="text-brand hover:underline">{open === r.kodKu ? "skryť" : "ohniská"}</button></td>
+                  </tr>
+                  {open === r.kodKu ? (
+                    <tr><td colSpan={5} className="pb-2">
+                      <ul className="grid gap-x-4 sm:grid-cols-2">{r.spots.slice(0, 20).map((sp) => (
+                        <li key={sp.id} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+                          <span>{Math.round(sp.areaM2 ?? 0).toLocaleString("sk-SK")} m² · {sp.period ?? ""}{sp.typ === "infrastruktura" ? " · diaľnica" : ""}{sp.density != null ? ` · zapečatené ${Math.round(sp.density)} %` : ""}</span>
+                          <a href={`/mapa?ll=${sp.lat.toFixed(5)},${sp.lon.toFixed(5)}`} className="text-brand hover:underline">na mape</a>
+                        </li>))}</ul>
+                    </td></tr>
+                  ) : null}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-[11px] text-muted">Zdroj: Copernicus Land Monitoring Service — HRL Imperviousness (EÚ, voľné použitie s uvedením zdroja; údaje upravené). 20 m bunka, orientačné.</p>
       </Card>
     </div>
   );

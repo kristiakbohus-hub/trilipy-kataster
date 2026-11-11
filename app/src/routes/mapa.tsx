@@ -52,6 +52,17 @@ function MapPage() {
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   const [portfolio, setPortfolio] = useState<{ name: string; lvs: { datasetId: string; kuName: string; lvNo: number; share: string | null }[] } | null>(null);
 
+  // deep link /mapa?ll=49.20,18.73 (2026-11-11: nová výstavba zo satelitu, hotspoty) → prelet a „všetko v bode"
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const m = (new URLSearchParams(window.location.search).get("ll") ?? "").match(/^(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)$/);
+    if (!m) return;
+    const lat = Number(m[1]), lng = Number(m[2]);
+    setUserNavigated(true);
+    setFlyTo({ lat, lng, zoom: 17, nonce: Date.now() });
+    setIdentifyAt({ lat, lng, nonce: Date.now() });
+  }, []);
+
   // Výber z vyhľadávania (ako ZBGIS): priblíž, zvýrazni obrys a otvor panel s LV (tlač/PDF).
   async function pickHit(h: MapHit) {
     setSearchMsg(null); setLvPanel(null); setPortfolio(null);

@@ -9,6 +9,13 @@ export function ScorePill({ n }: { n: number }) {
   return <span className={`inline-block min-w-[2.2rem] rounded px-1 text-center text-[11px] font-semibold tabular-nums ${cls}`} title="skóre zhody 0–100 (odvodené, nie ocenenie)">{n}</span>;
 }
 
+/** Finančná sila firmy z RÚZ (bod 9): „tržby 2,1 mil. € · majetok 3,4 mil. € (2025)". */
+export function finText(f: { revenue: number | null; assets: number | null; year: number | null } | null | undefined): string | null {
+  if (!f || (f.revenue == null && f.assets == null)) return null;
+  const m = (n: number) => (Math.abs(n) >= 1e6 ? `${(n / 1e6).toLocaleString("sk-SK", { maximumFractionDigits: 1 })} mil. €` : `${Math.round(n / 1000).toLocaleString("sk-SK")} tis. €`);
+  return [f.revenue != null ? `tržby ${m(f.revenue)}` : null, f.assets != null ? `majetok ${m(f.assets)}` : null].filter(Boolean).join(" · ") + (f.year ? ` (${f.year})` : "");
+}
+
 export const MATCH_STATUS_SK: Record<string, string> = {
   nova: "nová", vybrana: "vybraná do ponuky", poslana: "poslaná klientovi", zaujem: "klient má záujem", obhliadka: "obhliadka", odmietnuta: "odmietnutá",
 };
@@ -91,7 +98,11 @@ export function ListingBuyersPanel({ url }: { url: string }) {
       {d.firms.length ? (
         <div>
           <div className="font-medium text-fg">Firmy z registra v okrese ({d.firms.length})</div>
-          <p className="text-muted">{d.firms.slice(0, 12).map((f) => `${f.name}${f.category ? ` (${f.category})` : ""}`).join(" · ")}</p>
+          <ul>{d.firms.slice(0, 15).map((f) => (
+            <li key={f.ico} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+              <span className="min-w-0">{f.name}{f.category ? <span className="text-muted"> · {f.category}</span> : null}</span>
+              <span className="shrink-0 text-muted">{finText(f.fin) ?? `IČO ${f.ico}`}</span>
+            </li>))}</ul>
         </div>
       ) : null}
       <p className="text-[10px] text-muted">Odvodený záujem, nie potvrdený dopyt. Kontakty osôb appka nedohľadáva.</p>

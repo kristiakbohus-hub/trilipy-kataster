@@ -1,7 +1,7 @@
 // PDF dossier parcely — jedno-klik podklad (kataster + ESKN/AVM + ÚP + limity + trh + siete).
 // Tlač: window.print() (@media print skryje app chrome). Beží na CF (client-side print-to-PDF, bez server PDF).
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ScorePill } from "../components/buyer-ui";
+import { ScorePill, finText } from "../components/buyer-ui";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -567,7 +567,7 @@ function BuyersSection({ datasetId, parcelNo, token, kuName, areaM2 }: { dataset
             return (
               <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
                 <span className="min-w-0"><Pick r={r} />{c.name}{c.ico ? <span className="text-muted"> · IČO {c.ico}</span> : null}</span>
-                <span className="shrink-0 text-muted">{c.category} · {c.lvCount} LV</span>
+                <span className="shrink-0 text-muted">{c.category} · {c.lvCount} LV{finText(c.fin) ? ` · ${finText(c.fin)}` : ""}</span>
               </li>);
           })}</ul>
         )}
@@ -580,7 +580,7 @@ function BuyersSection({ datasetId, parcelNo, token, kuName, areaM2 }: { dataset
             return (
               <li key={f.ico} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
                 <span className="min-w-0"><Pick r={r} />{f.name}<span className="text-muted"> · IČO {f.ico}</span></span>
-                <span className="shrink-0 text-muted">{[f.category, f.obec, f.established ? `od ${f.established.slice(0, 4)}` : null].filter(Boolean).join(" · ")}</span>
+                <span className="shrink-0 text-muted">{[f.category, f.obec, finText(f.fin), f.established ? `od ${f.established.slice(0, 4)}` : null].filter(Boolean).join(" · ")}</span>
               </li>);
           })}</ul>
         )}

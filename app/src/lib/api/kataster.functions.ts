@@ -6324,6 +6324,8 @@ export const listingBuyers = createServerFn({ method: "POST" })
       `SELECT name, ico, obec, category, established FROM buyer_firms WHERE okres = ?
        ORDER BY CASE category WHEN 'developer / investor' THEN 0 WHEN 'stavebná firma' THEN 1 WHEN 'realitná kancelária' THEN 2 ELSE 3 END, established DESC LIMIT 25`,
       [x.okres.replace(/^okres\s+/i, "")]).catch(() => []) : [];
+    { const fm = await firmFinanceMap(firms.map((f) => f.ico)); for (const f of firms) f.fin = fm.get(f.ico) ?? null;
+      firms.sort((a, b) => (b.fin?.revenue ?? -1) - (a.fin?.revenue ?? -1)); }   // bod 9: finančne silní kupci najprv
     await logAudit("buyers.listing", u.role, `Kto by kúpil: ${x.title ?? data.url}`.slice(0, 200));
     return { ok: true, access, okres: x.okres, listing: { title: x.title, ptype: x.ptype, obec: x.obec, priceEur: x.price_eur, areaM2: x.area_m2 },
       requests: requests.slice(0, 30), demandAds, repeatBuyers, repeatFromYear: fromYear, firms };
@@ -6356,8 +6358,8 @@ function scoreParcelForRequest(r: BuyerReqFull, ds: DsRow | null, p: { area: num
 
 // ——— Kupci ku konkrétnej parcele ———
 export type BuyerPerson = { name: string; isCompany: boolean; obec: string | null; lvNo: number; detail?: string };
-export type BuyerCompany = { name: string; ico: string | null; lvCount: number; category: string };
-export type BuyerRegistryFirm = { name: string; ico: string; obec: string | null; category: string | null; established: string | null };
+export type BuyerCompany = { name: string; ico: string | null; lvCount: number; category: string; fin?: FirmFinance | null };
+export type BuyerRegistryFirm = { name: string; ico: string; obec: string | null; category: string | null; established: string | null; fin?: FirmFinance | null };
 export type ParcelBuyers = {
   ok: boolean; access: OwnerAccess; message?: string;
   registryFirms: BuyerRegistryFirm[]; okres: string | null;
@@ -6468,7 +6470,7 @@ export const getParcelBuyers = createServerFn({ method: "POST" })
     const comp = await q<{ name: string; ico: string | null; n: number }>(
       `SELECT MIN(name) name, ico, COUNT(DISTINCT lv_no) n FROM lv_owners WHERE dataset_id=? AND is_company=1
        GROUP BY COALESCE(NULLIF(ico,''), name) ORDER BY n DESC LIMIT 80`, [data.datasetId]).catch(() => []);
-    const companies = comp.filter((c) => !NOT_MARKET_BUYER.test(c.name)).slice(0, 25)
+    const companies: BuyerCompany[] = comp.filter((c) => !NOT_MARKET_BUYER.test(c.name)).slice(0, 25)
       .map((c) => ({ name: c.name, ico: c.ico, lvCount: c.n, category: buyerCategory(c.name) }));
 
     // 3b) FIRMY Z REGISTRA (RPO) so sídlom v okrese — developeri, stavebné firmy, realitky, investori,
@@ -6479,6 +6481,10 @@ export const getParcelBuyers = createServerFn({ method: "POST" })
       `SELECT name, ico, obec, category, established FROM buyer_firms WHERE okres = ?
        ORDER BY CASE category WHEN 'developer / investor' THEN 0 WHEN 'stavebná firma' THEN 1 WHEN 'realitná kancelária' THEN 2 ELSE 3 END, established DESC LIMIT 60`,
       [okresRaw]).catch(() => [])).filter((f) => !known.has(f.ico)).slice(0, 30) : [];
+    { const fm = await firmFinanceMap([...registryFirms.map((f) => f.ico), ...companies.map((c) => c.ico)]);
+      for (const f of registryFirms) f.fin = fm.get(f.ico) ?? null;
+      for (const c of companies) c.fin = c.ico ? fm.get(c.ico) ?? null : null;
+      registryFirms.sort((a, b) => (b.fin?.revenue ?? -1) - (a.fin?.revenue ?? -1)); }
 
     // 4) ZHODNÝ DOPYT z evidencie — so skóre (lokalita, výmera, druh, zastavané územie, vlastníci)
     const reqs = await q<BuyerReqFull>("SELECT * FROM buyer_requests WHERE status='aktivny' AND ptype='pozemok'").catch(() => []);
@@ -7221,6 +7227,80 @@ export const getStateContracts = createServerFn({ method: "POST" })
     const rows = await q<{ crz_id: string; day: string; signed: string | null; publisher: string; kind: string; amount: number | null; ku_name: string | null; okres: string | null; party: string | null; url: string | null }>(
       `SELECT * FROM state_contracts WHERE ${cond.join(" AND ")} ORDER BY day DESC, kind LIMIT 200`, args).catch(() => []);
     return { ok: true, rows: rows.map((r) => ({ crzId: r.crz_id, day: r.day, signed: r.signed, publisher: r.publisher, kind: r.kind, amount: r.amount, kuName: r.ku_name, okres: r.okres, party: r.party, url: r.url })) };
+  });
+
+// ——— (bod 9) RÚZ finančná sila firiem a (bod 27) nová výstavba zo satelitu — ingest z Macu + čítanie ———
+export type FirmFinance = { ico: string; name: string | null; year: number | null; revenue: number | null; assets: number | null; equity: number | null; profit: number | null };
+export const ingestFirmFinance = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), rows: z.array(z.object({
+    ico: z.string().regex(/^\d{6,8}$/), name: z.string().max(200).nullable().optional(), year: z.number().int().nullable().optional(),
+    revenue: z.number().nullable().optional(), assets: z.number().nullable().optional(), equity: z.number().nullable().optional(), profit: z.number().nullable().optional(),
+    nace: z.string().max(20).nullable().optional(), founded: z.string().max(20).nullable().optional(),
+  })).max(2000) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const ps = DB.prepare(`INSERT INTO firm_finance (ico,name,year,revenue,assets,equity,profit,nace,founded,updated) VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(ico) DO UPDATE SET name=excluded.name, year=excluded.year, revenue=excluded.revenue, assets=excluded.assets, equity=excluded.equity,
+      profit=excluded.profit, nace=excluded.nace, founded=excluded.founded, updated=excluded.updated`);
+    const st = data.rows.map((r) => ps.bind(r.ico, r.name ?? null, r.year ?? null, r.revenue ?? null, r.assets ?? null, r.equity ?? null, r.profit ?? null, r.nace ?? null, r.founded ?? null));
+    for (let i = 0; i < st.length; i += 50) await DB.batch(st.slice(i, i + 50));
+    return { ok: true, inserted: st.length };
+  });
+/** Finančné údaje firiem podľa IČO (pre zoznamy kupcov). */
+async function firmFinanceMap(icos: (string | null | undefined)[]): Promise<Map<string, FirmFinance>> {
+  const list = [...new Set(icos.filter((x): x is string => !!x && /^\d{6,8}$/.test(x)))].slice(0, 300);
+  const out = new Map<string, FirmFinance>();
+  for (let i = 0; i < list.length; i += 90) {
+    const part = list.slice(i, i + 90);
+    const rows = await q<FirmFinance>(`SELECT ico, name, year, revenue, assets, equity, profit FROM firm_finance WHERE ico IN (${part.map(() => "?").join(",")})`, part).catch(() => []);
+    for (const r of rows) out.set(r.ico, r);
+  }
+  return out;
+}
+export const ingestConstruction = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), ku: z.array(z.object({
+    kodKu: z.string().regex(/^\d{6}$/), nazov: z.string().max(80).nullable().optional(), okres: z.string().max(60).nullable().optional(), period: z.string().max(20),
+    newHa: z.number(), newHaBezInfra: z.number().nullable().optional(), newHa1821: z.number().nullable().optional(), newHa2124: z.number().nullable().optional(),
+    intensity: z.number().nullable().optional(), hotspots: z.number().int(),
+    spots: z.array(z.object({ id: z.number().int(), lat: z.number(), lon: z.number(), areaM2: z.number().nullable().optional(), period: z.string().max(20).nullable().optional(), typ: z.string().max(20).nullable().optional(), density: z.number().nullable().optional() })).max(500),
+  })).max(200) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    let n = 0;
+    for (const k of data.ku) {
+      const st = [
+        DB.prepare("DELETE FROM construction_hotspots WHERE kod_ku=?").bind(k.kodKu),
+        DB.prepare(`INSERT INTO construction_ku (kod_ku,nazov,okres,period,new_ha,new_ha_bez_infra,new_ha_2018_2021,new_ha_2021_2024,intensity,hotspots,updated) VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
+          ON CONFLICT(kod_ku) DO UPDATE SET nazov=excluded.nazov, okres=excluded.okres, period=excluded.period, new_ha=excluded.new_ha, new_ha_bez_infra=excluded.new_ha_bez_infra,
+          new_ha_2018_2021=excluded.new_ha_2018_2021, new_ha_2021_2024=excluded.new_ha_2021_2024, intensity=excluded.intensity, hotspots=excluded.hotspots, updated=excluded.updated`)
+          .bind(k.kodKu, k.nazov ?? null, k.okres ?? null, k.period, k.newHa, k.newHaBezInfra ?? null, k.newHa1821 ?? null, k.newHa2124 ?? null, k.intensity ?? null, k.hotspots),
+        ...k.spots.map((sp) => DB.prepare("INSERT INTO construction_hotspots (kod_ku,id,lat,lon,area_m2,period,typ,density) VALUES (?,?,?,?,?,?,?,?)")
+          .bind(k.kodKu, sp.id, sp.lat, sp.lon, sp.areaM2 ?? null, sp.period ?? null, sp.typ ?? null, sp.density ?? null)),
+      ];
+      for (let i = 0; i < st.length; i += 50) await DB.batch(st.slice(i, i + 50));
+      n += k.spots.length;
+    }
+    return { ok: true, inserted: n };
+  });
+export type ConstructionKu = { kodKu: string; nazov: string | null; okres: string | null; period: string | null; newHa: number; newHaBezInfra: number | null; intensity: number | null; hotspots: number;
+  spots: { id: number; lat: number; lon: number; areaM2: number | null; period: string | null; typ: string | null; density: number | null }[] };
+export const getConstruction = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: ConstructionKu[] }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [] };
+    const ku = await q<{ kod_ku: string; nazov: string | null; okres: string | null; period: string | null; new_ha: number; new_ha_bez_infra: number | null; intensity: number | null; hotspots: number }>(
+      "SELECT kod_ku, nazov, okres, period, new_ha, new_ha_bez_infra, intensity, hotspots FROM construction_ku ORDER BY COALESCE(new_ha_bez_infra, new_ha) DESC").catch(() => []);
+    const sp = await q<{ kod_ku: string; id: number; lat: number; lon: number; area_m2: number | null; period: string | null; typ: string | null; density: number | null }>(
+      "SELECT kod_ku, id, lat, lon, area_m2, period, typ, density FROM construction_hotspots ORDER BY area_m2 DESC LIMIT 2000").catch(() => []);
+    return { ok: true, rows: ku.map((k) => ({ kodKu: k.kod_ku, nazov: k.nazov, okres: k.okres, period: k.period, newHa: k.new_ha, newHaBezInfra: k.new_ha_bez_infra, intensity: k.intensity, hotspots: k.hotspots,
+      spots: sp.filter((x) => x.kod_ku === k.kod_ku).map((x) => ({ id: x.id, lat: x.lat, lon: x.lon, areaM2: x.area_m2, period: x.period, typ: x.typ, density: x.density })) })) };
   });
 
 // ——— CENY ZO ZMLÚV z katastra (SPI CEN/CAS) — ingest z Macu, výpis pri LV a súhrny (2026-11-11) ———
