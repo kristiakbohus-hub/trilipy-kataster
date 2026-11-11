@@ -6254,3 +6254,37 @@ export const tgDigest = createServerFn({ method: "POST" })
       return { ok: false, message: `súhrn sa nepodarilo zostaviť: ${e instanceof Error ? e.message : "chyba"}` };
     }
   });
+
+// ——— LV časti: parcely C/E pri LV + stavby so súpisným číslom (Mac → /api/ingest-lvparts, migrácia 0097) ———
+// Dovtedy D1 mala len parcely C s obrysom (z mapy) → LV založené na parcelách E nemali výpis časti A,
+// vyhľadávanie „E 1500" ani stavby „s.č. 563". reset = zmaž časti k.ú. pred prvou dávkou (dávky po 2 000).
+export const ingestLvParts = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), reset: z.boolean().optional(),
+    lvParcels: z.array(z.object({
+      lvNo: z.number().int(), register: z.enum(["C", "E"]), parcelNo: z.string().min(1).max(30),
+      areaM2: z.number().nullable().optional(), drpCode: z.number().int().nullable().optional(), drpText: z.string().max(80).nullable().optional(),
+    })).max(3000).optional(),
+    buildings: z.array(z.object({
+      lvNo: z.number().int(), descr: z.string().min(1).max(200), onParcel: z.string().max(30).nullable().optional(),
+      supisneCislo: z.string().max(20).nullable().optional(),
+    })).max(3000).optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const did = `kn-${data.kodKu}`;
+    if (data.reset) {
+      await DB.batch([DB.prepare("DELETE FROM lv_parcels WHERE dataset_id=?").bind(did), DB.prepare("DELETE FROM lv_buildings WHERE dataset_id=?").bind(did)]);
+    }
+    const ps = DB.prepare("INSERT INTO lv_parcels (dataset_id,lv_no,register,parcel_no,area_m2,drp_code,drp_text,placement) VALUES (?,?,?,?,?,?,?,NULL)");
+    const bs = DB.prepare("INSERT INTO lv_buildings (dataset_id,lv_no,descr,on_parcel,supisne_cislo) VALUES (?,?,?,?,?)");
+    const stmts = [
+      ...(data.lvParcels ?? []).map((p) => ps.bind(did, p.lvNo, p.register, p.parcelNo, Math.round(p.areaM2 ?? 0), p.drpCode ?? null, p.drpText ?? null)),
+      ...(data.buildings ?? []).map((b) => bs.bind(did, b.lvNo, b.descr, b.onParcel ?? null, b.supisneCislo ?? null)),
+    ];
+    for (let i = 0; i < stmts.length; i += 100) await DB.batch(stmts.slice(i, i + 100));
+    return { ok: true, inserted: stmts.length };
+  });
