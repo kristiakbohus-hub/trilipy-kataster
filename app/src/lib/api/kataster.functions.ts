@@ -6355,11 +6355,6 @@ async function eskn(url: string, ms = 12000): Promise<Record<string, unknown>> {
   return (asObj(await fetchJsonTimed(url, ms)) ?? {}) as Record<string, unknown>;
 }
 const esknRings = (geom: unknown): MapRing[] => ((asObj(geom)?.rings as MapRing[] | undefined) ?? []);
-async function datasetBbox(did: string): Promise<[number, number, number, number] | null> {
-  const r = (await q<{ a: number | null; b: number | null; c: number | null; d: number | null }>(
-    "SELECT MIN(centroid_lng) a, MIN(centroid_lat) b, MAX(centroid_lng) c, MAX(centroid_lat) d FROM parcels WHERE dataset_id = ? AND centroid_lat IS NOT NULL", [did]))[0];
-  return r && r.a != null && r.b != null && r.c != null && r.d != null ? [r.a - 0.01, r.b - 0.01, r.c + 0.01, r.d + 0.01] : null;
-}
 
 // Interné ESKN ID k.ú. (CADASTRAL_UNIT_ID) pre náš dataset — z identifikácie niekoľkých našich parciel C.
 // Bez neho sa parcela E hľadala podľa čísla v obdĺžniku okolo k.ú. a mohla sa vziať zo susedného k.ú.
