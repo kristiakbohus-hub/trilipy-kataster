@@ -3284,6 +3284,58 @@ export const exportBackup = createServerFn({ method: "POST" })
     return { ok: true, json: JSON.stringify({ app: "tri-lipy-kataster", exported_at: new Date().toISOString(), tables: dump }) };
   });
 
+// ——— TÝŽDENNÁ ZÁLOHA D1 DO R2 (bod 28, rozhodnutie vlastníka 2026-11-11: týždenne, 4 kópie) ———
+// Mac (25_SAVED_ALERTS/d1_backup.py) volá po tabuľkách a dávkach (kľúč rowid) → Worker zapíše gzip JSONL do
+// R2 `zalohy/<dátum>/<tabuľka>/<n>.jsonl.gz`. Bez tabuľky sessions (živé prihlásenia). R2 je súkromné úložisko
+// v tom istom účte ako D1 (heslá sú hashe). Prune nechá posledné 4 dátumy.
+export const backupD1 = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), action: z.enum(["tables", "chunk", "prune", "list"]), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    table: z.string().regex(/^[a-z_][a-z0-9_]{0,60}$/i).optional(), after: z.number().int().optional(), limit: z.number().int().min(100).max(20000).optional(), keep: z.number().int().min(1).max(12).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; tables?: { name: string; rows: number }[]; rows?: number; last?: number | null; bytes?: number; dates?: string[]; deleted?: number }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB, STORAGE } = bindings();
+    if (!DB || !STORAGE) return { ok: false, message: "D1 alebo R2 nie je dostupné." };
+    if (data.action === "tables") {
+      const names = (await q<{ name: string }>("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' ORDER BY name")).map((t) => t.name).filter((n) => n !== "sessions");
+      const tables: { name: string; rows: number }[] = [];
+      for (const n of names) tables.push({ name: n, rows: (await q<{ c: number }>(`SELECT COUNT(*) c FROM "${n}"`).catch(() => []))[0]?.c ?? 0 });
+      return { ok: true, tables };
+    }
+    if (data.action === "chunk") {
+      if (!data.date || !data.table || data.table === "sessions") return { ok: false, message: "chýba dátum alebo tabuľka" };
+      const exists = (await q<{ n: number }>("SELECT COUNT(*) n FROM sqlite_master WHERE type='table' AND name=?", [data.table]))[0]?.n;
+      if (!exists) return { ok: false, message: "tabuľka neexistuje" };
+      const rows = await q<Record<string, unknown> & { _rid: number }>(`SELECT rowid AS _rid, * FROM "${data.table}" WHERE rowid > ? ORDER BY rowid LIMIT ?`, [data.after ?? 0, data.limit ?? 5000]);
+      if (!rows.length) return { ok: true, rows: 0, last: null, bytes: 0 };
+      const text = rows.map((r) => JSON.stringify(r)).join("\n") + "\n";
+      const gz = await new Response(new Blob([text]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer();
+      const key = `zalohy/${data.date}/${data.table}/${String(data.after ?? 0).padStart(12, "0")}.jsonl.gz`;
+      await STORAGE.put(key, gz, { httpMetadata: { contentType: "application/gzip" } });
+      return { ok: true, rows: rows.length, last: rows[rows.length - 1]._rid, bytes: gz.byteLength };
+    }
+    // list / prune — dátumy záloh
+    const dates = new Set<string>(); let cursor: string | undefined;
+    do {
+      const l = await STORAGE.list({ prefix: "zalohy/", delimiter: "/", cursor });
+      for (const pfx of l.delimitedPrefixes) { const d = pfx.split("/")[1]; if (d) dates.add(d); }
+      cursor = l.truncated ? l.cursor : undefined;
+    } while (cursor);
+    const sorted = [...dates].sort().reverse();
+    if (data.action === "list") return { ok: true, dates: sorted };
+    let deleted = 0;
+    for (const d of sorted.slice(data.keep ?? 4)) {
+      let c2: string | undefined;
+      do {
+        const l = await STORAGE.list({ prefix: `zalohy/${d}/`, cursor: c2 });
+        const keys = l.objects.map((o) => o.key);
+        if (keys.length) { await STORAGE.delete(keys); deleted += keys.length; }
+        c2 = l.truncated ? l.cursor : undefined;
+      } while (c2);
+    }
+    return { ok: true, dates: sorted.slice(0, data.keep ?? 4), deleted };
+  });
+
 // ——— Evidenčný list (Bod C) — C-KN parcely + historický UŽÍVATEĽ (uz.CEL cez pa.CEL), NIE vlastník ———
 export const getEvidencnyList = createServerFn({ method: "POST" })
   .validator(z.object({ datasetId: z.string(), celok: z.number(), role: roleSchema, token: z.string().optional() }))

@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiBackupRouteImport } from './routes/api.backup'
 import { Route as ApiIngestListingMatchesRouteImport } from './routes/api.ingest-listing-matches'
 import { Route as ApiIngestMaplayersRouteImport } from './routes/api.ingest-maplayers'
 import { Route as ApiIngestUnregisteredRouteImport } from './routes/api.ingest-unregistered'
@@ -187,6 +188,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBackupRoute = ApiBackupRouteImport.update({
+  id: '/api/backup',
+  path: '/api/backup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIngestListingMatchesRoute = ApiIngestListingMatchesRouteImport.update({
@@ -518,6 +524,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
   '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
   '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
@@ -599,6 +606,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
   '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
   '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
@@ -681,6 +689,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
   '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
   '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
@@ -764,6 +773,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/backup'
     | '/api/ingest-listing-matches'
     | '/api/ingest-maplayers'
     | '/api/ingest-unregistered'
@@ -845,6 +855,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/backup'
     | '/api/ingest-listing-matches'
     | '/api/ingest-maplayers'
     | '/api/ingest-unregistered'
@@ -926,6 +937,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/backup'
     | '/api/ingest-listing-matches'
     | '/api/ingest-maplayers'
     | '/api/ingest-unregistered'
@@ -1004,6 +1016,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiBackupRoute: typeof ApiBackupRoute
   ApiIngestListingMatchesRoute: typeof ApiIngestListingMatchesRoute
   ApiIngestMaplayersRoute: typeof ApiIngestMaplayersRoute
   ApiIngestUnregisteredRoute: typeof ApiIngestUnregisteredRoute
@@ -1320,6 +1333,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/backup': {
+      id: '/api/backup'
+      path: '/api/backup'
+      fullPath: '/api/backup'
+      preLoaderRoute: typeof ApiBackupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-listing-matches': {
@@ -1647,6 +1667,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiBackupRoute: ApiBackupRoute,
   ApiIngestListingMatchesRoute: ApiIngestListingMatchesRoute,
   ApiIngestMaplayersRoute: ApiIngestMaplayersRoute,
   ApiIngestUnregisteredRoute: ApiIngestUnregisteredRoute,
