@@ -6,6 +6,7 @@ export type AppPath =
   | "/"
   | "/rano"
   | "/kupci"
+  | "/zadania"
   | "/prehlad"
   | "/kalibracia"
   | "/mapa"
@@ -445,8 +446,23 @@ export const verdictLabel = (v: string | null | undefined) => (v ? VERDICT_SK[v]
 // POZOR na tvar kľúča: engine skladá `f"{dest}_{profile}"` (gold_li_engine._eval_access), takže cieľ
 // a profil sú spojené PODTRŽNÍKOM, nie medzerou. Pôvodný parser čakal dve slová oddelené medzerou,
 // takže nematchol NIKDY a chipy dostupnosti sa na karte ticho nezobrazovali. Akceptujeme oba tvary.
-const ACCESS_DEST: Record<string, string> = { school: "škola", shop: "obchod", market: "obchod", stop: "zastávka" };
+export const ACCESS_DEST: Record<string, string> = {
+  school: "škola", shop: "obchod", market: "obchod", stop: "zastávka",
+  // ciele, ktoré sa dajú zadať v zadaní hľadania (/zadania) — kľúče = gold_li_access.POI_Q
+  center: "centrum obce", kindergarten: "škôlka", bus: "zastávka", health: "lekár", pharmacy: "lekáreň",
+  motorway: "diaľničný privádzač",
+};
 const ACCESS_PROF: Record<string, string> = { car: "autom", foot: "pešo", walk: "pešo", bike: "bicyklom" };
+// Zadania hľadania (/zadania, /zadanie/$id) — účel a stav behu.
+export const BRIEF_PURPOSE_SK: Record<string, string> = { retail: "obchod / retail", residential: "bývanie", industrial: "priemysel / sklad" };
+export const BRIEF_STATUS: Record<string, { label: string; color: string }> = {
+  pending: { label: "čaká na spracovanie", color: "#8a6d2b" },
+  running: { label: "beží", color: "#2f5d8a" },
+  done: { label: "hotové", color: "#3d6b3a" },
+  failed: { label: "chyba", color: "#9b3b2f" },
+  cancelled: { label: "zrušené", color: "#6b6b6b" },
+};
+
 export function parseAccessTimes(s: string | null | undefined): { label: string; seconds: number }[] {
   if (!s) return [];
   const out: { label: string; seconds: number }[] = [];
@@ -477,7 +493,7 @@ export function accessTimesLabel(s: string | null | undefined): string {
 // pre staršie riadky a pre istotu.
 export function reasonSk(s: string | null | undefined): string | null {
   if (!s) return null;
-  return String(s).replace(/\b(school|shop|stop)[_ ](car|foot|walk|bike)\s+(\d+)\s*s/gi,
+  return String(s).replace(/\b(school|shop|stop|center|kindergarten|bus|health|pharmacy|motorway)[_ ](car|foot|walk|bike)\s+(\d+)\s*s/gi,
     (_m, dest: string, prof: string, sec: string) => {
       const d = ACCESS_DEST[dest.toLowerCase()] ?? dest;
       const p = ACCESS_PROF[prof.toLowerCase()] ?? prof;

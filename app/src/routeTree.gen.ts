@@ -28,6 +28,9 @@ import { Route as RanoRouteImport } from './routes/rano'
 import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
+import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ZadanieIdRouteImport } from './routes/zadanie.$id'
+import { Route as ApiBriefQueueRouteImport } from './routes/api.brief-queue'
 import { Route as KontrolaRouteImport } from './routes/kontrola'
 import { Route as ZmenyRouteImport } from './routes/zmeny'
 import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
@@ -162,6 +165,21 @@ const ListyRoute = ListyRouteImport.update({
 const KupciRoute = KupciRouteImport.update({
   id: '/kupci',
   path: '/kupci',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ZadaniaRoute = ZadaniaRouteImport.update({
+  id: '/zadania',
+  path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ZadanieIdRoute = ZadanieIdRouteImport.update({
+  id: '/zadanie/$id',
+  path: '/zadanie/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiBriefQueueRoute = ApiBriefQueueRouteImport.update({
+  id: '/api/brief-queue',
+  path: '/api/brief-queue',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ZmenyRoute = ZmenyRouteImport.update({
@@ -397,6 +415,9 @@ export interface FileRoutesByFullPath {
   '/watchlist': typeof WatchlistRoute
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
+  '/zadania': typeof ZadaniaRoute
+  '/zadanie/$id': typeof ZadanieIdRoute
+  '/api/brief-queue': typeof ApiBriefQueueRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -458,6 +479,9 @@ export interface FileRoutesByTo {
   '/watchlist': typeof WatchlistRoute
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
+  '/zadania': typeof ZadaniaRoute
+  '/zadanie/$id': typeof ZadanieIdRoute
+  '/api/brief-queue': typeof ApiBriefQueueRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -520,6 +544,9 @@ export interface FileRoutesById {
   '/watchlist': typeof WatchlistRoute
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
+  '/zadania': typeof ZadaniaRoute
+  '/zadanie/$id': typeof ZadanieIdRoute
+  '/api/brief-queue': typeof ApiBriefQueueRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -583,6 +610,9 @@ export interface FileRouteTypes {
     | '/watchlist'
     | '/listy'
     | '/kupci'
+    | '/zadania'
+    | '/zadanie/$id'
+    | '/api/brief-queue'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -644,6 +674,9 @@ export interface FileRouteTypes {
     | '/watchlist'
     | '/listy'
     | '/kupci'
+    | '/zadania'
+    | '/zadanie/$id'
+    | '/api/brief-queue'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -705,6 +738,9 @@ export interface FileRouteTypes {
     | '/watchlist'
     | '/listy'
     | '/kupci'
+    | '/zadania'
+    | '/zadanie/$id'
+    | '/api/brief-queue'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -763,6 +799,9 @@ export interface RootRouteChildren {
   WatchlistRoute: typeof WatchlistRoute
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
+  ZadaniaRoute: typeof ZadaniaRoute
+  ZadanieIdRoute: typeof ZadanieIdRoute
+  ApiBriefQueueRoute: typeof ApiBriefQueueRoute
   ZmenyRoute: typeof ZmenyRoute
   KontrolaRoute: typeof KontrolaRoute
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
@@ -1055,6 +1094,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof KupciRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/zadania': {
+      id: '/zadania'
+      path: '/zadania'
+      fullPath: '/zadania'
+      preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/zadanie/$id': {
+      id: '/zadanie/$id'
+      path: '/zadanie/$id'
+      fullPath: '/zadanie/$id'
+      preLoaderRoute: typeof ZadanieIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/brief-queue': {
+      id: '/api/brief-queue'
+      path: '/api/brief-queue'
+      fullPath: '/api/brief-queue'
+      preLoaderRoute: typeof ApiBriefQueueRouteImport
+      parentRoute: typeof rootRouteImport
+    }
 
     '/zmeny': {
       id: '/zmeny'
@@ -1246,6 +1306,9 @@ const rootRouteChildren: RootRouteChildren = {
   WatchlistRoute: WatchlistRoute,
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
+  ZadaniaRoute: ZadaniaRoute,
+  ZadanieIdRoute: ZadanieIdRoute,
+  ApiBriefQueueRoute: ApiBriefQueueRoute,
   ZmenyRoute: ZmenyRoute,
   KontrolaRoute: KontrolaRoute,
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,

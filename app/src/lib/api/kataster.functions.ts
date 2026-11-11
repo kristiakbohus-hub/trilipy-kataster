@@ -5665,3 +5665,188 @@ export const buyerMatchesForLead = createServerFn({ method: "POST" })
     const dss = await q<DsRow>("SELECT id, ku_code, ku_name, region FROM datasets").catch(() => []);
     return { ok: true, requestId: r.id, ...(await matchBuyer(r, dss)) };
   });
+
+// ——— ZADANIA HĽADANIA POZEMKOV (OI-07/OI-08; migrácia 0094) ———
+// Rozhodnutie vlastníka 2026-11-11: požiadavky (okolie, výmera, dostupnosť, riziká…) zadáva vlastník
+// pri KAŽDOM hľadaní — žiadna pevná retail šablóna. Appka zadanie uloží, Mac engine ho spracuje
+// (21_NL_SEARCH/brief_worker.py cez /api/brief-queue) a výsledky sa viažu na zadanie. Zadanie je po
+// uložení NEMENNÉ: zmena = nové zadanie (kópia), aby staré výsledky ostali platné pre svoje parametre.
+export const BRIEF_DESTS = ["center", "school", "kindergarten", "shop", "bus", "health", "pharmacy", "motorway"] as const;
+export type SearchBrief = {
+  id: number; title: string; client: string | null; purpose: string; kus_json: string;
+  area_min: number; area_max: number; access_json: string | null; max_slope: number | null;
+  exclude_ppf: number; require_frontage: number; other_req: string | null;
+  status: string; progress: string | null; error: string | null; stats_json: string | null;
+  author: string | null; created_at: string; started_at: string | null; finished_at: string | null;
+  n_match?: number; n_prov?: number;
+};
+export type BriefResult = {
+  kod_ku: string; ku_name: string | null; verdict: string; quality: number | null; area_m2: number | null;
+  n_parcels: number | null; parcels: string | null; shape: string | null; zone: string | null; build: string | null;
+  access: number | null; slope: number | null; frontage: number | null; ppf: number | null;
+  existing_use: string | null; druh: string | null; access_times: string | null; owners: string | null;
+  n_owners: number | null; reason: string | null; dataset_id: string | null;
+};
+const briefFields = {
+  title: z.string().trim().min(2).max(160),
+  client: z.string().trim().max(160).optional(),
+  purpose: z.enum(["retail", "residential", "industrial"]),
+  kus: z.array(z.string().regex(/^\d{6}$/)).min(1).max(40),
+  areaMin: z.number().int().min(100).max(500000),
+  areaMax: z.number().int().min(100).max(1000000),
+  access: z.array(z.object({
+    dest: z.enum(BRIEF_DESTS), profile: z.enum(["car", "foot"]), limitS: z.number().int().min(60).max(3600),
+  })).max(4).default([]),
+  maxSlope: z.number().min(0).max(60).nullable().optional(),
+  excludePpf: z.boolean().default(false),
+  requireFrontage: z.boolean().default(false),
+  otherReq: z.string().trim().max(2000).optional(),
+};
+
+export const createSearchBrief = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), ...briefFields }))
+  .handler(async ({ data }): Promise<{ ok: boolean; id?: number; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    if (u.role === "viewer") return { ok: false, message: "Rola viewer nemôže zakladať zadania." };
+    if (data.areaMin > data.areaMax) return { ok: false, message: "Výmera od je väčšia ako do." };
+    const kus = [...new Set(data.kus)];
+    const known = await q<{ ku_code: string }>(
+      `SELECT ku_code FROM datasets WHERE ku_code IN (${kus.map(() => "?").join(",")})`, kus).catch(() => []);
+    const missing = kus.filter((k) => !known.some((x) => x.ku_code === k));
+    if (missing.length) return { ok: false, message: `K.ú. ${missing.join(", ")} nemá v appke importované dáta.` };
+    const access = data.access.map((a) => ({ dest: a.dest, profile: a.profile, limit_s: a.limitS }));
+    const r = await q<{ id: number }>(
+      `INSERT INTO search_briefs (title,client,purpose,kus_json,area_min,area_max,access_json,max_slope,exclude_ppf,
+                                  require_frontage,other_req,user_id,author)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`,
+      [data.title, data.client || null, data.purpose, JSON.stringify(kus), data.areaMin, data.areaMax,
+       access.length ? JSON.stringify(access) : null, data.maxSlope ?? null, data.excludePpf ? 1 : 0,
+       data.requireFrontage ? 1 : 0, data.otherReq || null, u.id, u.name || u.email]);
+    await logAudit("brief.create", u.role, `Zadanie hľadania #${r[0]?.id ?? "?"} (${data.purpose}, ${kus.length} k.ú.)`);
+    return { ok: true, id: r[0]?.id };
+  });
+
+export const listSearchBriefs = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ access: boolean; briefs: SearchBrief[] }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { access: false, briefs: [] };
+    const briefs = await q<SearchBrief>(
+      `SELECT sb.*,
+              (SELECT COUNT(*) FROM brief_results br WHERE br.brief_id = sb.id AND br.verdict = 'MATCH') AS n_match,
+              (SELECT COUNT(*) FROM brief_results br WHERE br.brief_id = sb.id AND br.verdict = 'PROVISIONAL') AS n_prov
+       FROM search_briefs sb ORDER BY sb.id DESC LIMIT 100`).catch(() => []);
+    return { access: true, briefs };
+  });
+
+export const getSearchBrief = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number().int() }))
+  .handler(async ({ data }): Promise<{ access: boolean; brief: SearchBrief | null; results: BriefResult[]; owners: boolean; kuNames: Record<string, string> }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { access: false, brief: null, results: [], owners: false, kuNames: {} };
+    const brief = (await q<SearchBrief>("SELECT * FROM search_briefs WHERE id = ?", [data.id]).catch(() => []))[0] ?? null;
+    if (!brief) return { access: true, brief: null, results: [], owners: false, kuNames: {} };
+    let kus: string[] = [];
+    try { kus = JSON.parse(brief.kus_json) as string[]; } catch { /* poškodené — ukáže sa prázdne */ }
+    const names = kus.length ? await q<{ ku_code: string; ku_name: string }>(
+      `SELECT ku_code, ku_name FROM datasets WHERE ku_code IN (${kus.map(() => "?").join(",")})`, kus).catch(() => []) : [];
+    const rows = await q<BriefResult>(
+      `SELECT br.kod_ku, COALESCE(ds.ku_name, br.ku_name) AS ku_name, br.verdict, br.quality, br.area_m2, br.n_parcels,
+              br.parcels, br.shape, br.zone, br.build, br.access, br.slope, br.frontage, br.ppf, br.existing_use, br.druh,
+              br.access_times, br.owners, br.n_owners, br.reason, ds.id AS dataset_id
+       FROM brief_results br LEFT JOIN datasets ds ON ds.ku_code = br.kod_ku
+       WHERE br.brief_id = ? ORDER BY (br.verdict = 'MATCH') DESC, br.quality DESC`, [data.id]).catch(() => []);
+    // mená vlastníkov len pre rolu s plným prístupom (rola zo session, nie od klienta)
+    const full = ownerAccess(u.role as Role) === "full";
+    return {
+      access: true, brief, owners: full,
+      results: full ? rows : rows.map((r) => ({ ...r, owners: null })),
+      kuNames: Object.fromEntries(names.map((n) => [n.ku_code, n.ku_name])),
+    };
+  });
+
+// Zrušiť čakajúce / znova spustiť zlyhané alebo zrušené. Parametre sa nemenia — to robí nové zadanie.
+export const setSearchBriefState = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.number().int(), action: z.enum(["cancel", "rerun"]) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    if (u.role === "viewer") return { ok: false, message: "Rola viewer nemôže meniť zadania." };
+    const r = data.action === "cancel"
+      ? await q<{ id: number }>("UPDATE search_briefs SET status='cancelled', finished_at=datetime('now') WHERE id = ? AND status = 'pending' RETURNING id", [data.id])
+      : await q<{ id: number }>("UPDATE search_briefs SET status='pending', error=NULL, progress=NULL, started_at=NULL, finished_at=NULL WHERE id = ? AND status IN ('failed','cancelled') RETURNING id", [data.id]);
+    if (!r.length) return { ok: false, message: data.action === "cancel" ? "Zrušiť sa dá len zadanie, ktoré ešte čaká." : "Znova spustiť sa dá len zlyhané alebo zrušené zadanie." };
+    await logAudit(`brief.${data.action}`, u.role, `Zadanie hľadania #${data.id}: ${data.action === "cancel" ? "zrušené" : "znova vo fronte"}`);
+    return { ok: true };
+  });
+
+// Front pre Mac engine (auth = alert_secret). „running" dlhšie ako 6 h = prerušený beh (Mac zaspal,
+// reštart) → vráti sa do fronty, inak by zadanie navždy ostalo „beží".
+export const briefQueue = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    action: z.enum(["pending", "start", "progress", "finish", "fail"]),
+    id: z.number().int().optional(),
+    progress: z.string().max(300).optional(),
+    error: z.string().max(1000).optional(),
+    stats: z.string().max(200000).optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; started?: boolean; briefs?: SearchBrief[]; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (data.action === "pending") {
+      await q("UPDATE search_briefs SET status='pending', progress='obnovené po prerušení' WHERE status='running' AND started_at < datetime('now','-6 hours')");
+      return { ok: true, briefs: await q<SearchBrief>("SELECT * FROM search_briefs WHERE status = 'pending' ORDER BY id LIMIT 5") };
+    }
+    if (!data.id) return { ok: false, message: "Chýba id zadania." };
+    if (data.action === "start") {
+      // len ak medzitým nebolo zrušené; staré čiastkové výsledky (prerušený beh) sa zmažú
+      const r = await q<{ id: number }>(
+        "UPDATE search_briefs SET status='running', started_at=datetime('now'), progress=?, error=NULL WHERE id = ? AND status IN ('pending','running') RETURNING id",
+        [data.progress ?? null, data.id]);
+      if (r.length) await q("DELETE FROM brief_results WHERE brief_id = ?", [data.id]);
+      return { ok: true, started: r.length > 0 };
+    }
+    if (data.action === "progress") {
+      await q("UPDATE search_briefs SET progress=?, stats_json=COALESCE(?, stats_json) WHERE id = ? AND status='running'",
+        [data.progress ?? null, data.stats ?? null, data.id]);
+    } else if (data.action === "finish") {
+      await q("UPDATE search_briefs SET status='done', progress=NULL, finished_at=datetime('now'), stats_json=COALESCE(?, stats_json) WHERE id = ?",
+        [data.stats ?? null, data.id]);
+    } else {
+      await q("UPDATE search_briefs SET status='failed', finished_at=datetime('now'), error=? WHERE id = ?", [data.error ?? "neznáma chyba", data.id]);
+    }
+    return { ok: true };
+  });
+
+export const ingestBriefResults = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    briefId: z.number().int(),
+    rows: z.array(z.object({
+      kodKu: z.string(), kuName: z.string().optional(), verdict: z.enum(["MATCH", "PROVISIONAL"]),
+      quality: z.number().optional(), areaM2: z.number().optional(), nParcels: z.number().optional(),
+      parcels: z.string().optional(), shape: z.string().optional(), zone: z.string().optional(),
+      build: z.string().optional(), access: z.number().optional(), slope: z.number().optional(),
+      frontage: z.number().optional(), ppf: z.number().optional(), existingUse: z.string().optional(),
+      druh: z.string().optional(), accessTimes: z.string().optional(), owners: z.string().optional(),
+      nOwners: z.number().optional(), reason: z.string().optional(),
+    })).max(1000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const st = (await q<{ status: string }>("SELECT status FROM search_briefs WHERE id = ?", [data.briefId]))[0]?.status;
+    if (st !== "running") return { ok: false, message: `Zadanie #${data.briefId} nebeží (${st ?? "neexistuje"}).` };
+    const stmt = DB.prepare(`INSERT INTO brief_results (brief_id,kod_ku,ku_name,verdict,quality,area_m2,n_parcels,parcels,shape,zone,build,
+      access,slope,frontage,ppf,existing_use,druh,access_times,owners,n_owners,reason) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const batch = data.rows.map((r) => stmt.bind(data.briefId, r.kodKu, r.kuName ?? null, r.verdict, r.quality ?? null,
+      r.areaM2 ?? null, r.nParcels ?? null, r.parcels ?? null, r.shape ?? null, r.zone ?? null, r.build ?? null,
+      r.access ?? null, r.slope ?? null, r.frontage ?? null, r.ppf ?? 0, r.existingUse ?? null, r.druh ?? null,
+      r.accessTimes ?? null, r.owners ?? null, r.nOwners ?? null, r.reason ?? null));
+    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
+    return { ok: true, inserted: data.rows.length };
+  });
