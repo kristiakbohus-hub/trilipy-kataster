@@ -6453,7 +6453,7 @@ function geoBbox(gj: string | null): [number, number, number, number] | null {
 }
 // Štát, obec, cirkev, SPF, urbár, pozemkové spoločenstvo — nie sú kupci na trhu (urbár/PS kupuje zriedka
 // a len v rámci spoločenstva). Firmy, s.r.o., a.s., družstvá ostávajú.
-const NOT_MARKET_BUYER = /slovensk[áa] republika|slovensk[ýy] pozemkov|\bspf\b|\bobec\b|\bmesto\b|cirk|farnos|biskup|urb[áa]r|pozemkov[ée] spolo|spolo[čc]enstvo|lesy sr|slovensk[áa] spr[áa]va ciest|železnice|vodohospod/i;
+const NOT_MARKET_BUYER = /slovensk[áa] republika|slovensk[ýy] pozemkov|\bspf\b|\bobec\b|\bmesto\b|cirk|farnos|biskup|urb[áa]r|pozemkov[ée] spolo|spolo[čc]enstvo|lesy sr|lesy slovenskej|štátny podnik|slovensk[áa] spr[áa]va ciest|železnice|vodohospod/i;
 function buyerCategory(name: string): string {
   const n = name.toLowerCase();
   if (/develop|real\s*estate|reality|realit|property|projekt|invest/.test(n)) return "developer / investor";
