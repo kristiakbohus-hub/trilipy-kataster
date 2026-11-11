@@ -5880,3 +5880,37 @@ export const ingestBriefResults = createServerFn({ method: "POST" })
     for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
     return { ok: true, inserted: data.rows.length };
   });
+
+// ——— Export aktívnych inzerátov pre Mac (deal radar, opportunity engine) — rozhodnutie vlastníka 2026-11-11 ———
+// Mac radar čítal vlastnú listings.db, ktorá sa od presunu zberu do cloudu (25. 9.) neaktualizovala →
+// ranný Telegram hlásil „poklesy 0, nové 0". Teraz si Mac pred behom stiahne inzeráty z appky (jeden
+// zdroj pravdy). Auth = alert_secret. Stránkovanie podľa (source, ext_id). Bez osobných údajov
+// (inzeráty neobsahujú inzerenta).
+export type MarketExportRow = {
+  source: string; ext_id: string; url: string | null; title: string | null; ptype: string | null; deal: string | null;
+  obec: string | null; psc: string | null; lat: number | null; lng: number | null; area_m2: number | null;
+  price_eur: number | null; ppm2: number | null; first_seen: string | null; last_seen: string | null;
+  first_price: number | null; okres: string | null; removed_at: string | null;
+};
+export const exportMarketListings = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    sinceDays: z.number().int().min(1).max(120).default(45),
+    after: z.object({ source: z.string(), extId: z.string() }).nullable().optional(),
+    limit: z.number().int().min(1).max(5000).default(5000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows?: MarketExportRow[]; next?: { source: string; extId: string } | null; asOf?: string | null; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const asOf = (await q<{ d: string | null }>("SELECT MAX(last_seen) d FROM market_listings").catch(() => []))[0]?.d ?? null;
+    if (!asOf) return { ok: true, rows: [], next: null, asOf: null };
+    const cond = ["(last_seen >= date(?, ?) OR removed_at >= date(?, ?))"];
+    const args: unknown[] = [asOf, `-${data.sinceDays} day`, asOf, `-${data.sinceDays} day`];
+    if (data.after) { cond.push("(source > ? OR (source = ? AND ext_id > ?))"); args.push(data.after.source, data.after.source, data.after.extId); }
+    const rows = await q<MarketExportRow>(
+      `SELECT source, ext_id, url, title, ptype, deal, obec, psc, lat, lng, area_m2, price_eur, ppm2, first_seen, last_seen,
+              first_price, okres, removed_at
+       FROM market_listings WHERE ${cond.join(" AND ")} ORDER BY source, ext_id LIMIT ?`, [...args, data.limit]);
+    const last = rows[rows.length - 1];
+    return { ok: true, rows, asOf, next: rows.length === data.limit && last ? { source: last.source, extId: last.ext_id } : null };
+  });

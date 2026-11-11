@@ -31,6 +31,7 @@ import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
 import { Route as ZadanieIdRouteImport } from './routes/zadanie.$id'
 import { Route as ApiBriefQueueRouteImport } from './routes/api.brief-queue'
+import { Route as ApiMarketExportRouteImport } from './routes/api.market-export'
 import { Route as KontrolaRouteImport } from './routes/kontrola'
 import { Route as ZmenyRouteImport } from './routes/zmeny'
 import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
@@ -180,6 +181,11 @@ const ZadanieIdRoute = ZadanieIdRouteImport.update({
 const ApiBriefQueueRoute = ApiBriefQueueRouteImport.update({
   id: '/api/brief-queue',
   path: '/api/brief-queue',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMarketExportRoute = ApiMarketExportRouteImport.update({
+  id: '/api/market-export',
+  path: '/api/market-export',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ZmenyRoute = ZmenyRouteImport.update({
@@ -418,6 +424,7 @@ export interface FileRoutesByFullPath {
   '/zadania': typeof ZadaniaRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
+  '/api/market-export': typeof ApiMarketExportRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -482,6 +489,7 @@ export interface FileRoutesByTo {
   '/zadania': typeof ZadaniaRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
+  '/api/market-export': typeof ApiMarketExportRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -547,6 +555,7 @@ export interface FileRoutesById {
   '/zadania': typeof ZadaniaRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
+  '/api/market-export': typeof ApiMarketExportRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -613,6 +622,7 @@ export interface FileRouteTypes {
     | '/zadania'
     | '/zadanie/$id'
     | '/api/brief-queue'
+    | '/api/market-export'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -677,6 +687,7 @@ export interface FileRouteTypes {
     | '/zadania'
     | '/zadanie/$id'
     | '/api/brief-queue'
+    | '/api/market-export'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -741,6 +752,7 @@ export interface FileRouteTypes {
     | '/zadania'
     | '/zadanie/$id'
     | '/api/brief-queue'
+    | '/api/market-export'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -802,6 +814,7 @@ export interface RootRouteChildren {
   ZadaniaRoute: typeof ZadaniaRoute
   ZadanieIdRoute: typeof ZadanieIdRoute
   ApiBriefQueueRoute: typeof ApiBriefQueueRoute
+  ApiMarketExportRoute: typeof ApiMarketExportRoute
   ZmenyRoute: typeof ZmenyRoute
   KontrolaRoute: typeof KontrolaRoute
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
@@ -1115,6 +1128,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiBriefQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/market-export': {
+      id: '/api/market-export'
+      path: '/api/market-export'
+      fullPath: '/api/market-export'
+      preLoaderRoute: typeof ApiMarketExportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
 
     '/zmeny': {
       id: '/zmeny'
@@ -1309,6 +1329,7 @@ const rootRouteChildren: RootRouteChildren = {
   ZadaniaRoute: ZadaniaRoute,
   ZadanieIdRoute: ZadanieIdRoute,
   ApiBriefQueueRoute: ApiBriefQueueRoute,
+  ApiMarketExportRoute: ApiMarketExportRoute,
   ZmenyRoute: ZmenyRoute,
   KontrolaRoute: KontrolaRoute,
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,
