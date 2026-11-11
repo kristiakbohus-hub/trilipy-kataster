@@ -6384,16 +6384,50 @@ async function esknUnitOf(did: string): Promise<number | null> {
   }
   return null;
 }
+// ESKN blokuje operáciu /query (HTTP 403 — overené 2026-11-11); povolené sú identify, find a export.
+// Parcela podľa čísla: find (bez geometrie, celé SR) → výber podľa ID k.ú. → rozsah (XMIN.. v 3857) →
+// identify v strede rozsahu → presný obrys. Pri konkávnej parcele môže stred padnúť mimo — vtedy
+// ostane aspoň stred na priblíženie.
+const numA = (v: unknown) => { const n = Number(String(v ?? "").replace(/\s/g, "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
+const merc2ll = (x: number, y: number) => ({ lng: (x / 6378137) * 180 / Math.PI, lat: (2 * Math.atan(Math.exp(y / 6378137)) - Math.PI / 2) * 180 / Math.PI });
+async function esknFindParcel(reg: "C" | "E", unit: number | null, no: string): Promise<{ rings: MapRing[]; center: { lat: number; lng: number } } | null> {
+  const svc = reg === "C" ? "kn" : "uo", lid = reg === "C" ? 9 : 2, field = reg === "C" ? "PARCEL_NUMBER_LABEL" : "PARCEL_NUMBER_FULL";
+  const j = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/${svc}/MapServer/find?searchText=${encodeURIComponent(no)}&contains=false&searchFields=${field}&layers=${lid}&returnGeometry=false&f=json`, 20000);
+  const hit = (Array.isArray(j.results) ? j.results : []).map((r) => asObj(r) ?? {}).find((r) => {
+    if (String(r.value ?? "") !== no) return false;
+    const a = asObj(r.attributes) ?? {};
+    return unit == null || String(a.CADASTRAL_UNIT_ID ?? a["Identifikátor katastrálneho územia"] ?? "") === String(unit);
+  });
+  if (!hit) return null;
+  const a = asObj(hit.attributes) ?? {};
+  const x0 = numA(a.XMIN), x1 = numA(a.XMAX), y0 = numA(a.YMIN), y1 = numA(a.YMAX);
+  if (x0 == null || x1 == null || y0 == null || y1 == null) return null;
+  const center = merc2ll((x0 + x1) / 2, (y0 + y1) / 2);
+  let rings: MapRing[] = [];
+  try {
+    const dd = 0.0015, ext = `${center.lng - dd},${center.lat - dd},${center.lng + dd},${center.lat + dd}`;
+    const idj = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/${svc}/MapServer/identify?geometry=${center.lng},${center.lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:${lid}&tolerance=1&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=true&f=json`);
+    const m = (Array.isArray(idj.results) ? idj.results : []).map((r) => asObj(r) ?? {}).find((r) => {
+      const ra = asObj(r.attributes) ?? {};
+      return String(ra.PARCEL_NUMBER_FULL ?? ra["Parcelné číslo"] ?? "") === no;
+    });
+    if (m) rings = esknRings(m.geometry);
+  } catch { /* bez obrysu */ }
+  if (!rings.length) {   // aspoň obdĺžnik rozsahu, nech je čo zvýrazniť
+    const p0 = merc2ll(x0, y0), p1 = merc2ll(x1, y1);
+    rings = [[[p0.lng, p0.lat], [p1.lng, p0.lat], [p1.lng, p1.lat], [p0.lng, p1.lat], [p0.lng, p0.lat]]];
+  }
+  return { rings, center };
+}
 async function esknEParcels(did: string, nos: string[]): Promise<MapRing[]> {
   if (!nos.length) return [];
   const unit = await esknUnitOf(did);
-  const list = nos.slice(0, 60).map((n) => `'${n.replace(/'/g, "")}'`).join(",");
-  let where = `PARCEL_NUMBER_FULL IN (${list})`;
-  let geo = "";
-  if (unit) where += ` AND CADASTRAL_UNIT_ID=${unit}`;
-  else { const bb = await datasetBbox(did); if (!bb) return []; geo = `&geometry=${bb.join(",")}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects`; }
-  const j = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/uo/MapServer/2/query?where=${encodeURIComponent(where)}${geo}&outFields=PARCEL_NUMBER_FULL&returnGeometry=true&outSR=4326&f=json`);
-  return (Array.isArray(j.features) ? j.features : []).flatMap((f) => esknRings(asObj(f)?.geometry));
+  if (unit == null) return [];              // bez ID k.ú. by find vrátil rovnaké číslo z ľubovoľného k.ú. SR
+  const out: MapRing[] = [];
+  for (const no of nos.slice(0, 12)) {      // každé číslo = 2 dopyty na ESKN → strop
+    try { const f = await esknFindParcel("E", unit, no); if (f) out.push(...f.rings); } catch { /* ďalšie */ }
+  }
+  return out;
 }
 
 export const mapSearch = createServerFn({ method: "POST" })
