@@ -6683,6 +6683,13 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
     lines.push("⚠️ Dáta inzercie sú staršie ako 2 dni — zber neprebehol, súhrn je neúplný.");
   }
   const dk = (r: DigestRow) => `${(r.obec ?? "").toLowerCase()}|${r.ptype}|${Math.round((r.area_m2 ?? 0) / 10)}|${Math.round((r.price_eur ?? 0) / 1000)}`;
+  // druhý kľúč duplicít (2026-11-11): portály parsujú výmeru rôzne (byt „5 m²" vs 65 m², dom 340 vs 1054 m²) →
+  // ten istý inzerát s rovnakým začiatkom titulku a cenou je duplicita aj pri inej výmere
+  const tk = (r: DigestRow) => `${(r.title ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 32)}|${r.ptype}|${Math.round((r.price_eur ?? 0) / 1000)}`;
+  // do „najlepších ponúk na kúpu" nepatrí prenájom ani zahraničie (zistené v teste 2026-11-11)
+  const notForSale = (r: DigestRow) => /pren[aá]jom|podn[aá]jom|na\s*n[aá]jom/i.test(r.title ?? "")
+    || /zahrani/i.test(r.okres ?? "") || /ma[dď]arsk|česk|cesk|rak[uú]sk|chorv[aá]t|hungary|polsk/i.test(r.title ?? "");
+  const areaTxt = (r: DigestRow) => (r.area_m2 && !(r.ptype === "byt" && r.area_m2 < 12) ? ` · ${Math.round(r.area_m2)} m²` : "");
 
   // ① TOP 50 — porovnateľné = rovnaký okres + typ + veľkostné pásmo, aktívne inzeráty za 21 dní
   let nTop = 0;
@@ -6711,6 +6718,8 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
     const used = new Set<string>();
     for (const r of cand) {
       if (young.has(r.source) && !(r.first_price != null && r.price_eur != null && r.first_price > r.price_eur)) continue;
+      if (notForSale(r)) continue;
+      if (r.ptype === "byt" && (r.area_m2 ?? 0) < 12) continue;   // zlá výmera z portálu → zlé €/m²
       const stavba = r.ptype !== "pozemok";
       if (!r.price_eur || r.price_eur < (stavba ? 15000 : 3000)) continue;
       const kind = r.ptype === "pozemok" ? plotKind(r.title) : "";
@@ -6729,9 +6738,9 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
     scored.sort((a, b) => b.score - a.score);
     const top: typeof scored = [];
     for (const x of scored) {
-      const d = dk(x.r);
-      if (used.has(d)) continue;                                   // ten istý inzerát na viacerých portáloch
-      used.add(d); top.push(x);
+      const d = dk(x.r), t = tk(x.r);
+      if (used.has(d) || used.has(t)) continue;                    // ten istý inzerát na viacerých portáloch
+      used.add(d); used.add(t); top.push(x);
       if (top.length >= DIGEST_TOP) break;
     }
     nTop = top.length;
@@ -6751,7 +6760,7 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
   if (asOf) {
     const rows = await q<DigestRow>(
       `SELECT source, ext_id, url, title, ptype, deal, obec, okres, area_m2, price_eur, ppm2, first_seen, first_price
-       FROM market_listings WHERE removed_at IS NULL AND first_seen >= date(?, '-2 day')
+       FROM market_listings WHERE removed_at IS NULL AND first_seen >= date(?, '-2 day') AND COALESCE(deal,'predaj') NOT IN ('dopyt','dopyt_najom')
          AND okres IN (${DIGEST_OKRESY.map(() => "?").join(",")}) ORDER BY price_eur`, [today, ...DIGEST_OKRESY]).catch(() => []);
     const used = new Set<string>();
     const by = new Map<string, Map<string, DigestRow[]>>();
@@ -6759,9 +6768,9 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
       if (young.has(r.source)) continue;
       const key = `L:${r.source}:${r.ext_id}`;
       if (seen.has(key)) continue;
-      const d = `${dk(r)}|${r.deal}`;
-      if (used.has(d)) continue;
-      used.add(d); keys.push(key);
+      const d = `${dk(r)}|${r.deal}`, t = `${tk(r)}|${r.deal}`;
+      if (used.has(d) || used.has(t)) continue;
+      used.add(d); used.add(t); keys.push(key);
       const ok = r.okres ?? "?"; const pt = PT_ORDER.includes(r.ptype ?? "") ? r.ptype! : "ine";
       if (!by.has(ok)) by.set(ok, new Map());
       if (!by.get(ok)!.has(pt)) by.get(ok)!.set(pt, []);
@@ -6778,7 +6787,7 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
         if (!list?.length) continue;
         lines.push(`${PT_ICON[pt] ?? "•"} ${PT_LABEL[pt] ?? "Ostatné"} (${list.length})`);
         for (const r of list) {
-          lines.push(`• ${(r.title ?? "").slice(0, 70)} · ${r.obec ?? ""} · ${eurSk(r.price_eur)}${r.area_m2 ? ` · ${Math.round(r.area_m2)} m²` : ""}${r.deal === "prenajom" ? " · prenájom" : ""}`);
+          lines.push(`• ${(r.title ?? "").slice(0, 70)} · ${r.obec ?? ""} · ${eurSk(r.price_eur)}${areaTxt(r)}${r.deal === "prenajom" ? " · prenájom" : ""}`);
           if (r.url) lines.push(`   ${r.url}`);
         }
       }
