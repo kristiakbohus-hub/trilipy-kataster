@@ -1079,6 +1079,17 @@ export const runMyAlerts = createServerFn({ method: "POST" })
 async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; messages: string[] }> {
   const messages: string[] = [];
   let checked = 0, newTotal = 0;
+  // 0) STRÁŽCA ZBERU INZERCIE — nezávislý od cloudového workflowu (ten hlási vlastné zlyhania, ale keby
+  // GitHub nespustil nič, nemal by kto). Mesiac 10–11/2026 zber potichu nefungoval a nikto nevedel.
+  try {
+    const m = (await q<{ d: string | null; n: number }>(
+      "SELECT MAX(last_seen) d, (SELECT COUNT(*) FROM market_listings WHERE last_seen = (SELECT MAX(last_seen) FROM market_listings)) n FROM market_listings"))[0];
+    if (m?.d) {
+      const age = Math.floor((Date.now() - Date.parse(`${m.d}T12:00:00Z`)) / 86400000);
+      if (age >= 2) messages.push(`⚠️ Zber inzercie neprebehol ${age} dni — posledné dáta z ${m.d}. Ceny, príležitosti a radar sú zastarané.`);
+      else if (m.n < 3000) messages.push(`⚠️ Zber inzercie ${m.d}: len ${m.n} videných inzerátov (bežne 15–25 tis.) — zber je neúplný.`);
+    }
+  } catch { /* market_listings voliteľné */ }
   // 1) Uložené hľadania všetkých userov (alert=1)
   const searches = await q<SavedSearchRow & { user_id: string }>(
     "SELECT id,user_id,name,query,sort,alert,channels,last_run,created_at FROM saved_search WHERE alert=1").catch(() => []);
