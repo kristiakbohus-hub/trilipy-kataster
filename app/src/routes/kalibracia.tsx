@@ -105,10 +105,10 @@ function KalibraciaPage() {
                       <td className="py-1 pr-3 text-fg">{r.okres}</td>
                       <td className="pr-3">
                         <span className="rounded-full border px-2 py-0.5 text-[11px]"
-                          style={r.basis === "realized" ? { color: "#5b7a58", borderColor: "#5b7a5855" }
+                          style={r.basis === "realized" || (r.basis ?? "").startsWith("kataster") ? { color: "#5b7a58", borderColor: "#5b7a5855" }
                             : r.basis === "blend" ? { color: "#9a7b3e", borderColor: "#9a7b3e55" }
                             : { color: "#8a8a8a", borderColor: "#d8d4cc", borderStyle: "dashed" }}>
-                          {r.basis === "realized" ? "realizované" : r.basis === "blend" ? "zmes" : "len inzercia"}
+                          {r.basis === "kataster" ? "zmluvy z katastra" : r.basis === "kataster+inzercia" ? "zmluvy + inzercia" : r.basis === "realized" ? "realizované" : r.basis === "blend" ? "zmes" : "len inzercia"}
                         </span>
                       </td>
                       <td className="pr-3 text-right tabular-nums text-fg">{r.ppm2_stavebny == null ? "—" : Math.round(r.ppm2_stavebny)}</td>

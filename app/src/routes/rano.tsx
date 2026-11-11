@@ -153,7 +153,7 @@ function RanoPage() {
                   </div>
                   <div className="mt-0.5 text-[12px] text-muted">
                     {l.obec ?? l.okres ?? ""}{l.area_m2 ? ` · ${l.area_m2.toLocaleString("sk-SK")} m²` : ""} · {eur(l.price_eur)}{l.price_per_m2 ? ` (${Math.round(l.price_per_m2)} €/m²)` : ""}
-                    {l.price_drop_pct ? ` · ▼ ${Math.round(l.price_drop_pct)} %` : ""}{l.below_market_pct ? ` · pod trhom ${Math.round(l.below_market_pct)} %` : ""}{l.belowAvm ? ` · pod AVM ${Math.round(l.belowAvm)} %` : ""}{l.days_on_market ? ` · ${l.days_on_market} dní` : ""}
+                    {l.price_drop_pct ? ` · ▼ ${Math.round(l.price_drop_pct)} %` : ""}{l.below_market_pct ? ` · pod trhom ${Math.round(l.below_market_pct)} %` : ""}{l.belowAvm ? ` · pod AVM ${Math.round(l.belowAvm)} %` : ""}{l.realPpm2 && l.vsRealPct != null ? ` · zmluvy v okrese ${l.realPpm2} €/m² (${l.vsRealPct > 0 ? "+" : ""}${l.vsRealPct} %)` : ""}{l.days_on_market ? ` · ${l.days_on_market} dní` : ""}
                   </div>
                   <div className="mt-0.5 text-[12px] font-medium text-fg/80">→ {l.step}</div>
                   <div className="mt-1"><ListingBuyersToggle url={l.url} /></div>
@@ -186,7 +186,7 @@ function RanoPage() {
                       <span className="text-muted">AVM: ako-je ~{eur(o.avmAsIs)} → </span>
                       <span className="font-medium text-fg">potenciál ~{eur(o.avmPotential)}</span>
                       {o.avmMargin ? <span className="font-medium" style={{ color: "#1E7A3E" }}> · +{o.avmMargin} % dev margin</span> : null}
-                      {o.avmPpm2 ? <span className="text-muted"> ({o.avmPpm2} €/m² stav.{o.avmBasis === "realized" ? ", realiz." : o.avmBasis === "blend" ? ", blend" : ""})</span> : null}
+                      {o.avmPpm2 ? <span className="text-muted"> ({o.avmPpm2} €/m² stav.{o.avmBasis === "realized" ? ", realiz." : o.avmBasis?.startsWith("kataster") ? ", zo zmlúv" : o.avmBasis === "blend" ? ", blend" : ""})</span> : null}
                     </div>
                   ) : null}
                 </div>

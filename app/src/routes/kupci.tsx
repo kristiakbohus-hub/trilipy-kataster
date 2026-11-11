@@ -6,6 +6,7 @@ import {
   type BuyerRequest, type BuyerHit, type BuyerHitSrc, type BuyerMatchStats,
 } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
+import { parseDemand } from "../lib/buyer-parse";
 import { MatchStatusSelect, MatchToDealButton, ScorePill, MATCH_STATUS_SK, StateContractsCard } from "../components/buyer-ui";
 
 // KUPUJÚCI — evidencia dopytu a automatické párovanie (plán vlastníka 2026-11-10). BEZ `loader`
@@ -107,6 +108,11 @@ function KupciPage() {
         form ? (
           <Card className="space-y-3 p-4">
             <SectionHeader title={form.id ? `Upraviť dopyt #${form.id}` : "Nový dopyt"} hint="kontakt zadaj ručne — appka kontakty osôb nedohľadáva" />
+            {!form.id ? <FreeText onApply={(p) => setForm((f) => f ? {
+              ...f, ptype: p.ptype ?? f.ptype, purpose: p.purpose ?? f.purpose, areaMin: p.areaMin != null ? String(p.areaMin) : f.areaMin, areaMax: p.areaMax != null ? String(p.areaMax) : f.areaMax,
+              budgetMax: p.budgetMax != null ? String(p.budgetMax) : f.budgetMax, locations: p.locations ?? f.locations, timeframe: p.timeframe ?? f.timeframe,
+              intravilan: p.intravilan ?? f.intravilan, cleanTitle: p.cleanTitle ?? f.cleanTitle, maxOwners: p.maxOwners != null ? String(p.maxOwners) : f.maxOwners,
+            } : f)} /> : null}
             <div className="grid gap-2 sm:grid-cols-3">
               <label className="text-xs text-muted">Kto<select value={form.kind} onChange={(e) => set("kind", e.target.value)} className={inp}>{Object.entries(KIND).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
               <label className="text-xs text-muted sm:col-span-2">Meno / názov<input value={form.name} onChange={(e) => set("name", e.target.value)} className={inp} /></label>
@@ -292,6 +298,25 @@ function DemandAds({ canEdit, onPick }: { canEdit: boolean; onPick: (a: DemandAd
         </ul>
       )}
       <p className="text-[10px] text-muted">Kontakt sa nepreberá ani nedohľadáva — ak chceš záujemcu osloviť, urob to cez inzerát na portáli.</p>
+    </div>
+  );
+}
+
+/** Dopyt vlastnými slovami → vyplnený formulár (bod 11). Bezplatné pravidlá v prehliadači, nič sa neposiela. */
+function FreeText({ onApply }: { onApply: (p: ReturnType<typeof parseDemand>) => void }) {
+  const [txt, setTxt] = useState("");
+  const [got, setGot] = useState<string[] | null>(null);
+  return (
+    <div className="rounded-md border border-line bg-surface-2/40 p-2">
+      <label className="text-xs text-muted">Popíš dopyt vlastnými slovami (nepovinné)
+        <textarea value={txt} onChange={(e) => setTxt(e.target.value)} rows={2} placeholder="napr. pozemok na rodinný dom 800–1200 m² do 60 tisíc okolo Turzovky, v zastavanom území"
+          className="mt-1 w-full rounded-md border border-line bg-paper px-2 py-1.5 text-sm text-fg" />
+      </label>
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        <button type="button" disabled={txt.trim().length < 5} onClick={() => { const p = parseDemand(txt); setGot(p.recognized); onApply(p); }}
+          className="rounded-md border border-line px-3 py-1 text-xs text-fg hover:border-ink disabled:opacity-40 max-md:py-2">Vyplniť formulár z textu</button>
+        {got ? <span className="text-[11px] text-muted">{got.length ? `Rozpoznané: ${got.join(" · ")} — skontroluj polia nižšie.` : "Nič som nerozpoznal — vyplň polia ručne."}</span> : null}
+      </div>
     </div>
   );
 }

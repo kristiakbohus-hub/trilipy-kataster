@@ -300,7 +300,7 @@ function CenyPage() {
                 <div key={i} className="flex items-center justify-between gap-3 py-2 text-sm">
                   <div className="min-w-0">
                     <a href={o.url ?? "#"} target="_blank" rel="noreferrer" className="block truncate font-medium text-fg hover:underline">{o.title ?? "inzerát"}</a>
-                    <div className="text-xs text-muted">{o.obec ?? ""}{o.okres && o.okres !== o.obec ? ` · okr. ${o.okres}` : ""}{o.psc ? ` · ${o.psc}` : ""} · {o.ptype ?? ""} · {o.area_m2 ? `${o.area_m2} m²` : "—"}{o.ppm2 ? ` · ${Math.round(o.ppm2)} €/m²` : ""}</div>
+                    <div className="text-xs text-muted">{o.obec ?? ""}{o.okres && o.okres !== o.obec ? ` · okr. ${o.okres}` : ""}{o.psc ? ` · ${o.psc}` : ""} · {o.ptype ?? ""} · {o.area_m2 ? `${o.area_m2} m²` : "—"}{o.ppm2 ? ` · ${Math.round(o.ppm2)} €/m²` : ""}{o.real_ppm2 && o.vs_real_pct != null ? <span style={{ color: o.vs_real_pct <= -15 ? "#3f5a3c" : o.vs_real_pct >= 25 ? "#9c4a40" : undefined }}>{` · zmluvy v okrese ${o.real_ppm2} €/m² (${o.vs_real_pct > 0 ? "+" : ""}${o.vs_real_pct} %)`}</span> : null}</div>
                   </div>
                   <div className="whitespace-nowrap text-right">
                     <div className="tabular-nums text-fg">{o.price_eur ? o.price_eur.toLocaleString("sk-SK") + " €" : "—"}</div>
@@ -372,6 +372,7 @@ function RealizedPrices() {
               <thead><tr className="text-left text-[11px] uppercase tracking-wide text-muted">
                 <th className="py-1 pr-3 font-medium">k.ú.</th>
                 {years.map((y) => <th key={y} className="py-1 pr-3 text-right font-medium">{y}</th>)}
+                <th className="py-1 pr-3 text-right font-medium" title="zmena mediánu medzi dvoma poslednými rokmi s aspoň 3 zmluvami">trend</th>
               </tr></thead>
               <tbody>
                 {kus.map((ku) => (
@@ -381,6 +382,13 @@ function RealizedPrices() {
                       <td key={y} className="py-1 pr-3 text-right tabular-nums">
                         {c ? <><div className="text-fg">{c.medPpm2 != null ? n(c.medPpm2, " €/m²") : n(c.medCen, " €")}</div><div className="text-[10px] text-muted">{c.n} zml.{c.medPpm2 != null && c.medCen != null ? ` · ${n(c.medCen, " €")}` : ""}</div></> : <span className="text-muted">—</span>}
                       </td>); })}
+                    {(() => {
+                      // index ceny (bod 22): posledné dva roky s mediánom (€/m², inak cena zmluvy)
+                      const pts = years.map((y) => cell(ku, y)).filter((c): c is PriceStat => !!c && (c.medPpm2 != null || c.medCen != null)).map((c) => c.medPpm2 ?? c.medCen ?? 0);
+                      if (pts.length < 2 || !pts[1]) return <td className="py-1 pr-3 text-right text-muted">—</td>;
+                      const d = Math.round(((pts[0] - pts[1]) / pts[1]) * 100);
+                      return <td className="py-1 pr-3 text-right tabular-nums" style={{ color: d >= 0 ? "#3f5a3c" : "#9c4a40" }}>{d > 0 ? "+" : ""}{d} %</td>;
+                    })()}
                   </tr>
                 ))}
               </tbody>

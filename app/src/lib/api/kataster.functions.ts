@@ -3712,12 +3712,23 @@ async function computeAvmIndex(): Promise<number> {
   const A: Record<string, number[]> = {}, R: Record<string, number[]> = {};
   for (const r of ask) (A[r.okres] ??= []).push(r.ppm2);
   for (const r of rel) (R[r.okres] ??= []).push(r.ppm2);
+  // Bod 19 (2026-11-11): realizované ceny ZO ZMLÚV v katastri majú prednosť pred „rýchlo zmiznutými" inzerátmi.
+  // Stavebne veľké pozemky 250–3000 m², čisté zmluvy, posledné 4 roky; okres z datasets.region.
+  const kat = await q<{ okres: string; ppm2: number }>(`SELECT TRIM(REPLACE(SUBSTR(d.region, 1, INSTR(d.region || ' · ', ' · ') - 1), 'okres ', '')) AS okres, lp.ppm2
+     FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id
+     WHERE lp.kind='pozemok' AND lp.flag IS NULL AND lp.ppm2 BETWEEN 10 AND 600 AND lp.land_m2 BETWEEN 250 AND 3000 AND lp.cas >= date('now','-4 years')`).catch(() => []);
+  const K: Record<string, number[]> = {};
+  for (const r of kat) if (r.okres) (K[r.okres] ??= []).push(r.ppm2);
   const stmts: ReturnType<typeof DB.prepare>[] = [];
-  for (const ok of new Set([...Object.keys(A), ...Object.keys(R)])) {
-    const a = A[ok] ?? [], rr = R[ok] ?? [], na = a.length, nr = rr.length;
+  for (const ok of new Set([...Object.keys(A), ...Object.keys(R), ...Object.keys(K)])) {
+    const a = A[ok] ?? [], na = a.length;
+    const ka = K[ok] ?? [];
+    const rr = ka.length >= 5 ? ka : (R[ok] ?? []), nr = rr.length;      // zmluvy z katastra > predané inzeráty
     const ma = _avmMedian(a), mr = _avmMedian(rr);
     let ppm2: number | null = null, basis = "asking";
-    if (nr >= 5) { ppm2 = mr; basis = "realized"; }
+    if (ka.length >= 5 && na >= 3 && mr != null && ma != null) { ppm2 = Math.round((mr * 0.6 + ma * 0.4) * 10) / 10; basis = "kataster+inzercia"; }
+    else if (ka.length >= 5 && mr != null) { ppm2 = mr; basis = "kataster"; }
+    else if (nr >= 5) { ppm2 = mr; basis = "realized"; }
     else if (nr >= 3 && na >= 3 && mr != null && ma != null) { ppm2 = Math.round((mr * 0.6 + ma * 0.4) * 10) / 10; basis = "blend"; }
     else if (na >= 3) { ppm2 = ma; basis = "asking"; }
     else continue;
@@ -4110,7 +4121,7 @@ export const getAvmIndex = createServerFn({ method: "POST" })
   .handler(async (): Promise<AvmIndexRow[]> =>
     await q<AvmIndexRow>(
       `SELECT okres, ppm2_stavebny, n_asking, ppm2_realized, n_realized, basis, updated
-       FROM avm_index ORDER BY (basis='realized') DESC, n_realized DESC, okres`).catch(() => []));
+       FROM avm_index ORDER BY (basis IN ('kataster','kataster+inzercia','realized')) DESC, n_realized DESC, okres`).catch(() => []));
 
 export type AvmEstimate = { okres: string | null; category: string; ppm2AsIs: number; valueAsIs: number | null; ppm2Stavebny: number | null; valuePotential: number | null; marginPct: number | null; basis: string; nComps: number };
 // Odhad hodnoty parcely: ako-je (podľa druhu) vs potenciál (ak stavebné) → dev margin.
@@ -4292,7 +4303,31 @@ export type MarketListing = {
   source: string | null; ext_id: string | null; url: string | null; title: string | null; ptype: string | null; deal: string | null;
   obec: string | null; okres: string | null; psc: string | null; lat: number | null; lng: number | null; area_m2: number | null; price_eur: number | null; ppm2: number | null;
   first_seen: string | null; last_seen: string | null; flags: string | null;
+  /** bod 21: medián €/m² zo zmlúv v katastri (okres, rovnaký typ) a odchýlka ponuky od neho v % */
+  real_ppm2?: number | null; vs_real_pct?: number | null;
 };
+// Mediány €/m² zo ZMLÚV v katastri podľa okresu a typu (pozemok 250–3000 m², byt s výmerou), cache 12 h.
+async function realizedMedians(): Promise<Record<string, { ppm2: number; n: number }>> {
+  const c = await regCacheRead("realized-medians", false, 12 * 3600).catch(() => null);
+  if (c?.payload) return c.payload as Record<string, { ppm2: number; n: number }>;
+  const rows = await q<{ okres: string; kind: string; ppm2: number }>(`SELECT TRIM(REPLACE(SUBSTR(d.region, 1, INSTR(d.region || ' · ', ' · ') - 1), 'okres ', '')) AS okres, lp.kind, lp.ppm2
+     FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id
+     WHERE lp.flag IS NULL AND lp.ppm2 IS NOT NULL AND lp.cas >= date('now','-3 years')
+       AND ((lp.kind='pozemok' AND lp.land_m2 BETWEEN 250 AND 3000 AND lp.ppm2 BETWEEN 10 AND 600) OR (lp.kind='byt' AND lp.ppm2 BETWEEN 300 AND 8000))`).catch(() => []);
+  const g: Record<string, number[]> = {};
+  for (const r of rows) if (r.okres) (g[`${r.okres}|${r.kind}`] ??= []).push(r.ppm2);
+  const out: Record<string, { ppm2: number; n: number }> = {};
+  for (const [k, v] of Object.entries(g)) if (v.length >= 5) out[k] = { ppm2: Math.round(medianOf(v) ?? 0), n: v.length };
+  await regCacheWrite("realized-medians", "realized", out).catch(() => {});
+  return out;
+}
+function withRealized<T extends { okres: string | null; ptype: string | null; ppm2: number | null }>(rows: T[], m: Record<string, { ppm2: number; n: number }>): (T & { real_ppm2: number | null; vs_real_pct: number | null })[] {
+  return rows.map((r) => {
+    const ref = r.okres && (r.ptype === "pozemok" || r.ptype === "byt") ? m[`${r.okres.replace(/^okres\s+/i, "")}|${r.ptype}`] : undefined;
+    const vs = ref && r.ppm2 ? Math.round(((r.ppm2 - ref.ppm2) / ref.ppm2) * 100) : null;
+    return { ...r, real_ppm2: ref?.ppm2 ?? null, vs_real_pct: vs };
+  });
+}
 const ML_COLS = "source,ext_id,url,title,ptype,deal,obec,okres,psc,lat,lng,area_m2,price_eur,ppm2,first_seen,last_seen,flags";
 
 export const getMarketListings = createServerFn({ method: "POST" })
@@ -4310,7 +4345,7 @@ export const getMarketListings = createServerFn({ method: "POST" })
     const w = where.length ? "WHERE " + where.join(" AND ") : "";
     const total = (await q<{ n: number }>(`SELECT COUNT(*) AS n FROM market_listings ${w}`, args))[0]?.n ?? 0;
     const rows = await q<MarketListing>(`SELECT ${ML_COLS} FROM market_listings ${w} ORDER BY last_seen DESC, price_eur DESC LIMIT ? OFFSET ?`, [...args, data.limit ?? 50, data.offset ?? 0]);
-    return { rows, total };
+    return { rows: withRealized(rows, await realizedMedians()), total };
   });
 
 // Inzeráty v okolí parcely (piny na mape) — bounding box podľa lat/lng.
@@ -4752,7 +4787,7 @@ export const getDealRadar = createServerFn({ method: "POST" })
 
 // ——— „DOBRÉ RÁNO" denný brífing — jedna karta: dnes dôležité + scorovaná SÚKROMNÁ inzercia (koho zavolať)
 //     + naše ÚP-development príležitosti, nastaviteľné podľa lokality (okres) a typu (ptype). ———
-export type MorningListing = MarketOpp & { score: number; step: string; privatny: boolean; belowAvm: number | null };
+export type MorningListing = MarketOpp & { score: number; step: string; privatny: boolean; belowAvm: number | null; realPpm2?: number | null; vsRealPct?: number | null };
 export type MorningUp = { kod_ku: string; ku_name: string | null; quality: number | null; area_m2: number | null; parcels: string | null; zone: string | null; ppf: number | null; market_ppm2: number | null; avmPpm2: number | null; avmBasis: string | null; avmPotential: number | null; avmAsIs: number | null; avmMargin: number | null };
 // Zmiznuté z trhu (re-verify 301 = vymazané): zachovaný snapshot; posledná cena ≈ odhad predajnej ceny.
 export type MorningGone = { url: string | null; title: string | null; ptype: string | null; okres: string | null; obec: string | null; area_m2: number | null; price_eur: number | null; first_price: number | null; days_listed: number | null; removed_at: string | null; drop_pct: number | null; privatny: boolean };
@@ -4838,6 +4873,13 @@ export const getMorningBriefing = createServerFn({ method: "POST" })
         : below > 0 ? `~${Math.round(below)} % pod trhom v obci — preveriť a osloviť` : "Osloviť predajcu / preveriť inzerát";
       return { ...l, score, step, privatny: l.source === "bazos", belowAvm: l.below_avm_pct };
     });
+    { // bod 21: porovnanie so zmluvami v katastri (okres) — doplnok k „pod trhom" z inzerátov
+      const rm = await realizedMedians();
+      for (const l of listings) {
+        const ref = l.okres && (l.ptype === "pozemok" || l.ptype === "byt") ? rm[`${String(l.okres).replace(/^okres\s+/i, "")}|${l.ptype}`] : undefined;
+        if (ref && l.price_per_m2) { (l as MorningListing).realPpm2 = ref.ppm2; (l as MorningListing).vsRealPct = Math.round(((l.price_per_m2 - ref.ppm2) / ref.ppm2) * 100); }
+      }
+    }
     // naše ÚP-development príležitosti (genuine: bývanie/hromadné, MATCH) + obecný trhový kontext
     const upW: string[] = ["ls.verdict = 'MATCH'", "ls.purpose = 'residential'", "ls.zone IN ('bývanie/rekreácia','hromadné bývanie')"];
     const upA: unknown[] = [];
@@ -5171,6 +5213,38 @@ async function computeAvm(lat: number, lng: number, area: number | null, druhCod
   if (buildBase == null && okres) { const r = await q<{ ppm2: number }>("SELECT ppm2 FROM market_listings WHERE ptype='pozemok' AND okres = ? AND ppm2 IS NOT NULL", [okres]); fromRows(r, `inzerátov okres ${okres}`); }
   if (buildBase == null) { const dd = 0.13; const r = await q<{ ppm2: number }>("SELECT ppm2 FROM market_listings WHERE ptype='pozemok' AND ppm2 IS NOT NULL AND lat BETWEEN ? AND ? AND lng BETWEEN ? AND ?", [lat - dd, lat + dd, lng - dd, lng + dd]); fromRows(r, "inzerátov v okolí (~14 km)"); }
   if (buildBase == null && okres) { const mi = await q<{ m: number }>("SELECT median_eur_m2 AS m FROM market_index WHERE okres = ? AND ptype='pozemok' AND obec IS NULL ORDER BY day DESC LIMIT 1", [okres]); if (mi[0]?.m) { buildBase = mi[0].m; srcLabel = `index okres ${okres}`; } }
+
+  // Bod 19 (2026-11-11): REALIZOVANÉ ceny zo zmlúv z katastra (lv_prices) — stavebne veľké pozemky (250–3000 m²),
+  // čisté zmluvy bez odchýlok, posledné 4 roky. Najprv k.ú., potom okres. Pri ≥ 5 zmluvách sa miešajú 50 : 50
+  // s ponukovou cenou (inzeráty bývajú nad predajnou cenou); bez inzerátov stojí odhad len na zmluvách.
+  if (buildable) {
+    let rel: number[] = [], relLabel = "";
+    if (obec) {
+      rel = (await q<{ ppm2: number }>(`SELECT lp.ppm2 FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id
+        WHERE lp.kind='pozemok' AND lp.flag IS NULL AND lp.ppm2 BETWEEN 10 AND 600 AND lp.land_m2 BETWEEN 250 AND 3000 AND lp.cas >= date('now','-4 years')
+          AND (d.ku_name = ? OR d.ku_name = ?) LIMIT 400`, [obec, `k.ú. ${obec}`]).catch(() => [])).map((r) => r.ppm2);
+      relLabel = `zmlúv k.ú. ${obec}`;
+    }
+    if (rel.length < 5 && okres) {
+      rel = (await q<{ ppm2: number }>(`SELECT lp.ppm2 FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id
+        WHERE lp.kind='pozemok' AND lp.flag IS NULL AND lp.ppm2 BETWEEN 10 AND 600 AND lp.land_m2 BETWEEN 250 AND 3000 AND lp.cas >= date('now','-4 years')
+          AND d.region LIKE ? LIMIT 1500`, [`%${okres}%`]).catch(() => [])).map((r) => r.ppm2);
+      relLabel = `zmlúv okres ${okres}`;
+    }
+    if (rel.length >= 5) {
+      rel.sort((x, y) => x - y);
+      const rMed = pct(rel, 0.5)!, rLow = pct(rel, 0.25)!, rHigh = pct(rel, 0.75)!;
+      if (buildBase != null) {
+        const ask = buildBase as number;
+        factors.push(`ponuka ${Math.round(ask)} €/m² vs. zmluvy ${Math.round(rMed)} €/m² (${rel.length} ${relLabel}) → priemer`);
+        buildBase = (ask + rMed) / 2;
+        buildLow = ((buildLow ?? ask * 0.7) + rLow) / 2; buildHigh = ((buildHigh ?? ask * 1.3) + rHigh) / 2;
+        nComps += rel.length;
+      } else {
+        buildBase = rMed; buildLow = rLow; buildHigh = rHigh; nComps = rel.length; srcLabel = relLabel;
+      }
+    }
+  }
 
   let ppm2: number | null = null, low: number | null = null, high: number | null = null, klass = "";
   if (buildable) {
@@ -6906,7 +6980,30 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
   lines.push("", `🗺️ Územné plány — ${DIGEST_OKRESY.join(", ")}`);
   if (upLines.length) lines.push(...upLines); else lines.push("— žiadna nová udalosť (obstarávanie, prerokovanie, schválenie)");
 
-  return { messages: splitTg(lines), keys, stats: { asOf, top: nTop, new: nNew, up: upLines.filter((l) => !l.startsWith("   ")).length } };
+  // ④ KUPCI (bod 12, 2026-11-11) — najlepšie NOVÉ zhody aktívnych dopytov so skóre ≥ 70 (inzeráty, príležitosti,
+  // mimo trhu; bez skenu všetkých parciel). Osoba = len číslo dopytu (Telegram skupina), firma menom.
+  let nBuy = 0;
+  try {
+    const reqs = await q<BuyerReqFull>("SELECT * FROM buyer_requests WHERE status='aktivny' ORDER BY updated_at DESC LIMIT 30").catch(() => []);
+    const dss = reqs.length ? await q<DsRow>("SELECT id, ku_code, ku_name, region FROM datasets").catch(() => []) : [];
+    const buyLines: string[] = [];
+    for (const r of reqs) {
+      if (nBuy >= 15) break;
+      const m = await matchBuyerFull(r, dss, { parcels: false });
+      const fresh = m.hits.filter((h) => h.score >= 70 && h.status === "nova" && !seen.has(`B:${r.id}:${h.key}`)).slice(0, 3);
+      if (!fresh.length) continue;
+      buyLines.push(`• Dopyt #${r.id} (${r.kind === "osoba" ? "osoba" : r.name}, ${r.ptype}${r.budget_max ? ` do ${eurSk(r.budget_max)}` : ""}):`);
+      for (const h of fresh) {
+        buyLines.push(`   ${h.score} · ${h.title.slice(0, 70)}${h.priceEur ? ` · ${eurSk(h.priceEur)}` : ""}${h.areaM2 ? ` · ${Math.round(h.areaM2)} m²` : ""}`);
+        if (h.url) buyLines.push(`   ${h.url}`);
+        keys.push(`B:${r.id}:${h.key}`); nBuy++;
+      }
+    }
+    lines.push("", "🤝 Kupci — nové zhody so skóre ≥ 70");
+    if (buyLines.length) lines.push(...buyLines); else lines.push(reqs.length ? "— dnes žiadna nová silná zhoda" : "— zatiaľ žiadny aktívny dopyt (karta Kupci a dopyt)");
+  } catch { /* kupci voliteľní */ }
+
+  return { messages: splitTg(lines), keys, stats: { asOf, top: nTop, new: nNew, up: upLines.filter((l) => !l.startsWith("   ")).length, buyers: nBuy } };
 }
 
 export const tgDigest = createServerFn({ method: "POST" })
