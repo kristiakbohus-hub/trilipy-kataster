@@ -6229,6 +6229,8 @@ export type ListingBuyers = {
   ok: boolean; message?: string; access: OwnerAccess; okres: string | null;
   listing: { title: string | null; ptype: string | null; obec: string | null; priceEur: number | null; areaM2: number | null } | null;
   requests: ScoredRequest[]; demandAds: DemandAd[]; repeatBuyers: RepeatBuyer[]; repeatFromYear: number; firms: BuyerRegistryFirm[];
+  /** bod 20: pravdepodobná parcela / LV v našom katastri (zhoda obce a výmery) */
+  parcelMatches?: ListingMatch[];
 };
 
 const PTYPE_OF_LISTING: Record<string, string> = { pozemok: "pozemok", byt: "byt", dom: "dom", chata: "chata", chalupa: "chata" };
@@ -6326,9 +6328,13 @@ export const listingBuyers = createServerFn({ method: "POST" })
       [x.okres.replace(/^okres\s+/i, "")]).catch(() => []) : [];
     { const fm = await firmFinanceMap(firms.map((f) => f.ico)); for (const f of firms) f.fin = fm.get(f.ico) ?? null;
       firms.sort((a, b) => (b.fin?.revenue ?? -1) - (a.fin?.revenue ?? -1)); }   // bod 9: finančne silní kupci najprv
+    const pm = await q<{ dataset_id: string; ku_name: string | null; kind: string; register: string | null; parcel_no: string | null; lv_no: number | null; area_m2: number | null; confidence: string; n_candidates: number | null; via: string | null }>(
+      `SELECT m.dataset_id, d.ku_name, m.kind, m.register, m.parcel_no, m.lv_no, m.area_m2, m.confidence, m.n_candidates, m.via FROM listing_matches m
+       LEFT JOIN datasets d ON d.id = m.dataset_id WHERE m.url = ? LIMIT 10`, [data.url]).catch(() => []);
+    const parcelMatches: ListingMatch[] = pm.map((r) => ({ datasetId: r.dataset_id, kuName: r.ku_name, kind: r.kind, register: r.register, parcelNo: r.parcel_no, lvNo: r.lv_no, areaM2: r.area_m2, confidence: r.confidence, nCandidates: r.n_candidates, via: r.via }));
     await logAudit("buyers.listing", u.role, `Kto by kúpil: ${x.title ?? data.url}`.slice(0, 200));
     return { ok: true, access, okres: x.okres, listing: { title: x.title, ptype: x.ptype, obec: x.obec, priceEur: x.price_eur, areaM2: x.area_m2 },
-      requests: requests.slice(0, 30), demandAds, repeatBuyers, repeatFromYear: fromYear, firms };
+      requests: requests.slice(0, 30), demandAds, repeatBuyers, repeatFromYear: fromYear, firms, parcelMatches };
   });
 
 /** Skóre parcely voči dopytu na pozemok (pre „Kto by to kúpil" pri parcele). */
@@ -7384,6 +7390,26 @@ export const listMapLayers = createServerFn({ method: "POST" })
     const out: MapLayerFeature[] = [];
     for (const r of rows) { try { out.push({ layer: r.layer, label: r.label, lines: JSON.parse(r.geometry_json) as [number, number][][] }); } catch { /* poškodené */ } }
     return out;
+  });
+
+// ——— (bod 20) inzerát → pravdepodobná parcela / LV ———
+export type ListingMatch = { datasetId: string; kuName: string | null; kind: string; register: string | null; parcelNo: string | null; lvNo: number | null; areaM2: number | null; confidence: string; nCandidates: number | null; via: string | null };
+export const ingestListingMatches = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), rows: z.array(z.object({
+    source: z.string().max(40), extId: z.string().max(80), url: z.string().max(600).nullable().optional(), datasetId: z.string().max(40),
+    kind: z.enum(["parcela", "LV"]), register: z.string().max(2).nullable().optional(), parcelNo: z.string().max(30).nullable().optional(),
+    lvNo: z.number().int().nullable().optional(), areaM2: z.number().nullable().optional(), confidence: z.enum(["vysoka", "stredna", "nizka"]),
+    nCandidates: z.number().int().nullable().optional(), via: z.string().max(40).nullable().optional(),
+  })).max(5000) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const ps = DB.prepare("INSERT INTO listing_matches (source,ext_id,url,dataset_id,kind,register,parcel_no,lv_no,area_m2,confidence,n_candidates,via) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+    const st = [DB.prepare("DELETE FROM listing_matches"), ...data.rows.map((r) => ps.bind(r.source, r.extId, r.url ?? null, r.datasetId, r.kind, r.register ?? null, r.parcelNo ?? null, r.lvNo ?? null, r.areaM2 ?? null, r.confidence, r.nCandidates ?? null, r.via ?? null))];
+    for (let i = 0; i < st.length; i += 50) await DB.batch(st.slice(i, i + 50));
+    return { ok: true, inserted: data.rows.length };
   });
 
 // ——— CENY ZO ZMLÚV z katastra (SPI CEN/CAS) — ingest z Macu, výpis pri LV a súhrny (2026-11-11) ———

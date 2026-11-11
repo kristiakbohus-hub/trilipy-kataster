@@ -65,6 +65,17 @@ export function ListingBuyersPanel({ url }: { url: string }) {
   const masked = d.access !== "full";
   return (
     <div className="space-y-2 rounded-md border border-line bg-paper p-2 text-xs">
+      {d.parcelMatches?.length ? (
+        <div>
+          <div className="font-medium text-fg">Pravdepodobne v katastri (zhoda obce a výmery — overiť)</div>
+          <ul>{d.parcelMatches.map((m, i) => (
+            <li key={i} className="flex flex-wrap justify-between gap-2 border-b border-line/40 py-0.5">
+              <span>{m.kuName ?? m.datasetId} · {m.kind === "LV" ? `LV ${m.lvNo} (pozemky spolu)` : `parcela ${m.register ?? "C"} ${m.parcelNo}`}{m.areaM2 ? ` · ${Math.round(m.areaM2).toLocaleString("sk-SK")} m²` : ""}
+                <span className="text-muted"> · istota {m.confidence === "vysoka" ? "vysoká" : m.confidence === "stredna" ? "stredná" : "nízka"}{(m.nCandidates ?? 1) > 1 ? ` (${m.nCandidates} kandidáti)` : ""}{m.via ? ` · ${m.via}` : ""}</span></span>
+              {m.lvNo != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: m.datasetId, lvNo: String(m.lvNo) }} search={{ typ: "vypis" as const }} className="text-brand hover:underline">výpis LV</Link> : null}
+            </li>))}</ul>
+        </div>
+      ) : null}
       <div>
         <div className="font-medium text-fg">Dopyty z evidencie ({d.requests.length})</div>
         {d.requests.length === 0 ? <p className="text-muted">Žiadny aktívny dopyt nesedí. <Link to="/kupci" className="text-brand hover:underline">Pridať záujemcu →</Link></p> : (
