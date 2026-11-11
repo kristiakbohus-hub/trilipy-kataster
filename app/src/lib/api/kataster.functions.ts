@@ -7355,6 +7355,37 @@ export const listUnregistered = createServerFn({ method: "POST" })
     return { ok: true, total, rows: rows.map((r) => ({ datasetId: r.dataset_id, kuName: r.ku_name, parcelNo: r.parcel_no, lvNo: r.lv_no, buildingM2: r.building_m2, parcelM2: r.parcel_m2, nBudov: r.n_budov, vyuzitie: r.vyuzitie, kategoria: r.kategoria, lat: r.lat, lon: r.lon })) };
   });
 
+// ——— Vrstvy z VGI (body 16/17): vecné bremená, hranica zastavaného územia, pozemkové úpravy ———
+export type MapLayerFeature = { layer: string; label: string | null; lines: [number, number][][] };
+export const ingestMapLayers = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), layers: z.array(z.object({
+    layer: z.enum(["tarchy", "zuob", "ppu"]), features: z.array(z.object({ label: z.string().max(80).nullable().optional(), geometryJson: z.string().max(400_000) })).max(3000),
+  })).max(3) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const did = `kn-${data.kodKu}`;
+    let n = 0;
+    for (const l of data.layers) {
+      const st = [DB.prepare("DELETE FROM map_layers WHERE dataset_id=? AND layer=?").bind(did, l.layer),
+        ...l.features.map((f) => DB.prepare("INSERT INTO map_layers (dataset_id,layer,label,geometry_json) VALUES (?,?,?,?)").bind(did, l.layer, f.label ?? null, f.geometryJson))];
+      for (let i = 0; i < st.length; i += 50) await DB.batch(st.slice(i, i + 50));
+      n += l.features.length;
+    }
+    return { ok: true, inserted: n };
+  });
+export const listMapLayers = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string().max(40) }))
+  .handler(async ({ data }): Promise<MapLayerFeature[]> => {
+    const rows = await q<{ layer: string; label: string | null; geometry_json: string }>(
+      "SELECT layer, label, geometry_json FROM map_layers WHERE dataset_id=? LIMIT 4000", [data.datasetId]).catch(() => []);
+    const out: MapLayerFeature[] = [];
+    for (const r of rows) { try { out.push({ layer: r.layer, label: r.label, lines: JSON.parse(r.geometry_json) as [number, number][][] }); } catch { /* poškodené */ } }
+    return out;
+  });
+
 // ——— CENY ZO ZMLÚV z katastra (SPI CEN/CAS) — ingest z Macu, výpis pri LV a súhrny (2026-11-11) ———
 export const ingestLvPrices = createServerFn({ method: "POST" })
   .validator(z.object({

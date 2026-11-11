@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiIngestMaplayersRouteImport } from './routes/api.ingest-maplayers'
 import { Route as ApiIngestUnregisteredRouteImport } from './routes/api.ingest-unregistered'
 import { Route as ApiIngestGeometryRouteImport } from './routes/api.ingest-geometry'
 import { Route as ApiIngestConstructionRouteImport } from './routes/api.ingest-construction'
@@ -185,6 +186,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestMaplayersRoute = ApiIngestMaplayersRouteImport.update({
+  id: '/api/ingest-maplayers',
+  path: '/api/ingest-maplayers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIngestUnregisteredRoute = ApiIngestUnregisteredRouteImport.update({
@@ -506,6 +512,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
   '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
   '/api/ingest-geometry': typeof ApiIngestGeometryRoute
   '/api/ingest-construction': typeof ApiIngestConstructionRoute
@@ -585,6 +592,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
   '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
   '/api/ingest-geometry': typeof ApiIngestGeometryRoute
   '/api/ingest-construction': typeof ApiIngestConstructionRoute
@@ -665,6 +673,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
   '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
   '/api/ingest-geometry': typeof ApiIngestGeometryRoute
   '/api/ingest-construction': typeof ApiIngestConstructionRoute
@@ -746,6 +755,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-maplayers'
     | '/api/ingest-unregistered'
     | '/api/ingest-geometry'
     | '/api/ingest-construction'
@@ -825,6 +835,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-maplayers'
     | '/api/ingest-unregistered'
     | '/api/ingest-geometry'
     | '/api/ingest-construction'
@@ -904,6 +915,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-maplayers'
     | '/api/ingest-unregistered'
     | '/api/ingest-geometry'
     | '/api/ingest-construction'
@@ -980,6 +992,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiIngestMaplayersRoute: typeof ApiIngestMaplayersRoute
   ApiIngestUnregisteredRoute: typeof ApiIngestUnregisteredRoute
   ApiIngestGeometryRoute: typeof ApiIngestGeometryRoute
   ApiIngestConstructionRoute: typeof ApiIngestConstructionRoute
@@ -1296,6 +1309,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZadaniaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ingest-maplayers': {
+      id: '/api/ingest-maplayers'
+      path: '/api/ingest-maplayers'
+      fullPath: '/api/ingest-maplayers'
+      preLoaderRoute: typeof ApiIngestMaplayersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ingest-unregistered': {
       id: '/api/ingest-unregistered'
       path: '/api/ingest-unregistered'
@@ -1607,6 +1627,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiIngestMaplayersRoute: ApiIngestMaplayersRoute,
   ApiIngestUnregisteredRoute: ApiIngestUnregisteredRoute,
   ApiIngestGeometryRoute: ApiIngestGeometryRoute,
   ApiIngestConstructionRoute: ApiIngestConstructionRoute,

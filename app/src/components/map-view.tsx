@@ -5,7 +5,7 @@ import { decSk } from "../lib/domain";
 import type { LvOwner, Parcel, Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
-import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, mapIdentify, parcelBuildings, type EsknParcel, type MapRing } from "../lib/api/kataster.functions";
+import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listMapLayers, type MapLayerFeature, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, mapIdentify, parcelBuildings, type EsknParcel, type MapRing } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
 import { LvCard } from "./lv-card";
 import { exportOutline, fmtSjtsk, type Ring as OutRing } from "../lib/sjtsk";
@@ -513,6 +513,16 @@ export function MapView({
     if (!datasetId) { setBpejZones([]); return; }
     let alive = true;
     listBpejZones({ data: { datasetId } }).then((z) => { if (alive) setBpejZones(z); }).catch(() => {});
+    return () => { alive = false; };
+  }, [datasetId]);
+
+  // ——— Vrstvy z VGI (2026-11-11): vecné bremená, hranica zastavaného územia, pozemkové úpravy ———
+  const [vgiLayers, setVgiLayers] = useState<MapLayerFeature[]>([]);
+  const [vgiOn, setVgiOn] = useState<Record<string, boolean>>({ tarchy: false, zuob: false, ppu: false });
+  useEffect(() => {
+    if (!datasetId) { setVgiLayers([]); return; }
+    let alive = true;
+    listMapLayers({ data: { datasetId } }).then((z) => { if (alive) setVgiLayers(z); }).catch(() => {});
     return () => { alive = false; };
   }, [datasetId]);
 
@@ -1314,6 +1324,26 @@ export function MapView({
           </svg>
         ) : null}
 
+        {/* Vrstvy z VGI — vecné bremená (fialová), hranica zastavaného územia (oranžová), pozemkové úpravy (modrá) */}
+        {view && vgiLayers.some((f) => vgiOn[f.layer]) ? (
+          <svg className="pointer-events-none absolute inset-0" width={size.w} height={size.h} style={{ transform: dragT }}>
+            {vgiLayers.filter((f) => vgiOn[f.layer]).map((f, fi) => {
+              const col = f.layer === "tarchy" ? "#7b4fa0" : f.layer === "zuob" ? "#d0731f" : "#2f6fb0";
+              const w = f.layer === "tarchy" ? 1.6 : 2.4;
+              return (
+                <g key={fi}>
+                  {f.lines.map((ln, li) => {
+                    const pts = ln.map(([lng, lat]) => project(lng, lat));
+                    const d = pts.map((p, j) => (j === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+                    return <path key={li} d={d} fill="none" stroke={col} strokeWidth={w} strokeDasharray={f.layer === "zuob" ? "6 4" : f.layer === "ppu" ? "10 3 2 3" : undefined} />;
+                  })}
+                  {f.layer !== "zuob" && f.label && f.lines[0]?.length ? (() => { const p = project(f.lines[0][0][0], f.lines[0][0][1]); return <text x={p.x + 3} y={p.y - 3} fontSize={10} fill={col} stroke="#fff" strokeWidth={3} paintOrder="stroke">{f.label}</text>; })() : null}
+                </g>
+              );
+            })}
+          </svg>
+        ) : null}
+
         {/* ÚP zóny (funkčné plochy) — farebne podľa charakteru */}
         {upZonesOn && view ? (
           <svg className="pointer-events-none absolute inset-0" width={size.w} height={size.h} style={{ transform: dragT, opacity: 0.5 }}>
@@ -1850,6 +1880,9 @@ export function MapView({
                   <LayerRow label="Parcelné čísla" checked={showLabels} onToggle={() => setShowLabels((v) => !v)} />
                   <LayerRow label="Miestne názvy" checked={showTexts} onToggle={() => setShowTexts((v) => !v)} />
                   {bpejZones.length > 0 ? <LayerRow label={`BPEJ / bonita (${bpejZones.length})`} checked={bpejOn} onToggle={() => setBpejOn((v) => !v)} hint="skupina 1 zelená → 9 červená" /> : null}
+                  {(["tarchy", "zuob", "ppu"] as const).map((k) => { const n = vgiLayers.filter((f) => f.layer === k).length; if (!n) return null;
+                    const lbl = k === "tarchy" ? `Vecné bremená (${n})` : k === "zuob" ? "Hranica zastavaného územia" : `Pozemkové úpravy (${[...new Set(vgiLayers.filter((f) => f.layer === "ppu").map((f) => f.label).filter(Boolean))].join(", ")})`;
+                    return <LayerRow key={k} label={lbl} checked={!!vgiOn[k]} onToggle={() => setVgiOn((v) => ({ ...v, [k]: !v[k] }))} hint={k === "tarchy" ? "fialová, číslo vkladu" : k === "zuob" ? "oranžová prerušovaná" : "modrá"} />; })}
                   {upZones.length > 0 ? <LayerRow label={`ÚP zóny (${upZones.length})`} checked={upZonesOn} onToggle={() => setUpZonesOn((v) => !v)} hint="zelená=rozvoj · žltá=stabil. · červená=limit" /> : null}
                   <label className="mt-1 flex cursor-pointer items-center gap-1.5 px-1 text-[11px] text-muted hover:text-fg">
                     <input type="file" accept=".geojson,.json,application/geo+json,application/json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importUpZonesFile(f); e.currentTarget.value = ""; }} />
