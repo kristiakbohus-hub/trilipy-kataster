@@ -1086,8 +1086,14 @@ async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; 
       "SELECT MAX(last_seen) d, (SELECT COUNT(*) FROM market_listings WHERE last_seen = (SELECT MAX(last_seen) FROM market_listings)) n FROM market_listings"))[0];
     if (m?.d) {
       const age = Math.floor((Date.now() - Date.parse(`${m.d}T12:00:00Z`)) / 86400000);
-      if (age >= 2) messages.push(`⚠️ Zber inzercie neprebehol ${age} dni — posledné dáta z ${m.d}. Ceny, príležitosti a radar sú zastarané.`);
-      else if (m.n < 3000) messages.push(`⚠️ Zber inzercie ${m.d}: len ${m.n} videných inzerátov (bežne 15–25 tis.) — zber je neúplný.`);
+      const warn = age >= 2 ? `⚠️ Zber inzercie neprebehol ${age} dni — posledné dáta z ${m.d}. Ceny, príležitosti a radar sú zastarané.`
+        : m.n < 3000 ? `⚠️ Zber inzercie ${m.d}: len ${m.n} videných inzerátov (bežne 15–25 tis.) — zber je neúplný.` : null;
+      // raz denne (alerty volá Mac aj cloud, viackrát denne) — tg_deliveries ako zámok dňa
+      if (warn) {
+        const got = await q<{ key: string }>("INSERT OR IGNORE INTO tg_deliveries (key,runner,status,claimed_at,sent_at) VALUES (?, 'alerts', 'sent', datetime('now'), datetime('now')) RETURNING key",
+          [`watchdog:${new Date().toISOString().slice(0, 10)}`]).catch(() => []);
+        if (got.length) messages.push(warn);
+      }
     }
   } catch { /* market_listings voliteľné */ }
   // 1) Uložené hľadania všetkých userov (alert=1)
@@ -1111,12 +1117,8 @@ async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; 
     if (chans.includes("inapp")) await q("INSERT INTO notifications (user_id,kind,subject_type,subject_id,body) VALUES (?,?,?,?,?)", [sv.user_id, "alert", "search", String(sv.id), body]);
     if (chans.includes("telegram")) messages.push(body);
   }
-  // 2) ÚP zmeny za posledné ~2 dni (cielené k.ú. — up_changes sa plní monitorom)
-  try {
-    const ch = await q<{ ku_code: string | null; change: string | null; title: string | null }>(
-      "SELECT ku_code, change, title FROM up_changes WHERE detected_at >= datetime('now','-2 days') ORDER BY id DESC LIMIT 20");
-    if (ch.length) messages.push(`🗺️ ÚP zmeny (${ch.length}): ` + ch.slice(0, 6).map((c) => `${c.ku_code ?? "?"} ${c.change ?? ""}`.trim()).join(" · "));
-  } catch { /* up_changes voliteľné */ }
+  // 2) ÚP zmeny: presunuté do ranného súhrnu (/api/tg-digest) — len reálne udalosti v okresoch súhrnu
+  // a každá raz. Tu sa posielali pri každom volaní za posledné 2 dni → tá istá správa až 4× denne.
   // 3) KUPUJÚCI — nové zhody aktívnych dopytov (pozemkové príležitosti + inzeráty). Prvý prechod dopytu
   // je základ: zhody sa len zaevidujú. In-app správa ide autorovi dopytu s menom; do Telegramu (skupina)
   // sa meno OSOBY neposiela — len číslo dopytu (osobný údaj), firmy menom.
@@ -3740,6 +3742,7 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
       obec: z.string().min(1).max(120), kuCode: z.string().max(10).optional(),
       title: z.string().max(400).optional(), url: z.string().max(600).optional(),
       change: z.string().max(20).optional(), relevance: z.string().max(20).optional(),
+      okres: z.string().max(60).nullable().optional(),
       detectedAt: z.string().max(32).optional(),
     })).max(2000),
     // Register ÚP stránok obcí (k.ú. → obec → URL). Cesta existuje, ALE ⚠ NEPLNIŤ JU ZO
@@ -3760,8 +3763,8 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     // INSERT OR IGNORE + UNIQUE → opakovaný push to neduplikuje a nepotrebuje reset
     const stmt = DB.prepare(
-      `INSERT OR IGNORE INTO obec_changes (obec,ku_code,title,url,change,relevance,detected_at)
-       VALUES (?,?,?,?,?,?,?)`);
+      `INSERT OR IGNORE INTO obec_changes (obec,ku_code,title,url,change,relevance,detected_at,okres)
+       VALUES (?,?,?,?,?,?,?,?)`);
     // ISO timestamp z monitora má „T" („2026-10-08T07:05:39"), ale SQLite `datetime()` dáva medzeru.
     // V ASCII je „T" (0x54) VÄČŠIE než medzera (0x20), takže „…09T05:00" > „…09 12:00" — obecný
     // záznam z rána sa v spojenom prúde radil NAD katastrálny z poobedia a „najnovšie prvé"
@@ -3770,7 +3773,7 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
     const norm = (t: string | undefined) => (t ? t.replace("T", " ").slice(0, 19) : null);
     const batch = data.rows.map((r) => stmt.bind(
       r.obec, r.kuCode ?? null, r.title ?? null, r.url ?? null,
-      r.change ?? null, r.relevance ?? "ine", norm(r.detectedAt)));
+      r.change ?? null, r.relevance ?? "ine", norm(r.detectedAt), r.okres ?? null));
     for (let i = 0; i < batch.length; i += 50) await DB.batch(batch.slice(i, i + 50));
     let reg = 0;
     if (data.registry?.length) {
@@ -5964,4 +5967,267 @@ export const exportMarketListings = createServerFn({ method: "POST" })
        FROM market_listings WHERE ${cond.join(" AND ")} ORDER BY source, ext_id LIMIT ?`, [...args, data.limit]);
     const last = rows[rows.length - 1];
     return { ok: true, rows, asOf, next: rows.length === data.limit && last ? { source: last.source, extId: last.ext_id } : null };
+  });
+
+// ——— TELEGRAM: RANNÝ SÚHRN (rozhodnutie vlastníka 2026-11-11) ———
+// Obsah: ① 50 najlepších ponúk dňa (najviac pod porovnateľnými + pokles ceny), ② všetka nová inzercia
+// v okresoch Čadca, Kysucké Nové Mesto, Žilina podľa kategórií, ③ len REÁLNE udalosti územných plánov
+// v týchto okresoch (začatie obstarávania, prerokovanie/pripomienky, schválenie), každá raz.
+// Doručenie: Mac o 7:30, cloud ako záloha až od 7:45 (miestneho času) — kto pošle, najprv „zaberie"
+// deň v tg_deliveries, takže súhrn nikdy nepríde dvakrát. Po odoslaní (ack) sa položky zaevidujú
+// v tg_seen a ďalší deň sa neopakujú. Kupci a uložené hľadania idú okamžite cez /api/run-alerts.
+const DIGEST_OKRESY = ["Čadca", "Kysucké Nové Mesto", "Žilina"];
+const DIGEST_TOP = 50;
+const TG_MAXLEN = 3800;
+const PT_LABEL: Record<string, string> = { byt: "Byty", dom: "Domy", chata: "Chaty a chalupy", pozemok: "Pozemky" };
+const PT_ICON: Record<string, string> = { byt: "🏢", dom: "🏠", chata: "🛖", pozemok: "🌳" };
+const PT_ORDER = ["byt", "dom", "chata", "pozemok"];
+
+function localNow(): { date: string; hm: string } {
+  const p = new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Bratislava", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());   // „2026-11-11 07:45"
+  return { date: p.slice(0, 10), hm: p.slice(11, 16) };
+}
+function sizeBand(pt: string | null, a: number | null): string {
+  if (!a) return "?";
+  if (pt === "byt") return a < 45 ? "s" : a < 75 ? "m" : a < 110 ? "l" : "xl";
+  if (pt === "dom") return a < 120 ? "s" : a < 200 ? "m" : a < 400 ? "l" : "xl";
+  if (pt === "chata") return a < 60 ? "s" : a < 120 ? "m" : "l";
+  return a < 800 ? "s" : a < 2000 ? "m" : a < 10000 ? "l" : "xl";
+}
+const eurSk = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n).toLocaleString("sk-SK")} €`);
+const median = (v: number[]) => { const a = [...v].sort((x, y) => x - y); const m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+function splitTg(lines: string[]): string[] {
+  const out: string[] = []; let cur = "";
+  for (const l of lines) {
+    if (cur && cur.length + l.length + 1 > TG_MAXLEN) { out.push(cur); cur = ""; }
+    cur += (cur ? "\n" : "") + l.slice(0, TG_MAXLEN);
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+// Udalosti ÚP: titulok musí byť o územnom pláne A o udalosti; súbory „Stiahnuť súbor …" sú prílohy.
+// \b v JS nepozná diakritiku („ÚPN" by nenašiel) → hranice slova cez lookaround na \p{L}
+const UP_TERM = /[úu]zemn\p{L}*\s+pl[áa]n|(?<!\p{L})[úu]pn(?!\p{L})|zmien\p{L}*\s+a\s+doplnk|zmeny\s+a\s+doplnky|(?<!\p{L})z\s*a\s*d(?!\p{L})|(?<!\p{L})zad(?!\p{L})/iu;
+const UP_EVENTS: { re: RegExp; icon: string; label: string }[] = [
+  { re: /v\s+znen[íi]|schv[áa]l|uznesen|(?<!\p{L})vzn(?!\p{L})|v[šs]eobecne\s+z[áa]v[äa]zn|z[áa]v[äa]zn[áa]\s+[čc]as[ťt]/iu, icon: "✅", label: "schválenie / platné znenie" },
+  { re: /presk[úu]man|§\s*25|prerokovan|pripomienk|stanovisk|n[áa]vrh\s+(?:zmien|[úu]zemn|zad|z\s*a\s*d)|verejn[áéý]\s+vyhl[áa][šs]k/iu, icon: "🗣️", label: "návrh / prerokovanie / pripomienky" },
+  { re: /za[čc]at\p{L}*\s+obstar|obstar[áa]van|ozn[áa]menie\s+o\s+za[čc]at|zadanie\s+pre/iu, icon: "📣", label: "začatie obstarávania" },
+];
+// → udalosť | "doc" (súbor dokumentácie ÚP, zoskupí sa po obci) | null (nie je o ÚP / starý dokument)
+function upEvent(title: string): { icon: string; label: string } | "doc" | null {
+  const t = (title ?? "").trim();
+  if (!t || !UP_TERM.test(t)) return null;
+  // „bez informácií dookola": dokument, ktorý nesie len staré roky (VZN 3/2021…), obec len znova nahrala
+  const years = [...t.matchAll(/(?<!\d)(20\d{2})(?!\d)/g)].map((m) => Number(m[1]));
+  if (years.length && Math.max(...years) < new Date().getFullYear() - 1) return null;
+  for (const e of UP_EVENTS) if (e.re.test(t)) return { icon: e.icon, label: e.label };
+  return "doc";
+}
+type DigestRow = { source: string; ext_id: string; url: string | null; title: string | null; ptype: string | null; deal: string | null;
+  obec: string | null; okres: string | null; area_m2: number | null; price_eur: number | null; ppm2: number | null;
+  first_seen: string | null; first_price: number | null };
+
+async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[]; stats: Record<string, number | string | null> }> {
+  const { date: today } = localNow();
+  const asOf = (await q<{ d: string | null }>("SELECT MAX(last_seen) d FROM market_listings").catch(() => []))[0]?.d ?? null;
+  const seen = new Set((await q<{ k: string }>("SELECT k FROM tg_seen WHERE first_at >= datetime('now','-90 day')").catch(() => [])).map((r) => r.k));
+  // zdroje, ktoré zbierame menej ako 7 dní, nemajú dátum vloženia → ich „nové" by bol celý katalóg
+  const young = new Set((await q<{ source: string }>(
+    "SELECT source FROM market_listings GROUP BY source HAVING MIN(first_seen) > date(?, '-7 day')", [today]).catch(() => [])).map((r) => r.source));
+  const keys: string[] = [];
+  const lines: string[] = [];
+  const day = today.split("-").reverse().join(". ").replace(/^0/, "");
+  lines.push(`🌅 Ranný radar · ${day}${asOf ? ` · inzercia k ${asOf.split("-").reverse().join(". ")}` : ""}`);
+  if (asOf && (Date.parse(`${today}T12:00:00Z`) - Date.parse(`${asOf}T12:00:00Z`)) / 86400000 >= 2) {
+    lines.push("⚠️ Dáta inzercie sú staršie ako 2 dni — zber neprebehol, súhrn je neúplný.");
+  }
+  const dk = (r: DigestRow) => `${(r.obec ?? "").toLowerCase()}|${r.ptype}|${Math.round((r.area_m2 ?? 0) / 10)}|${Math.round((r.price_eur ?? 0) / 1000)}`;
+
+  // ① TOP 50 — porovnateľné = rovnaký okres + typ + veľkostné pásmo, aktívne inzeráty za 21 dní
+  let nTop = 0;
+  if (asOf) {
+    const comp = await q<{ okres: string; ptype: string; area_m2: number; ppm2: number }>(
+      `SELECT okres, ptype, area_m2, ppm2 FROM market_listings WHERE deal='predaj' AND removed_at IS NULL
+         AND last_seen >= date(?, '-21 day') AND ppm2 > 0 AND area_m2 > 5 AND okres IS NOT NULL`, [asOf]).catch(() => []);
+    const grp = new Map<string, number[]>();
+    for (const c of comp) {
+      for (const k of [`${c.okres}|${c.ptype}|${sizeBand(c.ptype, c.area_m2)}`, `${c.okres}|${c.ptype}|*`]) {
+        if (!grp.has(k)) grp.set(k, []);
+        grp.get(k)!.push(c.ppm2);
+      }
+    }
+    const med = new Map<string, number>();
+    for (const [k, v] of grp) if (v.length >= 8) med.set(k, median(v));
+    const cand = await q<DigestRow>(
+      `SELECT source, ext_id, url, title, ptype, deal, obec, okres, area_m2, price_eur, ppm2, first_seen, first_price
+       FROM market_listings WHERE deal='predaj' AND removed_at IS NULL AND last_seen >= date(?, '-1 day')
+         AND ppm2 > 0 AND area_m2 > 5 AND okres IS NOT NULL
+         AND (first_seen >= date(?, '-3 day') OR (first_price > price_eur))`, [asOf, today]).catch(() => []);
+    const scored: { r: DigestRow; below: number; drop: number; score: number; key: string }[] = [];
+    const used = new Set<string>();
+    for (const r of cand) {
+      if (young.has(r.source) && !(r.first_price != null && r.price_eur != null && r.first_price > r.price_eur)) continue;
+      const stavba = r.ptype !== "pozemok";
+      if (!r.price_eur || r.price_eur < (stavba ? 15000 : 3000)) continue;
+      const m = med.get(`${r.okres}|${r.ptype}|${sizeBand(r.ptype, r.area_m2)}`) ?? med.get(`${r.okres}|${r.ptype}|*`);
+      const below = m && r.ppm2 ? ((m - r.ppm2) / m) * 100 : 0;
+      const drop = r.first_price && r.first_price > r.price_eur ? ((r.first_price - r.price_eur) / r.first_price) * 100 : 0;
+      if (below > 70 || drop > 60) continue;                       // takmer isto chyba údajov
+      const score = (Math.min(Math.max(below, 0), 60) / 60) * 65 + (Math.min(drop, 30) / 30) * 35;
+      if (score < 15) continue;
+      const key = `T:${r.source}:${r.ext_id}:${Math.round(r.price_eur)}`;
+      if (seen.has(key)) continue;
+      scored.push({ r, below, drop, score, key });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const top: typeof scored = [];
+    for (const x of scored) {
+      const d = dk(x.r);
+      if (used.has(d)) continue;                                   // ten istý inzerát na viacerých portáloch
+      used.add(d); top.push(x);
+      if (top.length >= DIGEST_TOP) break;
+    }
+    nTop = top.length;
+    lines.push("", `💎 ${top.length ? `${top.length} najlepších ponúk dňa` : "Najlepšie ponuky dňa"} (cena voči porovnateľným v okrese, pokles ceny)`);
+    if (!top.length) lines.push("— dnes žiadna výrazne výhodná nová ponuka");
+    top.forEach((x, i) => {
+      const r = x.r;
+      lines.push(`${i + 1}. ${PT_ICON[r.ptype ?? ""] ?? "•"} ${r.obec ?? "?"}${r.okres && r.okres !== r.obec ? ` (${r.okres})` : ""} · ${eurSk(r.price_eur)} · ${Math.round(r.area_m2 ?? 0)} m² · ${Math.round(r.ppm2 ?? 0)} €/m²`
+        + `${x.below >= 1 ? ` · −${Math.round(x.below)} % pod porovn.` : ""}${x.drop >= 1 ? ` · ↓${Math.round(x.drop)} %` : ""}`);
+      if (r.url) lines.push(`   ${r.url}`);
+      keys.push(x.key);
+    });
+  }
+
+  // ② NOVÁ INZERCIA v okresoch súhrnu (predaj aj prenájom), podľa okresu a kategórie
+  let nNew = 0;
+  if (asOf) {
+    const rows = await q<DigestRow>(
+      `SELECT source, ext_id, url, title, ptype, deal, obec, okres, area_m2, price_eur, ppm2, first_seen, first_price
+       FROM market_listings WHERE removed_at IS NULL AND first_seen >= date(?, '-2 day')
+         AND okres IN (${DIGEST_OKRESY.map(() => "?").join(",")}) ORDER BY price_eur`, [today, ...DIGEST_OKRESY]).catch(() => []);
+    const used = new Set<string>();
+    const by = new Map<string, Map<string, DigestRow[]>>();
+    for (const r of rows) {
+      if (young.has(r.source)) continue;
+      const key = `L:${r.source}:${r.ext_id}`;
+      if (seen.has(key)) continue;
+      const d = `${dk(r)}|${r.deal}`;
+      if (used.has(d)) continue;
+      used.add(d); keys.push(key);
+      const ok = r.okres ?? "?"; const pt = PT_ORDER.includes(r.ptype ?? "") ? r.ptype! : "ine";
+      if (!by.has(ok)) by.set(ok, new Map());
+      if (!by.get(ok)!.has(pt)) by.get(ok)!.set(pt, []);
+      by.get(ok)!.get(pt)!.push(r);
+      nNew++;
+    }
+    for (const okres of DIGEST_OKRESY) {
+      const cats = by.get(okres);
+      const n = cats ? [...cats.values()].reduce((a, v) => a + v.length, 0) : 0;
+      lines.push("", `🆕 Nová inzercia — okres ${okres} (${n})`);
+      if (!cats) { lines.push("— dnes nič nové"); continue; }
+      for (const pt of [...PT_ORDER, "ine"]) {
+        const list = cats.get(pt);
+        if (!list?.length) continue;
+        lines.push(`${PT_ICON[pt] ?? "•"} ${PT_LABEL[pt] ?? "Ostatné"} (${list.length})`);
+        for (const r of list) {
+          lines.push(`• ${(r.title ?? "").slice(0, 70)} · ${r.obec ?? ""} · ${eurSk(r.price_eur)}${r.area_m2 ? ` · ${Math.round(r.area_m2)} m²` : ""}${r.deal === "prenajom" ? " · prenájom" : ""}`);
+          if (r.url) lines.push(`   ${r.url}`);
+        }
+      }
+    }
+  }
+
+  // ③ ÚZEMNÉ PLÁNY — len reálne udalosti v okresoch súhrnu, každá raz
+  const up = await q<{ obec: string; okres: string | null; title: string | null; url: string | null; detected_at: string | null }>(
+    `SELECT obec, okres, title, url, detected_at FROM obec_changes WHERE change='new' AND detected_at >= datetime('now','-10 day')
+       AND okres IN (${DIGEST_OKRESY.map(() => "?").join(",")}) ORDER BY detected_at`, DIGEST_OKRESY).catch(() => []);
+  const upLines: string[] = [];
+  const upUsed = new Set<string>();
+  // sada súborov dokumentácie (výkresy „…_zad_4_c", textová časť…) v jednej obci a dni = JEDNA správa
+  const docs = new Map<string, { obec: string; okres: string | null; n: number; zad: string | null; url: string | null }>();
+  for (const c of up) {
+    const ev = upEvent(c.title ?? "");
+    if (!ev) continue;
+    if (ev === "doc") {
+      const g = `${c.obec}|${(c.detected_at ?? "").slice(0, 10)}`;
+      const zad = (c.title ?? "").match(/(?:zad|zmeny\s+a\s+doplnky\s+č\.?)[\s_-]*(\d{1,2})/i)?.[1] ?? null;
+      const d = docs.get(g) ?? { obec: c.obec, okres: c.okres, n: 0, zad, url: c.url };
+      d.n++; d.zad = d.zad ?? zad; docs.set(g, d);
+      continue;
+    }
+    const key = `U:${c.obec}|${(c.title ?? "").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim().slice(0, 160)}`;
+    if (seen.has(key) || upUsed.has(key)) continue;
+    upUsed.add(key); keys.push(key);
+    const term = (c.title ?? "").match(/\b(\d{1,2})\.\s?(\d{1,2})\.\s?(20\d{2})\b/);
+    upLines.push(`${ev.icon} ${c.obec} (${c.okres}) — ${ev.label}: ${(c.title ?? "").slice(0, 140)}${term && ev.icon === "🗣️" ? ` · termín ${term[0]}` : ""}`);
+    if (c.url) upLines.push(`   ${c.url}`);
+  }
+  for (const d of docs.values()) {
+    if (d.n < 3) continue;                                         // jednotlivý súbor bez udalosti = šum
+    const key = `U:${d.obec}|doc|${d.zad ?? "?"}`;
+    if (seen.has(key) || upUsed.has(key)) continue;
+    upUsed.add(key); keys.push(key);
+    upLines.push(`📐 ${d.obec} (${d.okres}) — zverejnená dokumentácia ÚP${d.zad ? ` (zmeny a doplnky č. ${d.zad})` : ""}: ${d.n} súborov`);
+    if (d.url) upLines.push(`   ${d.url}`);
+  }
+  lines.push("", `🗺️ Územné plány — ${DIGEST_OKRESY.join(", ")}`);
+  if (upLines.length) lines.push(...upLines); else lines.push("— žiadna nová udalosť (obstarávanie, prerokovanie, schválenie)");
+
+  return { messages: splitTg(lines), keys, stats: { asOf, top: nTop, new: nNew, up: upLines.filter((l) => !l.startsWith("   ")).length } };
+}
+
+export const tgDigest = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), action: z.enum(["claim", "ack", "fail", "preview"]), runner: z.enum(["mac", "cloud"]).default("mac") }))
+  .handler(async ({ data }): Promise<{ ok: boolean; claimed?: boolean; key?: string; reason?: string; messages?: string[]; stats?: Record<string, number | string | null>; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { date, hm } = localNow();
+    const key = `digest:${date}`;
+    if (data.action === "preview") {
+      const d = await buildMorningDigest();
+      return { ok: true, key, messages: d.messages, stats: d.stats };
+    }
+    if (data.action === "ack") {
+      const row = (await q<{ info: string | null }>("SELECT info FROM tg_deliveries WHERE key = ?", [key]))[0];
+      await q("UPDATE tg_deliveries SET status='sent', sent_at=datetime('now') WHERE key = ?", [key]);
+      let ks: string[] = [];
+      try { ks = row?.info ? (JSON.parse(row.info) as string[]) : []; } catch { /* nič */ }
+      const { DB } = bindings();
+      if (DB && ks.length) {
+        const st = DB.prepare("INSERT OR IGNORE INTO tg_seen (k) VALUES (?)");
+        const b = ks.map((k) => st.bind(k));
+        for (let i = 0; i < b.length; i += 50) await DB.batch(b.slice(i, i + 50));
+      }
+      await q("DELETE FROM tg_seen WHERE first_at < datetime('now','-120 day')").catch(() => {});
+      return { ok: true, key };
+    }
+    if (data.action === "fail") {                  // odoslanie zlyhalo → uvoľni deň, nech to skúsi druhý
+      await q("DELETE FROM tg_deliveries WHERE key = ? AND status = 'claimed'", [key]);
+      return { ok: true, key };
+    }
+    // claim — cloud je len záloha: pred 7:45 miestneho času čaká na Mac
+    if (data.runner === "cloud" && hm < "07:45") return { ok: true, claimed: false, key, reason: "pred 7:45 posiela Mac" };
+    if (hm < "06:30") return { ok: true, claimed: false, key, reason: "pred 6:30 sa súhrn neposiela" };
+    const ex = (await q<{ status: string; claimed_at: string | null }>("SELECT status, claimed_at FROM tg_deliveries WHERE key = ?", [key]))[0];
+    if (ex?.status === "sent") return { ok: true, claimed: false, key, reason: "dnešný súhrn už bol odoslaný" };
+    if (ex?.status === "claimed") {
+      // zaberaný a neodoslaný viac ako 20 min = odosielateľ spadol → môže ho prevziať druhý
+      const stale = (await q<{ s: number }>("SELECT (julianday('now') - julianday(?)) * 1440 > 20 AS s", [ex.claimed_at]))[0]?.s;
+      if (!stale) return { ok: true, claimed: false, key, reason: "súhrn práve posiela iný odosielateľ" };
+      await q("DELETE FROM tg_deliveries WHERE key = ? AND status = 'claimed'", [key]);
+    }
+    const got = await q<{ key: string }>(
+      "INSERT OR IGNORE INTO tg_deliveries (key, runner, status, claimed_at) VALUES (?, ?, 'claimed', datetime('now')) RETURNING key",
+      [key, data.runner]);
+    if (!got.length) return { ok: true, claimed: false, key, reason: "súhrn práve posiela iný odosielateľ" };
+    try {
+      const d = await buildMorningDigest();
+      await q("UPDATE tg_deliveries SET info = ? WHERE key = ?", [JSON.stringify(d.keys), key]);
+      return { ok: true, claimed: true, key, messages: d.messages, stats: d.stats };
+    } catch (e) {
+      await q("DELETE FROM tg_deliveries WHERE key = ? AND status = 'claimed'", [key]);
+      return { ok: false, message: `súhrn sa nepodarilo zostaviť: ${e instanceof Error ? e.message : "chyba"}` };
+    }
   });

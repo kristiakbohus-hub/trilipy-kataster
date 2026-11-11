@@ -32,6 +32,7 @@ import { Route as ZadaniaRouteImport } from './routes/zadania'
 import { Route as ZadanieIdRouteImport } from './routes/zadanie.$id'
 import { Route as ApiBriefQueueRouteImport } from './routes/api.brief-queue'
 import { Route as ApiMarketExportRouteImport } from './routes/api.market-export'
+import { Route as ApiTgDigestRouteImport } from './routes/api.tg-digest'
 import { Route as KontrolaRouteImport } from './routes/kontrola'
 import { Route as ZmenyRouteImport } from './routes/zmeny'
 import { Route as TrhovaHistoriaRouteImport } from './routes/trhova-historia'
@@ -186,6 +187,11 @@ const ApiBriefQueueRoute = ApiBriefQueueRouteImport.update({
 const ApiMarketExportRoute = ApiMarketExportRouteImport.update({
   id: '/api/market-export',
   path: '/api/market-export',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiTgDigestRoute = ApiTgDigestRouteImport.update({
+  id: '/api/tg-digest',
+  path: '/api/tg-digest',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ZmenyRoute = ZmenyRouteImport.update({
@@ -425,6 +431,7 @@ export interface FileRoutesByFullPath {
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
+  '/api/tg-digest': typeof ApiTgDigestRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -490,6 +497,7 @@ export interface FileRoutesByTo {
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
+  '/api/tg-digest': typeof ApiTgDigestRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -556,6 +564,7 @@ export interface FileRoutesById {
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
+  '/api/tg-digest': typeof ApiTgDigestRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
   '/trhova-historia': typeof TrhovaHistoriaRoute
@@ -623,6 +632,7 @@ export interface FileRouteTypes {
     | '/zadanie/$id'
     | '/api/brief-queue'
     | '/api/market-export'
+    | '/api/tg-digest'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -688,6 +698,7 @@ export interface FileRouteTypes {
     | '/zadanie/$id'
     | '/api/brief-queue'
     | '/api/market-export'
+    | '/api/tg-digest'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -753,6 +764,7 @@ export interface FileRouteTypes {
     | '/zadanie/$id'
     | '/api/brief-queue'
     | '/api/market-export'
+    | '/api/tg-digest'
     | '/zmeny'
     | '/kontrola'
     | '/trhova-historia'
@@ -815,6 +827,7 @@ export interface RootRouteChildren {
   ZadanieIdRoute: typeof ZadanieIdRoute
   ApiBriefQueueRoute: typeof ApiBriefQueueRoute
   ApiMarketExportRoute: typeof ApiMarketExportRoute
+  ApiTgDigestRoute: typeof ApiTgDigestRoute
   ZmenyRoute: typeof ZmenyRoute
   KontrolaRoute: typeof KontrolaRoute
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
@@ -1135,6 +1148,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMarketExportRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/tg-digest': {
+      id: '/api/tg-digest'
+      path: '/api/tg-digest'
+      fullPath: '/api/tg-digest'
+      preLoaderRoute: typeof ApiTgDigestRouteImport
+      parentRoute: typeof rootRouteImport
+    }
 
     '/zmeny': {
       id: '/zmeny'
@@ -1330,6 +1350,7 @@ const rootRouteChildren: RootRouteChildren = {
   ZadanieIdRoute: ZadanieIdRoute,
   ApiBriefQueueRoute: ApiBriefQueueRoute,
   ApiMarketExportRoute: ApiMarketExportRoute,
+  ApiTgDigestRoute: ApiTgDigestRoute,
   ZmenyRoute: ZmenyRoute,
   KontrolaRoute: KontrolaRoute,
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,
