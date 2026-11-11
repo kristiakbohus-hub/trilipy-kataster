@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiIngestStateContractsRouteImport } from './routes/api.ingest-state-contracts'
 import { Route as ApiIngestPricesRouteImport } from './routes/api.ingest-prices'
 import { Route as PonukaIdRouteImport } from './routes/ponuka.$id'
 import { Route as VypisHromadneRouteImport } from './routes/vypis-hromadne'
@@ -176,6 +177,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestStateContractsRoute = ApiIngestStateContractsRouteImport.update({
+  id: '/api/ingest-state-contracts',
+  path: '/api/ingest-state-contracts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIngestPricesRoute = ApiIngestPricesRouteImport.update({
@@ -452,6 +458,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
   '/api/ingest-prices': typeof ApiIngestPricesRoute
   '/ponuka/$id': typeof PonukaIdRoute
   '/vypis-hromadne': typeof VypisHromadneRoute
@@ -522,6 +529,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
   '/api/ingest-prices': typeof ApiIngestPricesRoute
   '/ponuka/$id': typeof PonukaIdRoute
   '/vypis-hromadne': typeof VypisHromadneRoute
@@ -593,6 +601,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
   '/api/ingest-prices': typeof ApiIngestPricesRoute
   '/ponuka/$id': typeof PonukaIdRoute
   '/vypis-hromadne': typeof VypisHromadneRoute
@@ -665,6 +674,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-state-contracts'
     | '/api/ingest-prices'
     | '/ponuka/$id'
     | '/vypis-hromadne'
@@ -735,6 +745,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-state-contracts'
     | '/api/ingest-prices'
     | '/ponuka/$id'
     | '/vypis-hromadne'
@@ -805,6 +816,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-state-contracts'
     | '/api/ingest-prices'
     | '/ponuka/$id'
     | '/vypis-hromadne'
@@ -872,6 +884,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiIngestStateContractsRoute: typeof ApiIngestStateContractsRoute
   ApiIngestPricesRoute: typeof ApiIngestPricesRoute
   PonukaIdRoute: typeof PonukaIdRoute
   VypisHromadneRoute: typeof VypisHromadneRoute
@@ -1179,6 +1192,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZadaniaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ingest-state-contracts': {
+      id: '/api/ingest-state-contracts'
+      path: '/api/ingest-state-contracts'
+      fullPath: '/api/ingest-state-contracts'
+      preLoaderRoute: typeof ApiIngestStateContractsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ingest-prices': {
       id: '/api/ingest-prices'
       path: '/api/ingest-prices'
@@ -1427,6 +1447,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiIngestStateContractsRoute: ApiIngestStateContractsRoute,
   ApiIngestPricesRoute: ApiIngestPricesRoute,
   PonukaIdRoute: PonukaIdRoute,
   VypisHromadneRoute: VypisHromadneRoute,

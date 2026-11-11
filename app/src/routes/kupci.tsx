@@ -6,7 +6,7 @@ import {
   type BuyerRequest, type BuyerHit, type BuyerHitSrc, type BuyerMatchStats,
 } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
-import { MatchStatusSelect, ScorePill, MATCH_STATUS_SK } from "../components/buyer-ui";
+import { MatchStatusSelect, ScorePill, MATCH_STATUS_SK, StateContractsCard } from "../components/buyer-ui";
 
 // KUPUJÚCI — evidencia dopytu a automatické párovanie (plán vlastníka 2026-11-10). BEZ `loader`
 // (pamäť cf_app_ssr_loader_leak) — dáta až po prihlásení v useEffect.
@@ -183,6 +183,11 @@ function KupciPage() {
             ))}
           </div>
         )}
+      </Card>
+
+      <Card className="p-4">
+        <SectionHeader title="Štátne zmluvy o pozemkoch (CRZ)" hint="predaje, zámeny, bremená a nájmy pozemkov SPF, Lesov SR, SVP, ŽSR, NDS" />
+        <div className="mt-2"><StateContractsCard /></div>
       </Card>
     </div>
   );

@@ -6881,6 +6881,42 @@ export const tgDigest = createServerFn({ method: "POST" })
 // ——— LV časti: parcely C/E pri LV + stavby so súpisným číslom (Mac → /api/ingest-lvparts, migrácia 0097) ———
 // Dovtedy D1 mala len parcely C s obrysom (z mapy) → LV založené na parcelách E nemali výpis časti A,
 // vyhľadávanie „E 1500" ani stavby „s.č. 563". reset = zmaž časti k.ú. pred prvou dávkou (dávky po 2 000).
+// ——— ŠTÁTNE ZMLUVY O POZEMKOCH z CRZ (2026-11-11) — signál ponuky aj kupcov, bez osobných údajov ———
+export type StateContract = { crzId: string; day: string; signed: string | null; publisher: string; kind: string; amount: number | null; kuName: string | null; okres: string | null; party: string | null; url: string | null };
+export const ingestStateContracts = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    rows: z.array(z.object({
+      crzId: z.string().min(1).max(20), day: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), signed: z.string().max(10).nullable().optional(),
+      publisher: z.string().min(1).max(120), kind: z.enum(["kupa", "zamena", "vecne_bremeno", "najom"]), amount: z.number().nullable().optional(),
+      kuName: z.string().max(80).nullable().optional(), okres: z.string().max(60).nullable().optional(),
+      party: z.string().max(120).nullable().optional(), url: z.string().url().max(200).nullable().optional(),
+    })).max(2000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const ps = DB.prepare(`INSERT INTO state_contracts (crz_id,day,signed,publisher,kind,amount,ku_name,okres,party,url) VALUES (?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(crz_id) DO UPDATE SET day=excluded.day, signed=excluded.signed, publisher=excluded.publisher, kind=excluded.kind, amount=excluded.amount,
+      ku_name=excluded.ku_name, okres=excluded.okres, party=excluded.party, url=excluded.url`);
+    const stmts = data.rows.map((r) => ps.bind(r.crzId, r.day, r.signed ?? null, r.publisher, r.kind, r.amount ?? null, r.kuName ?? null, r.okres ?? null, r.party ?? null, r.url ?? null));
+    for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
+    return { ok: true, inserted: stmts.length };
+  });
+export const getStateContracts = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), okresy: z.array(z.string().max(60)).max(20).optional(), days: z.number().int().min(1).max(365).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: StateContract[]; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [], message: "Neprihlásený." };
+    const cond = ["day >= date('now', ?)"]; const args: unknown[] = [`-${data.days ?? 30} days`];
+    if (data.okresy?.length) { cond.push(`(okres IN (${data.okresy.map(() => "?").join(",")}) OR (okres IS NULL AND kind IN ('kupa','zamena')))`); args.push(...data.okresy); }
+    const rows = await q<{ crz_id: string; day: string; signed: string | null; publisher: string; kind: string; amount: number | null; ku_name: string | null; okres: string | null; party: string | null; url: string | null }>(
+      `SELECT * FROM state_contracts WHERE ${cond.join(" AND ")} ORDER BY day DESC, kind LIMIT 200`, args).catch(() => []);
+    return { ok: true, rows: rows.map((r) => ({ crzId: r.crz_id, day: r.day, signed: r.signed, publisher: r.publisher, kind: r.kind, amount: r.amount, kuName: r.ku_name, okres: r.okres, party: r.party, url: r.url })) };
+  });
+
 // ——— CENY ZO ZMLÚV z katastra (SPI CEN/CAS) — ingest z Macu, výpis pri LV a súhrny (2026-11-11) ———
 export const ingestLvPrices = createServerFn({ method: "POST" })
   .validator(z.object({

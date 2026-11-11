@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { listingBuyers, setBuyerMatchStatus, type BuyerHit, type ListingBuyers } from "../lib/api/kataster.functions";
+import { getStateContracts, listingBuyers, setBuyerMatchStatus, type BuyerHit, type ListingBuyers, type StateContract } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 
 // Spoločné prvky kupcov (2026-11-11): skóre zhody, stav zhody a panel „Kto by to kúpil" k inzerátu.
@@ -107,6 +107,53 @@ export function ListingBuyersToggle({ url }: { url: string | null | undefined })
     <div className="w-full">
       <button onClick={() => setOpen((v) => !v)} className="text-[11px] text-brand hover:underline">{open ? "Skryť kupcov" : "Kto by to kúpil?"}</button>
       {open ? <div className="mt-1"><ListingBuyersPanel url={url} /></div> : null}
+    </div>
+  );
+}
+
+const SC_KIND: Record<string, string> = { kupa: "predaj / kúpa", zamena: "zámena", vecne_bremeno: "vecné bremeno", najom: "nájom" };
+/** Štátne zmluvy o pozemkoch z CRZ (SPF, Lesy SR, SVP, ŽSR, NDS…) — kto od štátu kupuje a kde štát predáva. */
+export function StateContractsCard() {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<StateContract[] | null>(null);
+  const [only, setOnly] = useState<"kupa" | "vsetko">("kupa");
+  const [okres, setOkres] = useState("");
+  useEffect(() => {
+    if (!token) return;
+    getStateContracts({ data: { token, days: 60 } }).then((r) => setRows(r.rows)).catch(() => setRows([]));
+  }, [token]);
+  if (!rows) return null;
+  const okresy = [...new Set(rows.map((r) => r.okres).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, "sk"));
+  const list = rows.filter((r) => (only === "vsetko" || r.kind === "kupa" || r.kind === "zamena") && (!okres || r.okres === okres));
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <select value={only} onChange={(e) => setOnly(e.target.value as typeof only)} className="rounded-md border border-line bg-paper px-2 py-1 text-fg">
+          <option value="kupa">predaje a zámeny</option><option value="vsetko">aj bremená a nájmy</option>
+        </select>
+        <select value={okres} onChange={(e) => setOkres(e.target.value)} className="rounded-md border border-line bg-paper px-2 py-1 text-fg">
+          <option value="">celé SR</option>{okresy.map((o) => <option key={o} value={o}>okres {o}</option>)}
+        </select>
+        <span className="text-muted">posledných 60 dní · {list.length}</span>
+      </div>
+      {list.length === 0 ? <p className="text-xs text-muted">Žiadne zmluvy pre tento výber (zber beží denne ráno a večer).</p> : (
+        <ul className="divide-y divide-line/60 text-xs">
+          {list.slice(0, 60).map((r) => (
+            <li key={r.crzId} className="flex flex-wrap items-baseline justify-between gap-2 py-1">
+              <span className="min-w-0">
+                <b className="text-fg">{SC_KIND[r.kind] ?? r.kind}</b> · {r.publisher}
+                {r.kuName ? <span className="text-muted"> · k.ú. {r.kuName}{r.okres ? ` (okres ${r.okres})` : ""}</span> : null}
+                {r.party ? <span className="text-muted"> · s: {r.party}</span> : null}
+              </span>
+              <span className="shrink-0 tabular-nums text-muted">
+                {r.amount ? `${Math.round(r.amount).toLocaleString("sk-SK")} € · ` : ""}{r.day.split("-").reverse().join(". ")}
+                {r.url ? <a href={r.url} target="_blank" rel="noopener noreferrer" className="ml-1 text-brand hover:underline">CRZ ↗</a> : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[10px] text-muted">Zdroj: Centrálny register zmlúv (verejné dáta). Mená fyzických osôb sa neukladajú. Firma, ktorá kupuje pozemky od štátu, je možný kupec aj predávajúci.</p>
     </div>
   );
 }
