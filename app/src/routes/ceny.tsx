@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { decSk } from "../lib/domain";
 import { useEffect, useMemo, useState } from "react";
+import { getPriceStats, type PriceStat } from "../lib/api/kataster.functions";
 import { getMarketStats, getMarketTree, getMarketSeries, getMarketOpportunities, refreshMarketData, refreshMarketListings, refreshMarketPriceHistory, getMarketListings, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -246,6 +247,9 @@ function CenyPage() {
         </div>
       )}
 
+      {/* Realizované ceny z katastra (zmluvy) */}
+      <RealizedPrices />
+
       {/* Príležitosti */}
       <div className="mt-4">
         <SectionHeader title="Cenové príležitosti" hint="Znížené ceny · dlho na trhu · pod trhovou cenou." />
@@ -331,6 +335,60 @@ function CenyPage() {
       <Disclaimer>
         Ceny sú z verejných inzerátov (scrape) — orientačné, nie znalecký posudok. „Cena za m²" = medián €/m² inzerátov v lokalite (mimo-rozsahové hodnoty vylúčené); „celková cena" = inzerovaná cena nehnuteľnosti. „Pod trhom" = €/m² oproti mediánu lokality.
       </Disclaimer>
+    </div>
+  );
+}
+
+// REALIZOVANÉ CENY z katastra (SPI CEN/CAS) — rozhodnutie vlastníka 2026-11-11 „súhrnne + pri LV".
+// Na rozdiel od inzercie (ponuková cena) ide o cenu zo zmluvy. Mediány len z čistých zmlúv bez odchýlok
+// (symbolická cena, malá parcela pod garážou, extrém €/m²); €/m² len pri zmluvách na samotné pozemky / byt s výmerou.
+const KIND_SK: Record<string, string> = { pozemok: "Pozemky", byt: "Byty", dom: "Domy", stavba: "Stavby / priestory", zmiesane: "Zmiešané" };
+function RealizedPrices() {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<PriceStat[] | null>(null);
+  const [kind, setKind] = useState("byt");
+  useEffect(() => {
+    if (!token) return;
+    getPriceStats({ data: { token } }).then((r) => setRows(r.rows)).catch(() => setRows([]));
+  }, [token]);
+  if (!rows) return null;
+  const list = rows.filter((r) => r.kind === kind);
+  const years = [...new Set(list.map((r) => r.year))].sort((a, b) => b - a).slice(0, 5);
+  const kus = [...new Set(list.map((r) => r.kuName ?? r.datasetId))];
+  const cell = (ku: string, y: number) => list.find((r) => (r.kuName ?? r.datasetId) === ku && r.year === y);
+  const n = (v: number | null | undefined, suf: string) => (v == null ? "—" : `${Math.round(v).toLocaleString("sk-SK")}${suf}`);
+  return (
+    <div className="mt-4">
+      <SectionHeader title="Realizované ceny z katastra" hint="Ceny zo zmlúv (nie ponukové) — medián za rok, len čisté zmluvy bez odchýlok." />
+      <Card className="p-3">
+        <div className="mb-2 flex flex-wrap gap-1.5 text-xs">
+          {Object.entries(KIND_SK).map(([k, l]) => (
+            <button key={k} onClick={() => setKind(k)} className={`rounded-full border px-3 py-1 ${kind === k ? "border-green bg-green/10 text-green" : "border-line text-muted hover:text-fg"}`}>{l}</button>
+          ))}
+        </div>
+        {list.length === 0 ? <div className="text-sm text-muted">Pre tento druh zatiaľ nie sú zmluvy s cenou.</div> : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead><tr className="text-left text-[11px] uppercase tracking-wide text-muted">
+                <th className="py-1 pr-3 font-medium">k.ú.</th>
+                {years.map((y) => <th key={y} className="py-1 pr-3 text-right font-medium">{y}</th>)}
+              </tr></thead>
+              <tbody>
+                {kus.map((ku) => (
+                  <tr key={ku} className="border-t border-line/60">
+                    <td className="py-1 pr-3 text-fg">{ku}</td>
+                    {years.map((y) => { const c = cell(ku, y); return (
+                      <td key={y} className="py-1 pr-3 text-right tabular-nums">
+                        {c ? <><div className="text-fg">{c.medPpm2 != null ? n(c.medPpm2, " €/m²") : n(c.medCen, " €")}</div><div className="text-[10px] text-muted">{c.n} zml.{c.medPpm2 != null && c.medCen != null ? ` · ${n(c.medCen, " €")}` : ""}</div></> : <span className="text-muted">—</span>}
+                      </td>); })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-2 text-[11px] text-muted">Zdroj: kataster (ÚGKK SR), cena celej zmluvy. Medián sa ukáže pri aspoň 3 zmluvách. Údaj nie je ocenenie nehnuteľnosti.</p>
+      </Card>
     </div>
   );
 }

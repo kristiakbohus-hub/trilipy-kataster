@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LvMapSnapshot } from "../components/lv-map";
+import { getLvPrices, type LvPrice } from "../lib/api/kataster.functions";
 import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility, getChanges, getLvZoning, getLvAvm, type LvParcelAvm } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
@@ -602,6 +603,7 @@ function VypisPage() {
                 )}
               </Section>
             ) : null}
+            <LvPricesSection datasetId={datasetId} lvNo={lvNo} />
           </>
         )}
 
@@ -1079,5 +1081,39 @@ function Table({ head, rows, mono = [] }: { head: string[]; rows: string[][]; mo
         </tbody>
       </table>
     </div>
+  );
+}
+
+// Ceny zo zmlúv z katastra (SPI CEN/CAS, od 2019) — rozhodnutie vlastníka 2026-11-11 „súhrnne + pri LV".
+// Cena je za CELÚ zmluvu (môže zahŕňať viac parciel alebo byt so stavbou). Kto kupoval = vlastníci v časti B
+// (mená len pri plnom prístupe). Nie je to ocenenie ani znalecký údaj.
+function LvPricesSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }) {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<LvPrice[] | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    getLvPrices({ data: { token, datasetId, lvNo } }).then((r) => setRows(r.rows)).catch(() => setRows([]));
+  }, [token, datasetId, lvNo]);
+  if (!rows || rows.length === 0) return null;
+  const eur = (n: number) => `${Math.round(n).toLocaleString("sk-SK")} €`;
+  return (
+    <Section title="Ceny zo zmlúv (kataster, od 2019)">
+      <table className="w-full text-[13px]">
+        <thead><tr className="text-left text-[11px] uppercase tracking-wide text-muted">
+          <th className="py-1 pr-2 font-medium">Dátum</th><th className="py-1 pr-2 font-medium">Cena zmluvy</th><th className="py-1 pr-2 font-medium">Čo</th><th className="py-1 pr-2 font-medium">€/m²</th>
+        </tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="border-t border-line/60 align-top">
+              <td className="py-1 pr-2 tabular-nums">{r.cas.split("-").reverse().join(". ")}</td>
+              <td className="py-1 pr-2 tabular-nums">{eur(r.cen)}</td>
+              <td className="py-1 pr-2">{r.items ?? r.kind}{r.landM2 ? <span className="text-muted"> · {Math.round(r.landM2).toLocaleString("sk-SK")} m²</span> : null}{r.flatM2 ? <span className="text-muted"> · {Math.round(r.flatM2)} m²</span> : null}</td>
+              <td className="py-1 pr-2 tabular-nums">{r.ppm2 ? Math.round(r.ppm2).toLocaleString("sk-SK") : "—"}{r.flag ? <span className="block text-[11px] text-warning">{r.flag}</span> : null}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-1 text-[11px] text-muted">Cena je za celú zmluvu (môže zahŕňať viac položiek). Údaj z katastra, nie ocenenie. Kto nadobúdal, vidieť v časti B.</p>
+    </Section>
   );
 }

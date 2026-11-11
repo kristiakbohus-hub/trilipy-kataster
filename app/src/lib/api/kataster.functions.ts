@@ -6857,6 +6857,68 @@ export const tgDigest = createServerFn({ method: "POST" })
 // ——— LV časti: parcely C/E pri LV + stavby so súpisným číslom (Mac → /api/ingest-lvparts, migrácia 0097) ———
 // Dovtedy D1 mala len parcely C s obrysom (z mapy) → LV založené na parcelách E nemali výpis časti A,
 // vyhľadávanie „E 1500" ani stavby „s.č. 563". reset = zmaž časti k.ú. pred prvou dávkou (dávky po 2 000).
+// ——— CENY ZO ZMLÚV z katastra (SPI CEN/CAS) — ingest z Macu, výpis pri LV a súhrny (2026-11-11) ———
+export const ingestLvPrices = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), reset: z.boolean().optional(),
+    rows: z.array(z.object({
+      lvNo: z.number().int(), cas: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), cen: z.number().positive(),
+      kind: z.enum(["pozemok", "byt", "dom", "stavba", "zmiesane"]), nItems: z.number().int().min(1).max(5000),
+      landM2: z.number().nullable().optional(), flatM2: z.number().nullable().optional(), ppm2: z.number().nullable().optional(),
+      flag: z.string().max(60).nullable().optional(), items: z.string().max(400).nullable().optional(),
+    })).max(3000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const did = `kn-${data.kodKu}`;
+    if (data.reset) await DB.prepare("DELETE FROM lv_prices WHERE dataset_id=?").bind(did).run();
+    const ps = DB.prepare("INSERT INTO lv_prices (dataset_id,lv_no,cas,cen,kind,n_items,land_m2,flat_m2,ppm2,flag,items) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
+    const stmts = data.rows.map((r) => ps.bind(did, r.lvNo, r.cas, r.cen, r.kind, r.nItems, r.landM2 ?? null, r.flatM2 ?? null, r.ppm2 ?? null, r.flag ?? null, r.items ?? null));
+    for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
+    return { ok: true, inserted: stmts.length };
+  });
+
+export type LvPrice = { cas: string; cen: number; kind: string; nItems: number; landM2: number | null; flatM2: number | null; ppm2: number | null; flag: string | null; items: string | null };
+export const getLvPrices = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), lvNo: z.number().int() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: LvPrice[]; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [], message: "Neprihlásený." };
+    const rows = await q<{ cas: string; cen: number; kind: string; n_items: number; land_m2: number | null; flat_m2: number | null; ppm2: number | null; flag: string | null; items: string | null }>(
+      "SELECT cas, cen, kind, n_items, land_m2, flat_m2, ppm2, flag, items FROM lv_prices WHERE dataset_id=? AND lv_no=? ORDER BY cas DESC LIMIT 50",
+      [data.datasetId, data.lvNo]).catch(() => []);
+    return { ok: true, rows: rows.map((r) => ({ cas: r.cas, cen: r.cen, kind: r.kind, nItems: r.n_items, landM2: r.land_m2, flatM2: r.flat_m2, ppm2: r.ppm2, flag: r.flag, items: r.items })) };
+  });
+
+export type PriceStat = { datasetId: string; kuName: string | null; kind: string; year: number; n: number; medPpm2: number | null; medCen: number | null };
+/** Súhrn cien zo zmlúv: k.ú. × druh × rok — počet zmlúv, medián €/m² (len čisté zmluvy bez odchýlok) a medián ceny. */
+export const getPriceStats = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40).optional(), fromYear: z.number().int().min(2000).max(2100).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: PriceStat[]; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [], message: "Neprihlásený." };
+    const cond = ["cas >= ?"]; const args: unknown[] = [`${data.fromYear ?? new Date().getUTCFullYear() - 6}-01-01`];
+    if (data.datasetId) { cond.push("dataset_id = ?"); args.push(data.datasetId); }
+    const rows = await q<{ dataset_id: string; kind: string; y: string; cen: number; ppm2: number | null; flag: string | null }>(
+      `SELECT dataset_id, kind, substr(cas,1,4) y, cen, ppm2, flag FROM lv_prices WHERE ${cond.join(" AND ")} LIMIT 60000`, args).catch(() => []);
+    const names = new Map((await q<{ id: string; ku_name: string | null }>("SELECT id, ku_name FROM datasets").catch(() => [])).map((d) => [d.id, d.ku_name]));
+    const g = new Map<string, { ds: string; kind: string; y: number; cen: number[]; pp: number[] }>();
+    for (const r of rows) {
+      const k = `${r.dataset_id}|${r.kind}|${r.y}`;
+      const cur = g.get(k) ?? { ds: r.dataset_id, kind: r.kind, y: Number(r.y), cen: [], pp: [] };
+      if (!r.flag) { cur.cen.push(r.cen); if (r.ppm2) cur.pp.push(r.ppm2); }
+      g.set(k, cur);
+    }
+    const out: PriceStat[] = [...g.values()].filter((x) => x.cen.length).map((x) => ({
+      datasetId: x.ds, kuName: names.get(x.ds) ?? null, kind: x.kind, year: x.y, n: x.cen.length,
+      medPpm2: x.pp.length >= 3 ? Math.round((medianOf(x.pp) ?? 0) * 10) / 10 : null, medCen: x.cen.length >= 3 ? Math.round(medianOf(x.cen) ?? 0) : null,
+    })).sort((a, b) => (a.kuName ?? "").localeCompare(b.kuName ?? "", "sk") || a.kind.localeCompare(b.kind) || b.year - a.year);
+    return { ok: true, rows: out };
+  });
+
 export const ingestLvParts = createServerFn({ method: "POST" })
   .validator(z.object({
     secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), reset: z.boolean().optional(),
