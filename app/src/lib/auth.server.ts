@@ -83,10 +83,12 @@ function b32decode(s: string): Uint8Array {
   return new Uint8Array(out);
 }
 async function totpAt(secretB32: string, counter: number): Promise<string> {
-  const key = await crypto.subtle.importKey("raw", b32decode(secretB32), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const kb = b32decode(secretB32);
+  const raw = kb.buffer.slice(kb.byteOffset, kb.byteOffset + kb.byteLength) as ArrayBuffer;   // workers-types chcú ArrayBuffer
+  const key = await crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
   const msg = new Uint8Array(8); let c = counter;
   for (let i = 7; i >= 0; i--) { msg[i] = c & 255; c = Math.floor(c / 256); }
-  const h = new Uint8Array(await crypto.subtle.sign("HMAC", key, msg));
+  const h = new Uint8Array(await crypto.subtle.sign("HMAC", key, msg.buffer as ArrayBuffer));
   const o = h[h.length - 1] & 15;
   const code = ((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3];
   return String(code % 1_000_000).padStart(6, "0");

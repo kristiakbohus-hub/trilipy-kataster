@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { publicOfferCore } from "../lib/api/kataster.functions";
+import { publicOfferCore } from "../lib/offer.server";
 
 // GET /api/offer?t=<token> — verejné čítanie ponuky pre klienta (bod 10). Bez session; platnosť a zrušenie
 // stráži tabuľka offer_shares. Vracia len snapshot položiek (žiadne mená vlastníkov ani klienta).
