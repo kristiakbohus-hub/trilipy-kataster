@@ -108,13 +108,15 @@ function ClientReportPage() {
   const [purpose, setPurpose] = useState("");
   const [busyExp, setBusyExp] = useState(false);
   const [exports, setExports] = useState<ReportExportRow[]>([]);
+  // OI-14: mená fyzických osôb len na výslovné zapnutie pri tomto reporte (server ich dá len plnému prístupu)
+  const [withNames, setWithNames] = useState(false);
   useEffect(() => {
     if (!token) return;
     listReportExports({ data: { token, scenario, kodKu } }).then(setExports).catch(() => {});
   }, [token, scenario, kodKu]);
   useEffect(() => {
-    getClientReport({ data: { scenario, kodKu } }).then(setR).catch(() => {}).finally(() => setReady(true));
-  }, [scenario, kodKu]);
+    getClientReport({ data: { scenario, kodKu, token: token ?? undefined, withNames } }).then(setR).catch(() => {}).finally(() => setReady(true));
+  }, [scenario, kodKu, token, withNames]);
 
   if (!ready) return <Card className="p-6 text-center text-sm text-muted">Načítavam report…</Card>;
   if (!r) return <Card className="p-6 text-center text-sm text-muted">Report sa nepodarilo zostaviť.</Card>;
@@ -143,7 +145,7 @@ function ClientReportPage() {
     setBusyExp(true); setExportErr(null);
     try {
       // Najprv záznam, potom export — vydanie bez stopy nevznikne.
-      const lr = await logReportExport({ data: { token, scenario: rep.scenario, kodKu: rep.kodKu, format: dlg, resultHash: rep.resultHash, recipient: recipient.trim(), purpose: purpose.trim() } });
+      const lr = await logReportExport({ data: { token, scenario: rep.scenario, kodKu: rep.kodKu, format: dlg, resultHash: rep.resultHash, recipient: recipient.trim(), purpose: purpose.trim(), withNames: rep.withNames } });
       if (!lr.ok) { setExportErr(lr.message ?? "Vydanie sa nepodarilo zaevidovať — export neprebehol."); return; }
       const fmt = dlg;
       setDlg(null);
@@ -178,6 +180,21 @@ function ClientReportPage() {
           </button>
         </span>
       </div>
+
+      <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <label className="flex items-center gap-1.5 text-xs text-muted">
+          <input type="checkbox" checked={withNames} onChange={(e) => setWithNames(e.target.checked)} />
+          Zahrnúť mená vlastníkov (fyzických osôb) do tohto reportu
+        </label>
+        {r.namesNote ? <span className="text-xs" style={{ color: "#9a7b3e" }}>{r.namesNote}</span> : null}
+      </div>
+      {r.withNames ? (
+        <p className="rounded border px-2 py-1.5 text-xs leading-relaxed print:hidden"
+          style={{ borderColor: "#9c4a4055", background: "rgba(156,74,64,0.06)", color: "#7a3a32" }}>
+          <b>Tento výstup obsahuje osobné údaje</b> — mená vlastníkov z katastra (bez osôb s GDPR námietkou).
+          Vydanie sa zaeviduje s príznakom „s menami“. Odovzdaj ho len príjemcovi s oprávneným účelom.
+        </p>
+      ) : null}
 
       {dlg ? (
         <Card className="space-y-2 p-4 print:hidden">
@@ -424,6 +441,7 @@ function ClientReportPage() {
                   <td className="pr-2">{e.recipient}</td>
                   <td className="pr-2 text-muted">{e.purpose}</td>
                   <td className="pr-2 font-mono text-muted">{e.result_hash}</td>
+                  <td className="pr-2" style={e.with_names ? { color: "#9c4a40" } : undefined}>{e.with_names ? "s menami" : "bez mien"}</td>
                   <td className="text-muted">{e.author ?? ""}</td>
                 </tr>
               ))}

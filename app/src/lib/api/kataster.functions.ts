@@ -1429,6 +1429,10 @@ export type ClientReport = {
   emptyReason: string | null;
   // Zakázané formulácie (dok. 16 §4) v texte z enginov — kontrolované kódom, nie ručne.
   phraseIssues: PhraseIssue[];
+  // OI-14 (rozhodnutie vlastníka 2026-11-11): mená fyzických osôb LEN na výslovné povolenie pri
+  // konkrétnom reporte a len pre rolu s plným prístupom; vydanie sa zaeviduje s príznakom.
+  withNames: boolean;
+  namesNote: string | null;
 };
 // SHA-256 → prvých 16 hex znakov. Stačí na identitu výsledku; nie je to kryptografický podpis.
 async function sha256Hex(txt: string): Promise<string> {
@@ -1437,8 +1441,14 @@ async function sha256Hex(txt: string): Promise<string> {
 }
 
 export const getClientReport = createServerFn({ method: "POST" })
-  .validator(z.object({ scenario: z.string(), kodKu: z.string() }))
+  .validator(z.object({ scenario: z.string(), kodKu: z.string(), token: z.string().optional(), withNames: z.boolean().optional() }))
   .handler(async ({ data }): Promise<ClientReport> => {
+    // Mená len keď ich používateľ pri tomto reporte výslovne zapne A rola zo session má plný prístup.
+    const namesWanted = !!data.withNames;
+    const namesOk = namesWanted && ownerAccess(await roleFromToken(data.token)) === "full";
+    const supNames = namesOk ? await suppressedNameSet() : new Set<string>();
+    const keepName = (n: string) => !!n.trim() && !supNames.has(normName(n));
+    let namesNote: string | null = namesWanted && !namesOk ? "Mená vlastníkov môže do reportu zahrnúť len rola s plným prístupom k vlastníkom." : null;
     const run = (await q<ScenarioRun>(
       "SELECT * FROM scenario_runs WHERE scenario = ? AND kod_ku = ?", [data.scenario, data.kodKu],
     ).catch(() => []))[0] ?? null;
@@ -1473,6 +1483,20 @@ export const getClientReport = createServerFn({ method: "POST" })
         datasetId: x.dataset_id, lvNo: x.lv_no, parcelNo: (x.parcels ?? "").split(",")[0].trim() || null,
       }));
       for (const x of src) if (x.zoning_src) zs.set(x.zoning_src, (zs.get(x.zoning_src) ?? 0) + 1);
+      if (namesOk) {
+        const did = src.find((x) => x.dataset_id)?.dataset_id ?? null;
+        const lvs = [...new Set(src.map((x) => x.lv_no).filter((n): n is number => n != null))];
+        const own = did && lvs.length ? await q<{ lv_no: number; name: string }>(
+          `SELECT lv_no, name FROM lv_owners WHERE dataset_id = ? AND lv_no IN (${lvs.map(() => "?").join(",")}) ORDER BY id`,
+          [did, ...lvs]).catch(() => []) : [];
+        const byLv = new Map<number, string[]>();
+        for (const o of own) if (keepName(o.name)) byLv.set(o.lv_no, [...(byLv.get(o.lv_no) ?? []), o.name]);
+        colLabels = [...colLabels, "Vlastníci (mená)"];
+        rows = rows.map((r) => {
+          const n = r.lvNo != null ? byLv.get(r.lvNo) ?? [] : [];
+          return { ...r, cols: [...r.cols, { label: "Vlastníci (mená)", value: n.length ? n.slice(0, 8).join("; ") + (n.length > 8 ? ` a ďalší (${n.length - 8})` : "") : "—" }] };
+        });
+      }
       criteriaSample = src[0]?.criteria_json ?? null;
       kuName = src[0]?.ku_name ?? null;
     } else if (data.scenario === "settlement") {
@@ -1502,17 +1526,17 @@ export const getClientReport = createServerFn({ method: "POST" })
     } else if (data.scenario === "landsearch") {
       // POZOR: landsearch_results nesie REÁLNE mená vlastníkov a tento report nemá rolu ani token —
       // mená sa preto do neho zámerne neberú, len ich počet.
-      const src = await q<Omit<LandsearchRow, "owners"> & { dataset_id: string | null }>(
+      const src = await q<Omit<LandsearchRow, "owners"> & { dataset_id: string | null; owners?: string | null }>(
         `SELECT lr.kod_ku, COALESCE(ds.ku_name, lr.ku_name) AS ku_name, lr.purpose, lr.verdict,
                 lr.quality, lr.area_m2, lr.n_parcels, lr.parcels, lr.shape, lr.zone, lr.build,
                 lr.slope, lr.frontage, lr.ppf, lr.existing_use, lr.druh, lr.access_times,
-                lr.n_owners, lr.reason, ds.id AS dataset_id
+                lr.n_owners, lr.reason, ds.id AS dataset_id${namesOk ? ", lr.owners" : ""}
          FROM landsearch_results lr LEFT JOIN datasets ds ON ds.ku_code = lr.kod_ku
          WHERE lr.kod_ku = ? AND lr.verdict IN ('MATCH','PROVISIONAL')
          ORDER BY (lr.verdict='MATCH') DESC, lr.quality DESC`, [data.kodKu]).catch(() => []);
       // „Právny prístup" (SYN-LI-07, rozhodnutie vlastníka 2026-11-11): appka nevie, či k celku vedie
       // vjazd z cesty po vlastnom/verejnom pozemku alebo cez vecné bremeno — každá zhoda nesie „overiť".
-      colLabels = ["Parcely", "Výmera", "Účel", "Zóna", "Vlastníkov", "Dostupnosť", "Právny prístup"];
+      colLabels = ["Parcely", "Výmera", "Účel", "Zóna", "Vlastníkov", "Dostupnosť", "Právny prístup", ...(namesOk ? ["Vlastníci (mená)"] : [])];
       rows = src.map((x, i) => ({
         id: `${data.kodKu}-${i + 1}`,
         title: `${m2Txt(x.area_m2)} · ${PURPOSE_SK[x.purpose ?? ""] ?? x.purpose ?? "—"}`,
@@ -1525,6 +1549,7 @@ export const getClientReport = createServerFn({ method: "POST" })
           { label: "Vlastníkov", value: x.n_owners == null ? "—" : String(x.n_owners) },
           { label: "Dostupnosť", value: accessTimesLabel(x.access_times) },
           { label: "Právny prístup", value: "overiť vjazd" },
+          ...(namesOk ? [{ label: "Vlastníci (mená)", value: (x.owners ?? "").split(";").map((t) => t.trim()).filter(keepName).join("; ") || "—" }] : []),
         ],
         classification: x.verdict ?? "PROVISIONAL", reason: x.reason, criteriaJson: null,
         datasetId: x.dataset_id, lvNo: null, parcelNo: (x.parcels ?? "").split(",")[0].trim() || null,
@@ -1613,23 +1638,28 @@ export const getClientReport = createServerFn({ method: "POST" })
       revision: `${asOf ?? "bez-dat"}·${resultHash}`,
       generatedAt: new Date().toISOString().slice(0, 19).replace("T", " "),
       phraseIssues: issues,
+      withNames: namesOk && (data.scenario === "up" || data.scenario === "landsearch"),
+      namesNote: namesNote ?? (namesOk && data.scenario !== "up" && data.scenario !== "landsearch"
+        ? "Pri tomto scenári nie sú mená vlastníkov v appke viazané na jednotlivého kandidáta — report ich neobsahuje." : null),
     };
   });
 
 // ——— Evidencia vydaní klientskeho reportu (dok. 16: oprávnený príjemca a účel) ———
-export type ReportExportRow = { id: number; format: string; result_hash: string; recipient: string; purpose: string; author: string | null; created_at: string };
+export type ReportExportRow = { id: number; format: string; result_hash: string; recipient: string; purpose: string; author: string | null; created_at: string; with_names: number | null };
 export const logReportExport = createServerFn({ method: "POST" })
   .validator(z.object({
     token: z.string(), scenario: z.string().max(40), kodKu: z.string().max(20),
     format: z.enum(["json", "csv", "print"]), resultHash: z.string().max(64),
     recipient: z.string().trim().min(2).max(200), purpose: z.string().trim().min(3).max(300),
+    withNames: z.boolean().optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
     const u = await requireUser(data.token);
     if (!u) return { ok: false, message: "Neprihlásený." };
-    await q("INSERT INTO report_exports (scenario,kod_ku,format,result_hash,recipient,purpose,user_id,author) VALUES (?,?,?,?,?,?,?,?)",
-      [data.scenario, data.kodKu, data.format, data.resultHash, data.recipient, data.purpose, u.id, u.name || u.email]);
-    await logAudit("report.export", u.role, `Report ${data.scenario}/${data.kodKu} (${data.format}, rev ${data.resultHash}) → ${data.recipient}`);
+    if (data.withNames && ownerAccess(u.role as Role) !== "full") return { ok: false, message: "Report s menami môže vydať len rola s plným prístupom." };
+    await q("INSERT INTO report_exports (scenario,kod_ku,format,result_hash,recipient,purpose,user_id,author,with_names) VALUES (?,?,?,?,?,?,?,?,?)",
+      [data.scenario, data.kodKu, data.format, data.resultHash, data.recipient, data.purpose, u.id, u.name || u.email, data.withNames ? 1 : 0]);
+    await logAudit("report.export", u.role, `Report ${data.scenario}/${data.kodKu} (${data.format}, rev ${data.resultHash})${data.withNames ? " S MENAMI vlastníkov" : ""} → ${data.recipient}`);
     return { ok: true };
   });
 export const listReportExports = createServerFn({ method: "POST" })
@@ -1638,7 +1668,7 @@ export const listReportExports = createServerFn({ method: "POST" })
     const u = await requireUser(data.token);
     if (!u) return [];
     return q<ReportExportRow>(
-      "SELECT id, format, result_hash, recipient, purpose, author, created_at FROM report_exports WHERE scenario = ? AND kod_ku = ? ORDER BY id DESC LIMIT 50",
+      "SELECT id, format, result_hash, recipient, purpose, author, created_at, with_names FROM report_exports WHERE scenario = ? AND kod_ku = ? ORDER BY id DESC LIMIT 50",
       [data.scenario, data.kodKu]).catch(() => []);
   });
 
