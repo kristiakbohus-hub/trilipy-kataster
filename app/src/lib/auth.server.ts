@@ -67,10 +67,65 @@ async function allow(key: string, limit: number): Promise<boolean> {
   return true;
 }
 
-export type AuthResult = { ok: boolean; status: number; token?: string; user?: AuthUser; message?: string };
+export type AuthResult = { ok: boolean; status: number; token?: string; user?: AuthUser; message?: string; need2fa?: boolean };
+
+// ——— TOTP (RFC 6238, HMAC-SHA1, 30 s, 6 číslic) — druhý faktor (bod 29, 2026-11-11) ———
+const B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+function b32encode(b: Uint8Array): string {
+  let bits = 0, val = 0, out = "";
+  for (const x of b) { val = (val << 8) | x; bits += 8; while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; } }
+  if (bits > 0) out += B32[(val << (5 - bits)) & 31];
+  return out;
+}
+function b32decode(s: string): Uint8Array {
+  const clean = s.replace(/[\s=]/g, "").toUpperCase(); const out: number[] = []; let bits = 0, val = 0;
+  for (const c of clean) { const i = B32.indexOf(c); if (i < 0) continue; val = (val << 5) | i; bits += 5; if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; } }
+  return new Uint8Array(out);
+}
+async function totpAt(secretB32: string, counter: number): Promise<string> {
+  const key = await crypto.subtle.importKey("raw", b32decode(secretB32), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
+  const msg = new Uint8Array(8); let c = counter;
+  for (let i = 7; i >= 0; i--) { msg[i] = c & 255; c = Math.floor(c / 256); }
+  const h = new Uint8Array(await crypto.subtle.sign("HMAC", key, msg));
+  const o = h[h.length - 1] & 15;
+  const code = ((h[o] & 127) << 24) | (h[o + 1] << 16) | (h[o + 2] << 8) | h[o + 3];
+  return String(code % 1_000_000).padStart(6, "0");
+}
+/** Overí 6-miestny kód s toleranciou ±1 krok (±30 s) na posun hodín. */
+export async function totpVerify(secretB32: string, code: string): Promise<boolean> {
+  const c = String(code || "").replace(/\s/g, "");
+  if (!/^\d{6}$/.test(c)) return false;
+  const step = Math.floor(Date.now() / 30000);
+  for (const d of [0, -1, 1]) if ((await totpAt(secretB32, step + d)) === c) return true;
+  return false;
+}
+/** Začne zapínanie 2FA: nové tajomstvo do totp_pending; vráti ho a otpauth URI pre aplikáciu. */
+export async function totpSetup(user: AuthUser): Promise<{ secret: string; uri: string }> {
+  const secret = b32encode(crypto.getRandomValues(new Uint8Array(20)));
+  await exec("UPDATE users SET totp_pending = ? WHERE id = ?", [secret, user.id]);
+  const label = encodeURIComponent(`TRI LIPY:${user.email}`);
+  return { secret, uri: `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent("TRI LIPY")}&digits=6&period=30` };
+}
+export async function totpEnable(user: AuthUser, code: string): Promise<boolean> {
+  const p = (await rows<{ totp_pending: string | null }>("SELECT totp_pending FROM users WHERE id = ?", [user.id]))[0]?.totp_pending;
+  if (!p || !(await totpVerify(p, code))) return false;
+  await exec("UPDATE users SET totp_secret = ?, totp_pending = NULL, totp_enabled = 1 WHERE id = ?", [p, user.id]);
+  await exec("INSERT INTO activity (user_id,author,action,detail) VALUES (?,?,?,?)", [user.id, user.name || user.email, "auth.2fa", "Druhý faktor zapnutý"]);
+  return true;
+}
+export async function totpDisable(user: AuthUser, code: string): Promise<boolean> {
+  const s0 = (await rows<{ totp_secret: string | null }>("SELECT totp_secret FROM users WHERE id = ? AND totp_enabled = 1", [user.id]))[0]?.totp_secret;
+  if (!s0 || !(await totpVerify(s0, code))) return false;
+  await exec("UPDATE users SET totp_secret = NULL, totp_pending = NULL, totp_enabled = 0 WHERE id = ?", [user.id]);
+  await exec("INSERT INTO activity (user_id,author,action,detail) VALUES (?,?,?,?)", [user.id, user.name || user.email, "auth.2fa", "Druhý faktor vypnutý"]);
+  return true;
+}
+export async function totpStatus(user: AuthUser): Promise<boolean> {
+  return !!(await rows<{ e: number }>("SELECT totp_enabled e FROM users WHERE id = ?", [user.id]).catch(() => []))[0]?.e;
+}
 const TOO_MANY: AuthResult = { ok: false, status: 429, message: "Príliš veľa pokusov. Skús to znova o 15 minút." };
 
-export async function authLogin(emailIn: string, password: string, ip: string): Promise<AuthResult> {
+export async function authLogin(emailIn: string, password: string, ip: string, otp?: string): Promise<AuthResult> {
   const email = String(emailIn || "").trim().toLowerCase();
   if (!email || !password) return { ok: false, status: 400, message: "Zadaj email a heslo." };
   if (!(await allow(`rl:login:${email}`, 8)) || !(await allow(`rl:ip:${ip}`, 40))) return TOO_MANY;
@@ -79,6 +134,12 @@ export async function authLogin(emailIn: string, password: string, ip: string): 
   // PBKDF2 sa počíta aj pri neexistujúcom účte → z času odpovede sa nedá zistiť, či email existuje
   const h = await pbkdf2(password, u?.salt ?? "00".repeat(16));
   if (!u || h !== u.pass_hash) return { ok: false, status: 401, message: "Nesprávny email alebo heslo." };
+  // druhý faktor: heslo sedí, ale účet má zapnutý TOTP → bez platného kódu žiadna session (pokusy rátané vyššie)
+  const t2 = (await rows<{ totp_enabled: number; totp_secret: string | null }>("SELECT totp_enabled, totp_secret FROM users WHERE id = ?", [u.id]).catch(() => []))[0];
+  if (t2?.totp_enabled && t2.totp_secret) {
+    if (!otp) return { ok: false, status: 401, need2fa: true, message: "Zadaj 6-miestny kód z overovacej aplikácie." };
+    if (!(await totpVerify(t2.totp_secret, otp))) return { ok: false, status: 401, need2fa: true, message: "Kód nesedí. Skontroluj čas v telefóne a skús ďalší kód." };
+  }
   if (E.KV) await E.KV.delete(`rl:login:${email}`);
   const token = await createSession(u.id);
   return { ok: true, status: 200, token, user: { id: u.id, email: u.email, name: u.name, role: u.role as Role } };

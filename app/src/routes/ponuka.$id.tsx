@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getBuyerOffer, setBuyerMatchStatus, type BuyerOfferItem, type BuyerRequest } from "../lib/api/kataster.functions";
+import { createOfferShare, getBuyerOffer, listOfferShares, revokeOfferShare, setBuyerMatchStatus, type BuyerOfferItem, type BuyerRequest } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { LvMapSnapshot } from "../components/lv-map";
 
@@ -48,6 +48,7 @@ function OfferPage() {
           <button onClick={() => window.print()} disabled={!items.length} className="rounded-md bg-ink px-3 py-1.5 text-sm font-medium text-cream disabled:opacity-40">🖨️ Tlačiť / uložiť PDF</button>
         </div>
       </div>
+      <ShareBox requestId={r.id} />
       <section className="print-doc rounded-xl border border-line bg-paper p-6 text-sm">
         <div className="flex items-start justify-between border-b-2 pb-3" style={{ borderColor: "#333" }}>
           <div>
@@ -93,6 +94,45 @@ function OfferPage() {
           Údaje: ÚGKK SR (kataster), verejná inzercia. Stav k {today}.
         </p>
       </section>
+    </div>
+  );
+}
+
+/** Odkaz pre klienta bez prihlásenia (bod 10): vytvoriť, skopírovať, zrušiť; počet otvorení. */
+function ShareBox({ requestId }: { requestId: number }) {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<Awaited<ReturnType<typeof listOfferShares>>["rows"]>([]);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => { if (token) listOfferShares({ data: { token, requestId } }).then((r) => setRows(r.rows)).catch(() => {}); };
+  useEffect(load, [token, requestId]);
+  async function make() {
+    if (!token) return;
+    const r = await createOfferShare({ data: { token, requestId, days: 14 } });
+    if (r.ok && r.path) {
+      const url = `${window.location.origin}${r.path}`;
+      try { await navigator.clipboard.writeText(url); setMsg(`Odkaz skopírovaný: ${url}`); } catch { setMsg(`Odkaz: ${url}`); }
+      load();
+    } else setMsg(r.message ?? "Odkaz sa nepodarilo vytvoriť.");
+  }
+  async function revoke(share: string) { if (token) { await revokeOfferShare({ data: { token, share } }); load(); } }
+  const live = rows.filter((x) => !x.revoked);
+  return (
+    <div className="no-print rounded-lg border border-line bg-paper p-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-muted">Odkaz pre klienta bez prihlásenia — vidí len položky ponuky, bez mien. Platí 14 dní.</span>
+        <button onClick={() => void make()} className="rounded-md border border-line px-3 py-1 text-fg hover:border-ink max-md:py-2">Vytvoriť a skopírovať odkaz</button>
+      </div>
+      {msg ? <p className="mt-1 break-all text-green">{msg}</p> : null}
+      {live.length ? (
+        <ul className="mt-1 divide-y divide-line/60">
+          {live.map((x) => (
+            <li key={x.token} className="flex flex-wrap items-center justify-between gap-2 py-1">
+              <span className="break-all text-muted">/p/{x.token.slice(0, 8)}… · platí do {x.expiresAt.slice(0, 10).split("-").reverse().join(". ")} · otvorené {x.views}×{x.lastView ? ` (naposledy ${x.lastView.slice(0, 16)})` : ""}</span>
+              <button onClick={() => void revoke(x.token)} className="text-muted hover:text-fg">Zrušiť</button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </div>
   );
 }

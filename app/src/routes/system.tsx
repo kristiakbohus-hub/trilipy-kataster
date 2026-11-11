@@ -4,6 +4,7 @@ import { exportBackup, getSystemStatus, egressSelfTest } from "../lib/api/katast
 import { Badge, Card, Disclaimer, Icon, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
+import { AccountSecurity } from "../components/account-security";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
 // cf_app_ssr_loader_leak. Dáta ťaháme v efekte, komponent sa mountuje až po prihlásení.
@@ -48,6 +49,7 @@ function SystemPage() {
 
   return (
     <div className="space-y-8">
+      <Card className="mb-4 p-4"><AccountSecurity /></Card>
       <div>
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-xl font-semibold tracking-tight text-fg">System Status</h1>

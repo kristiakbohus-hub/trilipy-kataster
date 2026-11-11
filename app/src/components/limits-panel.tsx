@@ -1,9 +1,9 @@
 // Limity výstavby na parcele — signály z úradných registrov (ŠGÚDŠ, NLC …).
 type LimitHit = { category: string; key: string; label: string; hit: boolean; count: number; buffer: number; attribution: string; error: boolean; names?: string[] };
-type LimitsResult = { items: LimitHit[]; cached?: boolean; ageDays?: number; landPrice?: { eurM2: number; attribution: string } | null };
+type LimitsResult = { items: LimitHit[]; cached?: boolean; ageDays?: number; landPrice?: { eurM2: number; attribution: string } | null; road?: { trieda: string; cislo: string | null; distM: number } | null };
 
 const CAT_ICON: Record<string, string> = {
-  "Geohazardy": "⛰️", "Les a pôda": "🌲", "Vodné toky": "💧", "Chránené územia": "🛡️", "Pamiatky": "🏛️", "Infraštruktúra": "🚧",
+  "Geohazardy": "⛰️", "Les a pôda": "🌲", "Vodné toky": "💧", "Chránené územia": "🛡️", "Cesty": "🛣️", "Pamiatky": "🏛️", "Infraštruktúra": "🚧",
 };
 
 function StatusBadge({ h }: { h: LimitHit }) {
@@ -41,6 +41,12 @@ export function LimitsPanel({ data }: { data: LimitsResult }) {
           ))}
         </div>
       ))}
+      {data.road !== undefined ? (
+        <div className="flex items-center justify-between gap-2 border-b border-line/40 py-1">
+          <span className="text-muted">Najbližšia cesta (od ťažiska parcely)</span>
+          <span className="whitespace-nowrap text-fg">{data.road ? `${data.road.trieda}${data.road.cislo && data.road.cislo !== "MC" ? ` ${data.road.cislo}` : ""} · ${data.road.distM} m` : "do 120 m žiadna"} <span className="text-[9px] text-muted/70">SSC</span></span>
+        </div>
+      ) : null}
       {data.landPrice ? (
         <div className="flex items-center justify-between gap-2 border-b border-line/40 py-1">
           <span className="text-muted">Úradná cena poľnohosp. pôdy (pre odvody, nie trhová)</span>
@@ -48,7 +54,7 @@ export function LimitsPanel({ data }: { data: LimitsResult }) {
         </div>
       ) : null}
       <div className="pt-0.5 text-[10px] text-muted">
-        Orientačné — dopyt v ťažisku parcely do uvedeného pásma. Zdroje: ŠGÚDŠ (geológia/geohazardy), NLC (lesy/vodné toky), SAŽP (environmentálne záťaže), ŠOP SR (chránené územia), SVP (záplavy).
+        Orientačné — dopyt v ťažisku parcely do uvedeného pásma. Zdroje: ŠGÚDŠ (geológia/geohazardy), NLC (lesy/vodné toky), SAŽP (environmentálne záťaže), ŠOP SR (chránené územia), SVP (záplavy), SSC (cesty).
         {errs > 0 ? " Niektoré zdroje práve nedostupné." : ""} Overte vždy na príslušnom úrade.
       </div>
     </div>

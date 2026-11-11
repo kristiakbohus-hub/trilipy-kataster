@@ -5013,7 +5013,9 @@ export const getParcelAccessibility = createServerFn({ method: "POST" })
 // Presné „do X m od prvku" (returnCountOnly). Zdroje overené dostupné; ostatné pribudnú (graceful „nedostupné").
 export type LimitHit = { category: string; key: string; label: string; hit: boolean; count: number; buffer: number; attribution: string; error: boolean; names?: string[] };
 /** landPrice = úradná cena poľnohospodárskej pôdy (vyhl. 38/2005, VÚPOP) — podklad pre odvody a spodnú hranicu, NIE trhová cena. */
-export type LimitsResult = { items: LimitHit[]; cached?: boolean; ageDays?: number; landPrice?: { eurM2: number; attribution: string } | null };
+export type LimitsResult = { items: LimitHit[]; cached?: boolean; ageDays?: number; landPrice?: { eurM2: number; attribution: string } | null;
+  /** bod 25: najbližšia cesta zo SSC (trieda, číslo, vzdialenosť od ťažiska) */
+  road?: { trieda: string; cislo: string | null; distM: number } | null };
 const LIMIT_SOURCES: { category: string; key: string; label: string; url: string; layer: number; buffer: number; attr: string }[] = [
   { category: "Geohazardy", key: "zosuvy",  label: "Zosuv / svahová deformácia",        url: "https://ags.geology.sk/arcgis/rest/services/Geofond/zosuvy_vect/MapServer",  layer: 2, buffer: 30, attr: "ŠGÚDŠ" },
   { category: "Geohazardy", key: "env",     label: "Environmentálna záťaž",             url: "https://ags.geology.sk/arcgis/rest/services/Geofond/skladky_vect/MapServer", layer: 1, buffer: 50, attr: "ŠGÚDŠ" },
@@ -5037,6 +5039,38 @@ async function protectedSitesAt(lat: number, lng: number): Promise<LimitHit> {
     return { ...base, hit: names.length > 0, count: names.length, names: names.slice(0, 6) };
   } catch { return { ...base, error: true }; }
 }
+// Cesty zo Slovenskej správy ciest (bod 25, 2026-11-11): najbližší úsek do 120 m a ochranné pásmo podľa cestného
+// zákona (§ 11, mimo zastavaného územia): diaľnica a rýchlostná 100 m, cesta I. tr. 50 m, II. tr. 25 m, III. tr. 20 m,
+// miestna rýchlostná 15 m. Vzdialenosť od ťažiska parcely (nie od hranice) → orientačné.
+const ROAD_OP: [RegExp, number][] = [[/diaľnic|rýchlostn\w* cest/i, 100], [/cesta I\. triedy/i, 50], [/cesta II\. triedy/i, 25], [/cesta III\. triedy/i, 20], [/miestna rýchlostná/i, 15]];
+async function roadsAt(lat: number, lng: number): Promise<{ item: LimitHit; road: LimitsResult["road"] }> {
+  const base: LimitHit = { category: "Cesty", key: "cesta_op", label: "Ochranné pásmo cesty (mimo zastavaného územia)", hit: false, count: 0, buffer: 0, attribution: "SSC", error: false };
+  try {
+    const j = asObj(await fetchJsonTimed(`https://ismcs.cdb.sk/inspire/rest/services/FREE/WFS_ReferencnaSiet/MapServer/2/query?geometry=${lng},${lat}&geometryType=esriGeometryPoint&inSR=4326&distance=120&units=esriSRUnit_Meter&spatialRel=esriSpatialRelIntersects&outFields=triedaPK,cisloPK&returnGeometry=true&outSR=4326&f=json`, 12000)) ?? {};
+    const kx = 111320 * Math.cos((lat * Math.PI) / 180), ky = 110574;
+    const segDist = (ax: number, ay: number, bx: number, by: number) => {   // v metroch, bod = (0,0)
+      const dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy;
+      const t = l2 ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / l2)) : 0;
+      return Math.hypot(ax + t * dx, ay + t * dy);
+    };
+    let best: LimitsResult["road"] = null; const ops: string[] = [];
+    for (const f0 of Array.isArray(j.features) ? j.features : []) {
+      const f = asObj(f0) ?? {}; const a = asObj(f.attributes) ?? {}; const paths = asObj(f.geometry)?.paths;
+      if (!Array.isArray(paths)) continue;
+      let d = Infinity;
+      for (const path of paths) if (Array.isArray(path)) for (let i = 1; i < path.length; i++) {
+        const p0 = path[i - 1] as number[], p1 = path[i] as number[];
+        d = Math.min(d, segDist((p0[0] - lng) * kx, (p0[1] - lat) * ky, (p1[0] - lng) * kx, (p1[1] - lat) * ky));
+      }
+      const trieda = String(a.triedaPK ?? "cesta"), cislo = a.cisloPK != null ? String(a.cisloPK) : null;
+      if (!best || d < best.distM) best = { trieda, cislo, distM: Math.round(d) };
+      const op = ROAD_OP.find(([rx]) => rx.test(trieda));
+      if (op && d <= op[1]) ops.push(`${trieda}${cislo && cislo !== "MC" ? ` ${cislo}` : ""} (${Math.round(d)} m, pásmo ${op[1]} m)`);
+    }
+    const names = [...new Set(ops)];
+    return { item: { ...base, hit: names.length > 0, count: names.length, names: names.slice(0, 4) }, road: best };
+  } catch { return { item: { ...base, error: true }, road: null }; }
+}
 async function officialLandPrice(lat: number, lng: number): Promise<LimitsResult["landPrice"]> {
   try {
     const j = asObj(await fetchJsonTimed(`https://portal.vupop.sk/arcgis/rest/services/BPEJ/Hodnota_pozemkov_pre_pozemkove_upravy/MapServer/76/query?geometry=${lng},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=EUR&returnGeometry=false&f=json`, 12000)) ?? {};
@@ -5047,7 +5081,7 @@ async function officialLandPrice(lat: number, lng: number): Promise<LimitsResult
 }
 // Core (volateľný aj z nlQuery post-filtra) — getParcelLimits je tenký wrapper.
 async function limitsCore(lat: number, lng: number, refresh?: boolean): Promise<LimitsResult> {
-  const key = `limits2:${lat.toFixed(4)}:${lng.toFixed(4)}`;   // v2: + SAŽP, ŠOP, úradná cena pôdy
+  const key = `limits3:${lat.toFixed(4)}:${lng.toFixed(4)}`;   // v3: + SAŽP, ŠOP, úradná cena pôdy, cesty SSC
   const cached = await regCacheRead(key, !!refresh, 30 * 24 * 3600);
   if (cached) return { ...(cached.payload as LimitsResult), cached: true, ageDays: cached.ageDays };
   const one = async (s: (typeof LIMIT_SOURCES)[number]): Promise<LimitHit> => {
@@ -5064,9 +5098,9 @@ async function limitsCore(lat: number, lng: number, refresh?: boolean): Promise<
     } catch { return { ...base, error: true }; }
     finally { clearTimeout(to); }
   };
-  const [items, sop, landPrice] = await Promise.all([Promise.all(LIMIT_SOURCES.map(one)), protectedSitesAt(lat, lng), officialLandPrice(lat, lng)]);
-  items.push(sop);
-  const out: LimitsResult = { items, landPrice };
+  const [items, sop, landPrice, rd] = await Promise.all([Promise.all(LIMIT_SOURCES.map(one)), protectedSitesAt(lat, lng), officialLandPrice(lat, lng), roadsAt(lat, lng)]);
+  items.push(sop, rd.item);
+  const out: LimitsResult = { items, landPrice, road: rd.road };
   if (items.some((i) => !i.error)) await regCacheWrite(key, "limits", out); // necachuj samé chyby
   return out;
 }
@@ -6148,6 +6182,60 @@ export const listDemandAds = createServerFn({ method: "POST" })
     return { ok: true, rows: rows.map((r) => ({ title: r.title, url: r.url, obec: r.obec, okres: r.okres, ptype: r.ptype, priceEur: r.price_eur, firstSeen: r.first_seen,
       inRegion: ours.has(asciiLow(r.okres).replace(/^okres\s+/, "")), registered: !!r.url && reg.has(r.url) })) };
   });
+
+// ——— Zdieľateľný odkaz na ponuku (bod 10) — verejné čítanie cez /api/offer (bez session), len snapshot položiek ———
+export type PublicOffer = { ok: boolean; message?: string; heading?: string; summary?: string; expiresAt?: string; items?: BuyerHit[] };
+export const createOfferShare = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), requestId: z.number().int(), days: z.number().int().min(1).max(60).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; path?: string; expiresAt?: string; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u || !canEditBuyers(u.role)) return { ok: false, message: "Bez oprávnenia." };
+    const r = (await q<{ id: number }>("SELECT id FROM buyer_requests WHERE id=?", [data.requestId]))[0];
+    if (!r) return { ok: false, message: "Dopyt neexistuje." };
+    const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
+    const tok = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const days = data.days ?? 14;
+    const exp = (await q<{ e: string }>("SELECT datetime('now', ?) e", [`+${days} days`]))[0]?.e ?? "";
+    await q("INSERT INTO offer_shares (token, request_id, created_by, expires_at) VALUES (?,?,?,?)", [tok, data.requestId, u.name || u.email, exp]);
+    await logAudit("buyer.share", u.role, `Odkaz na ponuku dopytu #${data.requestId} (platný ${days} dní)`);
+    return { ok: true, path: `/p/${tok}`, expiresAt: exp };
+  });
+export const listOfferShares = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), requestId: z.number().int() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: { token: string; createdAt: string; expiresAt: string; revoked: boolean; views: number; lastView: string | null }[] }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [] };
+    const rows = await q<{ token: string; created_at: string; expires_at: string; revoked: number; views: number; last_view: string | null }>(
+      "SELECT token, created_at, expires_at, revoked, views, last_view FROM offer_shares WHERE request_id=? ORDER BY created_at DESC LIMIT 20", [data.requestId]).catch(() => []);
+    return { ok: true, rows: rows.map((r) => ({ token: r.token, createdAt: r.created_at, expiresAt: r.expires_at, revoked: !!r.revoked, views: r.views, lastView: r.last_view })) };
+  });
+export const revokeOfferShare = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), share: z.string().regex(/^[0-9a-f]{32}$/) }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const u = await requireUser(data.token);
+    if (!u || !canEditBuyers(u.role)) return { ok: false };
+    await q("UPDATE offer_shares SET revoked=1 WHERE token=?", [data.share]);
+    await logAudit("buyer.share", u.role, "Odkaz na ponuku zrušený");
+    return { ok: true };
+  });
+/** Volá LEN serverová route /api/offer (bez session). Vracia snapshot položiek; žiadne mená, žiadny kontakt. */
+export async function publicOfferCore(share: string): Promise<PublicOffer> {
+  if (!/^[0-9a-f]{32}$/.test(share)) return { ok: false, message: "Neplatný odkaz." };
+  const sh = (await q<{ request_id: number; expires_at: string; revoked: number; live: number }>(
+    "SELECT request_id, expires_at, revoked, (expires_at > datetime('now')) live FROM offer_shares WHERE token=?", [share]).catch(() => []))[0];
+  if (!sh || sh.revoked || !sh.live) return { ok: false, message: "Odkaz neplatí (vypršal alebo bol zrušený). Požiadajte o nový." };
+  const r = (await q<BuyerRequest>("SELECT * FROM buyer_requests WHERE id=?", [sh.request_id]))[0];
+  if (!r) return { ok: false, message: "Ponuka už neexistuje." };
+  const rows = await q<{ snapshot: string | null }>(
+    "SELECT snapshot FROM buyer_match_status WHERE request_id=? AND status IN ('vybrana','poslana','zaujem','obhliadka') ORDER BY updated_at", [sh.request_id]).catch(() => []);
+  const items: BuyerHit[] = [];
+  for (const x of rows) { try { const h = x.snapshot ? (JSON.parse(x.snapshot) as BuyerHit) : null; if (h) items.push({ ...h, status: "nova", statusReason: null, statusNote: null }); } catch { /* poškodený snapshot */ } }
+  await q("UPDATE offer_shares SET views = views + 1, last_view = datetime('now') WHERE token=?", [share]).catch(() => {});
+  const PT: Record<string, string> = { pozemok: "pozemok", byt: "byt", dom: "dom", chata: "chata / chalupa", komercne: "komerčný priestor" };
+  const summary = [`Hľadáte: ${PT[r.ptype] ?? r.ptype}`, r.area_min != null || r.area_max != null ? `${r.area_min ?? ""}–${r.area_max ?? ""} m²` : null,
+    r.budget_max != null ? `do ${Math.round(r.budget_max).toLocaleString("sk-SK")} €` : null, r.locations].filter(Boolean).join(" · ");
+  return { ok: true, heading: "Ponuka nehnuteľností", summary, expiresAt: sh.expires_at, items };
+}
 
 // ——— Opačný smer: „KTO BY TO KÚPIL" k inzerátu (2026-11-11) ———
 // Zoradené: (1) aktívne dopyty so skóre (rovnaký výpočet ako dopyt → inzeráty), (2) dopytové inzeráty

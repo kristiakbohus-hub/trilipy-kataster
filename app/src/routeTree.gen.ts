@@ -29,6 +29,8 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as PTokenRouteImport } from './routes/p.$token'
+import { Route as ApiOfferRouteImport } from './routes/api.offer'
 import { Route as ProblemoveLvRouteImport } from './routes/problemove-lv'
 import { Route as ApiIngestLvflagsRouteImport } from './routes/api.ingest-lvflags'
 import { Route as ApiIngestStateContractsRouteImport } from './routes/api.ingest-state-contracts'
@@ -179,6 +181,16 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PTokenRoute = PTokenRouteImport.update({
+  id: '/p/$token',
+  path: '/p/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiOfferRoute = ApiOfferRouteImport.update({
+  id: '/api/offer',
+  path: '/api/offer',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProblemoveLvRoute = ProblemoveLvRouteImport.update({
@@ -470,6 +482,8 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/p/$token': typeof PTokenRoute
+  '/api/offer': typeof ApiOfferRoute
   '/problemove-lv': typeof ProblemoveLvRoute
   '/api/ingest-lvflags': typeof ApiIngestLvflagsRoute
   '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
@@ -543,6 +557,8 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/p/$token': typeof PTokenRoute
+  '/api/offer': typeof ApiOfferRoute
   '/problemove-lv': typeof ProblemoveLvRoute
   '/api/ingest-lvflags': typeof ApiIngestLvflagsRoute
   '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
@@ -617,6 +633,8 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/p/$token': typeof PTokenRoute
+  '/api/offer': typeof ApiOfferRoute
   '/problemove-lv': typeof ProblemoveLvRoute
   '/api/ingest-lvflags': typeof ApiIngestLvflagsRoute
   '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
@@ -692,6 +710,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/p/$token'
+    | '/api/offer'
     | '/problemove-lv'
     | '/api/ingest-lvflags'
     | '/api/ingest-state-contracts'
@@ -765,6 +785,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/p/$token'
+    | '/api/offer'
     | '/problemove-lv'
     | '/api/ingest-lvflags'
     | '/api/ingest-state-contracts'
@@ -838,6 +860,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/p/$token'
+    | '/api/offer'
     | '/problemove-lv'
     | '/api/ingest-lvflags'
     | '/api/ingest-state-contracts'
@@ -908,6 +932,8 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  PTokenRoute: typeof PTokenRoute
+  ApiOfferRoute: typeof ApiOfferRoute
   ProblemoveLvRoute: typeof ProblemoveLvRoute
   ApiIngestLvflagsRoute: typeof ApiIngestLvflagsRoute
   ApiIngestStateContractsRoute: typeof ApiIngestStateContractsRoute
@@ -1218,6 +1244,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZadaniaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/p/$token': {
+      id: '/p/$token'
+      path: '/p/$token'
+      fullPath: '/p/$token'
+      preLoaderRoute: typeof PTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/offer': {
+      id: '/api/offer'
+      path: '/api/offer'
+      fullPath: '/api/offer'
+      preLoaderRoute: typeof ApiOfferRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/problemove-lv': {
       id: '/problemove-lv'
       path: '/problemove-lv'
@@ -1487,6 +1527,8 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  PTokenRoute: PTokenRoute,
+  ApiOfferRoute: ApiOfferRoute,
   ProblemoveLvRoute: ProblemoveLvRoute,
   ApiIngestLvflagsRoute: ApiIngestLvflagsRoute,
   ApiIngestStateContractsRoute: ApiIngestStateContractsRoute,

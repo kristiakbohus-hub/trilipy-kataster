@@ -4,6 +4,7 @@ import {
   Link,
   createRootRouteWithContext,
   useRouter,
+  useRouterState,
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
@@ -173,6 +174,10 @@ function RootComponent() {
 
 function Gate() {
   const { authed } = useAuth();
+  // Verejná ponuka pre klienta (/p/<token>, bod 10): bez prihlásenia a bez menu appky. Dáta ide z /api/offer,
+  // ktoré stráži platnosť odkazu; všetko ostatné ostáva za prihlásením.
+  const path = useRouterState({ select: (st) => st.location.pathname });
+  if (path.startsWith("/p/")) return <Outlet />;
   if (authed === null) return <Splash />;
   if (!authed) return <LoginScreen />;
   return (
@@ -194,12 +199,17 @@ function LoginScreen() {
   const [pass, setPass] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [need2fa, setNeed2fa] = useState(false);
+  const [otp, setOtp] = useState("");
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true); setErr(null);
-    const r = mode === "login" ? await signIn(email, pass) : await register(email, pass, name);
-    if (!r.ok) setErr(r.message ?? (mode === "login" ? "Prihlásenie zlyhalo." : "Registrácia zlyhala."));
+    const r = mode === "login" ? await signIn(email, pass, need2fa ? otp : undefined) : await register(email, pass, name);
+    if (!r.ok) {
+      if ("need2fa" in r && r.need2fa) setNeed2fa(true);
+      setErr(r.message ?? (mode === "login" ? "Prihlásenie zlyhalo." : "Registrácia zlyhala."));
+    }
     setBusy(false);
   }
 
@@ -218,8 +228,12 @@ function LoginScreen() {
         ) : null}
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" autoFocus={mode === "login"} autoComplete="email"
           className="mt-3 w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-fg outline-none focus:border-brand" />
-        <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder={mode === "register" ? "Heslo (min. 6 znakov)" : "Heslo"} autoComplete={mode === "login" ? "current-password" : "new-password"}
+        <input type="password" value={pass} onChange={(e) => setPass(e.target.value)} placeholder={mode === "register" ? "Heslo (min. 8 znakov)" : "Heslo"} autoComplete={mode === "login" ? "current-password" : "new-password"}
           className="mt-3 w-full rounded-md border border-line bg-paper px-3 py-2 text-sm text-fg outline-none focus:border-brand" />
+        {mode === "login" && need2fa ? (
+          <input value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Kód z overovacej aplikácie (6 číslic)" inputMode="numeric" autoComplete="one-time-code" autoFocus
+            className="mt-3 w-full rounded-md border border-line bg-paper px-3 py-2 text-sm tracking-[0.3em] text-fg outline-none focus:border-brand" />
+        ) : null}
         <button type="submit" disabled={busy}
           className="mt-3 w-full rounded-md bg-ink px-4 py-2 text-sm font-medium text-cream disabled:opacity-60">
           {busy ? "Moment…" : mode === "login" ? "Prihlásiť sa" : "Vytvoriť účet"}

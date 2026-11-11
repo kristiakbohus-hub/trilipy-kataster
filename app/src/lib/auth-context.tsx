@@ -23,7 +23,7 @@ type Ctx = {
   user: AuthUser | null;
   authed: boolean | null;   // null = zisťuje sa (SSR/hydratácia)
   token: string | null;
-  signIn: (email: string, password: string) => Promise<{ ok: boolean; message?: string }>;
+  signIn: (email: string, password: string, otp?: string) => Promise<{ ok: boolean; message?: string; need2fa?: boolean }>;
   register: (email: string, password: string, name: string) => Promise<{ ok: boolean; message?: string }>;
   signOut: () => void;
 };
@@ -63,10 +63,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(t); setUser(u); setAuthed(true);
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const r = await authCall({ action: "login", email, password });
+  const signIn = useCallback(async (email: string, password: string, otp?: string) => {
+    const r = await authCall({ action: "login", email, password, ...(otp ? { otp } : {}) });
     if (r.ok && r.token && r.user) persist(r.token, r.user);
-    return { ok: r.ok, message: r.message };
+    return { ok: r.ok, message: r.message, need2fa: (r as { need2fa?: boolean }).need2fa };
   }, [persist]);
 
   const register = useCallback(async (email: string, password: string, name: string) => {
