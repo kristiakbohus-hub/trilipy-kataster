@@ -1380,7 +1380,9 @@ export const getZACases = createServerFn({ method: "POST" })
       `SELECT zc.kod_ku, COALESCE(ds.ku_name, zc.ku_name) AS ku_name, ds.id AS dataset_id,
               zc.flat_id, zc.lv_no, zc.floor, zc.building_min_floor, zc.building_max_floor,
               zc.classification, zc.score, zc.instrument_year, zc.registration_year, zc.owner_obec, zc.reason,
-              zc.criteria_json
+              -- Maticu kritérií len pri MATCH: „na preskúmanie" je v Žiline ~6 400 bytov a matica
+              -- (~1 kB/byt) by kartu nafúkla na MB; čo treba overiť, nesie konkrétny dôvod (reason).
+              CASE WHEN zc.classification = 'MATCH' THEN zc.criteria_json END AS criteria_json
        FROM za_cases zc LEFT JOIN datasets ds ON ds.ku_code = zc.kod_ku
        WHERE zc.classification IN ('MATCH','PROVISIONAL') ${where}
        ORDER BY zc.classification, zc.instrument_year DESC, zc.lv_no`,
@@ -1508,7 +1510,9 @@ export const getClientReport = createServerFn({ method: "POST" })
          FROM landsearch_results lr LEFT JOIN datasets ds ON ds.ku_code = lr.kod_ku
          WHERE lr.kod_ku = ? AND lr.verdict IN ('MATCH','PROVISIONAL')
          ORDER BY (lr.verdict='MATCH') DESC, lr.quality DESC`, [data.kodKu]).catch(() => []);
-      colLabels = ["Parcely", "Výmera", "Účel", "Zóna", "Vlastníkov", "Dostupnosť"];
+      // „Právny prístup" (SYN-LI-07, rozhodnutie vlastníka 2026-11-11): appka nevie, či k celku vedie
+      // vjazd z cesty po vlastnom/verejnom pozemku alebo cez vecné bremeno — každá zhoda nesie „overiť".
+      colLabels = ["Parcely", "Výmera", "Účel", "Zóna", "Vlastníkov", "Dostupnosť", "Právny prístup"];
       rows = src.map((x, i) => ({
         id: `${data.kodKu}-${i + 1}`,
         title: `${m2Txt(x.area_m2)} · ${PURPOSE_SK[x.purpose ?? ""] ?? x.purpose ?? "—"}`,
@@ -1520,6 +1524,7 @@ export const getClientReport = createServerFn({ method: "POST" })
           { label: "Zóna", value: zoneLabel(x.zone) },
           { label: "Vlastníkov", value: x.n_owners == null ? "—" : String(x.n_owners) },
           { label: "Dostupnosť", value: accessTimesLabel(x.access_times) },
+          { label: "Právny prístup", value: "overiť vjazd" },
         ],
         classification: x.verdict ?? "PROVISIONAL", reason: x.reason, criteriaJson: null,
         datasetId: x.dataset_id, lvNo: null, parcelNo: (x.parcels ?? "").split(",")[0].trim() || null,

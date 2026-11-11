@@ -242,7 +242,7 @@ function PrieskumPage() {
                       {o.area_m2 ? `${o.area_m2.toLocaleString("sk-SK")} m²` : ""} · {o.parcels ?? ""} · {kuLabel(o.ku_name, o.kod_ku)}
                     </div>
                     <div className="truncate text-[12px] text-muted">
-                      {o.zone ?? ""}{o.shape ? ` · ${o.shape}` : ""}{o.access != null ? ` · prístup ${o.access}/100` : ""}{o.slope != null ? ` · svah ${decSk(o.slope)} %` : ""}{o.access_times ? ` · ${accessTimesLabel(o.access_times)}` : ""}{o.ppf ? " · ⚠ PPF" : ""}
+                      {o.zone ?? ""}{o.shape ? ` · ${o.shape}` : ""}{o.access != null ? ` · prístup ${o.access}/100` : ""}{o.slope != null ? ` · svah ${decSk(o.slope)} %` : ""}{o.access_times ? ` · ${accessTimesLabel(o.access_times)}` : ""}{o.ppf ? " · ⚠ PPF" : ""}{" · overiť vjazd"}
                     </div>
                     {o.market_ppm2 != null ? (
                       <div className="text-[12px] text-fg/75">

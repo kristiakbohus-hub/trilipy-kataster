@@ -281,6 +281,14 @@ function ClientReportPage() {
             vhodnosť pozemku, <b>nie o kvalifikáciu pre klientsky dopyt</b>.
           </p>
         ) : null}
+        {r.scenario === "landsearch" ? (
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            <b className="text-fg">Právny prístup:</b> fyzickú blízkosť cesty report hodnotí, právny
+            prístup nie — či k celku vedie vjazd po verejnom pozemku, alebo len cez cudziu parcelu
+            (vecné bremeno), kataster v spracovaných dátach neukazuje. Pri každom celku je preto
+            uvedené „overiť vjazd“ (LV prístupovej parcely, ťarchy, prípadne zmluva o vecnom bremene).
+          </p>
+        ) : null}
         <p className="mt-2 text-xs text-muted">
           Úplnosť: {meta.scope}
         </p>

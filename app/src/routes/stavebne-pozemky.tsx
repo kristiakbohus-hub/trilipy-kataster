@@ -196,6 +196,11 @@ function LandPage() {
                       bez priameho prístupu z cesty
                     </span>
                   ) : null}
+                  {/* SYN-LI-07 (rozhodnutie 2026-11-11): právny prístup appka nepozná → pri každom celku. */}
+                  <span className="rounded-full border border-line px-2 py-0.5 text-[11px]" style={{ color: "#9a7b3e" }}
+                    title="Právny prístup z cesty (vjazd po verejnom pozemku alebo vecné bremeno) appka neoveruje — skontrolovať LV prístupovej parcely a ťarchy.">
+                    overiť vjazd
+                  </span>
                   {BUILD_LABEL[r.build ?? ""] ? (
                     <span className="rounded-full border border-line bg-surface-2/40 px-2 py-0.5 text-[11px] text-fg">
                       {BUILD_LABEL[r.build ?? ""]}

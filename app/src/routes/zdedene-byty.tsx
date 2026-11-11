@@ -50,6 +50,20 @@ function InheritedFlatsPage() {
   const nMatch = vKu.filter((r) => r.classification === "MATCH").length;
   const nProv = vKu.filter((r) => r.classification === "PROVISIONAL").length;
   const n2026 = vKu.filter((r) => r.classification === "MATCH" && r.instrument_year === 2026).length;
+  // Rozhodnutie vlastníka 2026-11-11: byty „na preskúmanie" sa ukazujú ODDELENE a S DÔVODOM.
+  // Rozpis podľa toho, čo treba overiť (engine píše konkrétny dôvod do `reason`).
+  const provWhy = useMemo(() => {
+    const c = { titul: 0, adresa: 0, podlazie: 0, ine: 0 };
+    for (const r of vKu) {
+      if (r.classification !== "PROVISIONAL") continue;
+      const t = r.reason ?? "";
+      if (t.includes("druh nadobudnutia")) c.titul++;
+      else if (t.includes("adresu vlastníka")) c.adresa++;
+      else if (t.includes("podlažie")) c.podlazie++;
+      else c.ine++;
+    }
+    return c;
+  }, [vKu]);
 
   const shownAll = useMemo(
     () => rows.filter((r) => r.classification === cls && (!kuFilter || r.kod_ku === kuFilter)),
@@ -106,6 +120,17 @@ function InheritedFlatsPage() {
           ) : null}
         </div>
       </div>
+
+      {cls === "PROVISIONAL" && nProv > 0 ? (
+        <Card className="p-4 text-xs leading-relaxed text-muted">
+          <span className="font-medium text-fg">Toto nie sú zhody.</span> Pri týchto bytoch sa niektoré
+          kritérium nedalo z katastra potvrdiť ani vyvrátiť — pri každom je uvedené, čo treba overiť.
+          {" "}Druh nadobudnutia neuvedený: <span className="tabular-nums text-fg">{provWhy.titul}</span>
+          {" · "}adresa vlastníka neporovnaná: <span className="tabular-nums text-fg">{provWhy.adresa}</span>
+          {" · "}podlažie budovy nezistené: <span className="tabular-nums text-fg">{provWhy.podlazie}</span>
+          {provWhy.ine ? <>{" · "}iné: <span className="tabular-nums text-fg">{provWhy.ine}</span></> : null}
+        </Card>
+      ) : null}
 
       {loading ? (
         <Card className="p-6 text-center text-sm text-muted">Načítavam kandidátov…</Card>

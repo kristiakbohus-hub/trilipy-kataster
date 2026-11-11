@@ -302,7 +302,7 @@ function ReportPage() {
             ))}
             {signals.landsearch.map((l, i) => (
               <div key={`ls${i}`} className="flex items-center justify-between gap-2 border-b border-line/50 py-1">
-                <span><b>Príležitosť</b> — {l.purpose ?? "?"} · {l.verdict ?? "?"}{l.quality != null ? ` · skóre ${Math.round(l.quality)}` : ""}</span>
+                <span><b>Príležitosť</b> — {l.purpose ?? "?"} · {l.verdict ?? "?"}{l.quality != null ? ` · skóre ${Math.round(l.quality)}` : ""} · overiť vjazd</span>
                 <Link to="/prilezitosti" className="no-print text-brand underline">detail</Link>
               </div>
             ))}
