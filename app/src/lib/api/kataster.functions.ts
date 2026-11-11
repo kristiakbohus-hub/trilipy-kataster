@@ -3563,7 +3563,7 @@ async function pipelineAuthed(role: Role, pipelineSecret?: string): Promise<bool
 }
 
 export const refreshMarketData = createServerFn({ method: "POST" })
-  .validator(z.object({ role: roleSchema, token: z.string().optional(), url: z.string().url().optional(), pipelineSecret: z.string().optional() }))
+  .validator(z.object({ role: roleSchema, token: z.string().optional(), url: z.string().url().optional(), pipelineSecret: z.string().optional(), persist: z.boolean().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; index: number; opps: number; generated?: string; chunks?: number; phChunks?: number; message?: string }> => {
     const role = await roleFromToken(data.token);   // rola zo session, alebo pipeline secret (cloud ingest)
     if (!(await pipelineAuthed(role, data.pipelineSecret))) return { ok: false, index: 0, opps: 0, message: "Rola nemá oprávnenie." };
@@ -3571,8 +3571,9 @@ export const refreshMarketData = createServerFn({ method: "POST" })
     if (!DB) return { ok: false, index: 0, opps: 0, message: "Databáza nedostupná." };
     let url = data.url;
     if (url && !trustedDataUrl(url)) return { ok: false, index: 0, opps: 0, message: UNTRUSTED_MSG };
-    if (url) await DB.prepare("INSERT INTO market_meta (key,value) VALUES ('source_url',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(url).run();
-    else url = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
+    // persist=false: URL pripnuté na konkrétny commit (cloud ingest) sa NEukladá ako trvalý zdroj
+    if (url && data.persist !== false) await DB.prepare("INSERT INTO market_meta (key,value) VALUES ('source_url',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").bind(url).run();
+    else if (!url) url = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
     if (!url) return { ok: false, index: 0, opps: 0, message: "Nie je nastavené zdrojové URL (market-data.json)." };
     if (!trustedDataUrl(url)) return { ok: false, index: 0, opps: 0, message: UNTRUSTED_MSG };
     let json: unknown;
@@ -3588,6 +3589,9 @@ export const refreshMarketData = createServerFn({ method: "POST" })
       "INSERT INTO market_opportunities (source,ext_id,url,title,ptype,deal,okres,obec,area_m2,rooms,price_eur,price_per_m2,first_seen,last_seen,days_on_market,price_drop_pct,below_market_pct,flags,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(source,ext_id) DO UPDATE SET url=excluded.url,title=excluded.title,price_eur=excluded.price_eur,price_per_m2=excluded.price_per_m2,last_seen=excluded.last_seen,days_on_market=excluded.days_on_market,price_drop_pct=excluded.price_drop_pct,below_market_pct=excluded.below_market_pct,flags=excluded.flags,updated_at=datetime('now')")
       .bind(s(o.source), s(o.ext_id), s(o.url), s(o.title), s(o.ptype), s(o.deal), s(o.okres), s(o.obec), num(o.area ?? o.area_m2), num(o.rooms), num(o.price ?? o.price_eur), num(o.ppm2 ?? o.price_per_m2), s(o.first_seen), s(o.last_seen), num(o.dom ?? o.days_on_market), num(o.drop_pct ?? o.price_drop_pct), num(o.below_pct ?? o.below_market_pct), s(o.flags)); });
     for (let i = 0; i < idxStmts.length; i += 50) await DB.batch(idxStmts.slice(i, i + 50));
+    // Príležitosti sú ZOZNAM DŇA, nie história: dovtedy sa len pridávali, takže v appke ostávali aj
+    // mesiace mŕtve inzeráty (z augusta). Pri novom neprázdnom zozname sa starý nahradí.
+    if (oppStmts.length) await DB.prepare("DELETE FROM market_opportunities").run();
     for (let i = 0; i < oppStmts.length; i += 50) await DB.batch(oppStmts.slice(i, i + 50));
     const generated = (asObj(j.meta) as MarketMeta | null)?.generated ?? s(j.generated) ?? undefined;
     await DB.prepare("INSERT INTO market_meta (key,value) VALUES ('last_refresh',datetime('now')) ON CONFLICT(key) DO UPDATE SET value=datetime('now')").run();
@@ -4207,19 +4211,23 @@ type MarketStepResult = { ok: boolean; step?: string; chunk?: number; message?: 
   index?: number; opps?: number; listings?: number; ph?: number; chunks?: number; phChunks?: number;
   generated?: string; avm?: number; obm?: number };
 export const ingestMarketAll = createServerFn({ method: "POST" })
-  .validator(z.object({ secret: z.string(), step: z.enum(["data", "listings", "pricehistory", "compute"]).optional(), chunk: z.number().int().min(0).optional() }))
+  .validator(z.object({ secret: z.string(), step: z.enum(["data", "listings", "pricehistory", "compute"]).optional(), chunk: z.number().int().min(0).optional(),
+    // ref = commit SHA, ktorý cloud práve publikoval. Súbory sa čítajú z neho, nie z „main" — raw GitHub
+    // drží „main" pár minút vo vyrovnávacej pamäti a pri opakovanom pokuse by vrátil starší stav.
+    ref: z.string().regex(/^[0-9a-f]{7,40}$/).optional() }))
   .handler(async ({ data }): Promise<MarketStepResult> => {
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "DB nedostupná" };
     const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
     if (!secretEq(data.secret, expected)) return { ok: false, message: "Neplatný secret" };
-    const src = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
-    if (!src) return { ok: false, message: "Chýba source_url v market_meta" };
+    const src0 = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
+    if (!src0) return { ok: false, message: "Chýba source_url v market_meta" };
+    const src = data.ref ? src0.replace("/main/", `/${data.ref}/`) : src0;
     const adminRole = "admin" as Role;
     const ps = data.secret;
     const step = data.step ?? "data";
     if (step === "data") {
-      const r = await refreshMarketData({ data: { role: adminRole, pipelineSecret: ps } });
+      const r = await refreshMarketData({ data: { role: adminRole, pipelineSecret: ps, ...(data.ref ? { url: src, persist: false } : {}) } });
       return { ok: r.ok, step, message: r.message, index: r.index, opps: r.opps, chunks: r.chunks, phChunks: r.phChunks, generated: r.generated };
     }
     if (step === "listings") {

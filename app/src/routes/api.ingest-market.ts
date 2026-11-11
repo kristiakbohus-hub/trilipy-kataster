@@ -11,11 +11,15 @@ export const Route = createFileRoute("/api/ingest-market")({
     handlers: {
       POST: async ({ request }) => {
         const secret = request.headers.get("x-alert-secret") ?? "";
-        let body: { step?: "data" | "listings" | "pricehistory" | "compute"; chunk?: number } = {};
+        let body: { step?: "data" | "listings" | "pricehistory" | "compute"; chunk?: number; ref?: string } = {};
         try { body = (await request.json()) as typeof body; } catch { /* prázdne telo = krok "data" */ }
-        const r = await ingestMarketAll({ data: { secret, step: body.step, chunk: typeof body.chunk === "number" ? body.chunk : undefined } });
+        let r: Awaited<ReturnType<typeof ingestMarketAll>>;
+        try {
+          r = await ingestMarketAll({ data: { secret, step: body.step, chunk: typeof body.chunk === "number" ? body.chunk : undefined,
+            ref: typeof body.ref === "string" ? body.ref : undefined } });
+        } catch { r = { ok: false, message: secret ? "Neplatná požiadavka." : "Neplatný secret" }; }
         return new Response(JSON.stringify(r), {
-          status: r.ok ? 200 : 401,
+          status: r.ok ? 200 : r.message === "Neplatný secret" ? 401 : 400,
           headers: { "content-type": "application/json" },
         });
       },
