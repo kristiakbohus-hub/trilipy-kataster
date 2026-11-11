@@ -391,7 +391,8 @@ export function MapView({
   const [limOp, setLimOp] = useState<Record<string, number>>({});
   // ESKN-first: národný ÚGKK kataster ako DEFAULT podklad + identify ľubovoľnej parcely v SR
   const [esknBaseOn, setEsknBaseOn] = useState(true);   // ESKN kataster ako default celoSR vrstva
-  const [esknMode, setEsknMode] = useState(true);       // klik = live ESKN identify (default zapnuté)
+  const [esknMode, setEsknMode] = useState(true);
+  const [sheetBig, setSheetBig] = useState(false);       // mobil: spodná lišta panela zbalená / rozbalená       // klik = live ESKN identify (default zapnuté)
   const [esknHit, setEsknHit] = useState<EsknParcel | null>(null);
   const [esknBusy, setEsknBusy] = useState(false);
   // Kompletný obraz parcely po kliku: limity (všetky ArcGIS/WMS vrstvy) + trh + ÚP zóna — agregované pre ľubovoľnú parcelu v SR
@@ -1527,7 +1528,9 @@ export function MapView({
 
         {/* Živý ESKN identify — panel len pre parcelu MIMO našich k.ú. (pri našej parcele sa ESKN+AVM zlúči do rich panela nižšie → vždy len jeden panel) */}
         {esknMode && (esknHit || esknBusy) && !identified ? (
-          <div className="absolute left-3 top-16 bottom-14 z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur max-md:inset-x-2 max-md:right-2 max-md:top-auto max-md:bottom-2 max-md:max-h-[58vh] max-md:w-auto">
+          <div className={`absolute left-3 top-16 bottom-14 z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface/97 p-3 text-xs shadow backdrop-blur max-md:inset-x-2 max-md:right-2 max-md:top-auto max-md:bottom-2 ${sheetBig ? "max-md:max-h-[85vh]" : "max-md:max-h-[40vh]"} max-md:w-auto max-md:rounded-b-none max-md:rounded-t-2xl max-md:shadow-2xl`}>
+            {/* mobil ako ZBGIS: úchyt spodnej lišty — ťuknutím rozbaliť / zbaliť */}
+            <button onClick={() => setSheetBig((v) => !v)} aria-label={sheetBig ? "Zbaliť panel" : "Rozbaliť panel"} className="mx-auto mb-2 block h-1.5 w-14 rounded-full bg-line md:hidden" />
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="font-semibold text-fg">Parcela — ESKN + naše dáta</span>
               <button onClick={() => setEsknHit(null)} className="text-muted hover:text-fg" title="Zavrieť">✕</button>
@@ -2197,7 +2200,9 @@ export function MapView({
           <a href="/reporty" className="mt-1.5 block text-center text-[10px] text-muted underline hover:text-fg">Report Center (evidenčný list, pack) →</a>
         </div>
       ) : identified ? (
-        <div className="absolute left-3 top-16 bottom-14 z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface/95 p-4 backdrop-blur max-md:inset-x-2 max-md:right-2 max-md:top-auto max-md:bottom-2 max-md:max-h-[58vh] max-md:w-auto">
+        <div className={`absolute left-3 top-16 bottom-14 z-30 w-[340px] max-w-[calc(100vw-2rem)] overflow-y-auto rounded-xl border border-line bg-surface/95 p-4 backdrop-blur max-md:inset-x-2 max-md:right-2 max-md:top-auto max-md:bottom-2 ${sheetBig ? "max-md:max-h-[85vh]" : "max-md:max-h-[40vh]"} max-md:w-auto max-md:rounded-b-none max-md:rounded-t-2xl max-md:shadow-2xl`}>
+          {/* mobil ako ZBGIS: úchyt spodnej lišty — ťuknutím rozbaliť / zbaliť */}
+          <button onClick={() => setSheetBig((v) => !v)} aria-label={sheetBig ? "Zbaliť panel" : "Rozbaliť panel"} className="mx-auto mb-2 block h-1.5 w-14 rounded-full bg-line md:hidden" />
           <div className="flex items-start justify-between">
             <div>
               <div className="text-[10px] uppercase tracking-wide text-muted">Parcela {identified.kn_type}</div>

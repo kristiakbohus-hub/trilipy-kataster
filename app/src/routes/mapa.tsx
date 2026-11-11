@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, geocodePlace, mapSearch, mapFeature, type GeoPlace, type MapHit, type MapRing } from "../lib/api/kataster.functions";
+import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, geocodePlace, mapSearch, mapFeature, ownerPortfolio, type GeoPlace, type MapHit, type MapRing } from "../lib/api/kataster.functions";
 import { LvCard } from "../components/lv-card";
 import { STATUS_META, canRunPipeline, type Dataset, type MapText, type Parcel, type Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
@@ -50,10 +50,27 @@ function MapPage() {
   const [identifyAt, setIdentifyAt] = useState<{ lat: number; lng: number; nonce: number } | null>(null);
   const [lvPanel, setLvPanel] = useState<{ datasetId: string; lvNo: number; label: string } | null>(null);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
+  const [portfolio, setPortfolio] = useState<{ name: string; lvs: { datasetId: string; kuName: string; lvNo: number; share: string | null }[] } | null>(null);
 
   // Výber z vyhľadávania (ako ZBGIS): priblíž, zvýrazni obrys a otvor panel s LV (tlač/PDF).
   async function pickHit(h: MapHit) {
-    setSearchMsg(null); setLvPanel(null);
+    setSearchMsg(null); setLvPanel(null); setPortfolio(null);
+    // vlastník → všetky jeho LV v našich k.ú. naraz (len plný prístup; zadanie 2026-11-11)
+    if (h.kind === "owner" && h.lvNo != null) {
+      const r = await ownerPortfolio({ data: { token: token ?? undefined, datasetId: h.datasetId, lvNo: h.lvNo, name: h.label } }).catch(() => null);
+      if (!r?.ok || !r.lvs?.length) { setSearchMsg(r?.message ?? "Portfólio vlastníka sa nepodarilo načítať."); return; }
+      const n = Date.now();
+      setPortfolio({ name: r.name ?? h.label, lvs: r.lvs });
+      if (r.rings?.length) {
+        setHighlight({ rings: r.rings, nonce: n });
+        const pts = r.rings.flat();
+        const lng = pts.reduce((a, p) => a + p[0], 0) / pts.length, lat = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+        const span = Math.max(Math.max(...pts.map((p) => p[0])) - Math.min(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1])) - Math.min(...pts.map((p) => p[1])));
+        setUserNavigated(true);
+        setFlyTo({ lat, lng, zoom: span > 0.2 ? 11 : span > 0.05 ? 13 : span > 0.01 ? 15 : 17, nonce: n });
+      }
+      return;
+    }
     const f = await mapFeature({ data: { token: token ?? undefined, datasetId: h.datasetId, kind: h.kind === "ku" ? "LV" : h.kind, no: h.no ?? null, lvNo: h.lvNo ?? null } }).catch(() => null);
     if (!f?.ok) { setSearchMsg(f?.message ?? "Objekt sa nepodarilo načítať."); return; }
     const n = Date.now();
@@ -190,12 +207,38 @@ function MapPage() {
 
       <div className={fs ? "fixed inset-0 z-40 bg-paper" : "relative h-[62vh] min-h-[440px] w-full"}>
         {datasetId ? (
-          <div className="absolute left-3 top-3 z-30">
-            <ZSearch datasets={datasets} onPick={(h) => void pickHit(h)} onLock={(id) => { if (id !== datasetId) void switchDataset(id); }}
+          <div className="absolute left-3 top-3 z-30 max-md:right-14">
+            <ZSearch datasets={datasets} onPick={(h) => void pickHit(h)}
+              onLock={(id) => {
+                // k.ú. mimo našich dát (sr-<kód>): len prelet na k.ú., parcely sa hľadajú v národnom katastri
+                if (id.startsWith("sr-")) {
+                  void mapFeature({ data: { token: token ?? undefined, datasetId: id, kind: "LV", lvNo: null } }).then((f) => {
+                    if (f?.center) { setUserNavigated(true); setFlyTo({ lat: f.center.lat, lng: f.center.lng, zoom: 13, nonce: Date.now() }); }
+                    setSearchMsg(`${f?.kuName ?? "Toto k.ú."} nemáme importované — parcely C/E nájdeš z národného katastra, LV a vlastníkov v ZBGIS.`);
+                  }).catch(() => {});
+                } else if (id !== datasetId) void switchDataset(id);
+              }}
               onPickPlace={(lat, lng) => { setUserNavigated(true); setFlyTo({ lat, lng, zoom: 18, nonce: Date.now() }); }} />
             {searchMsg ? <div className="mt-1 w-[360px] max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-paper px-3 py-1.5 text-xs text-muted shadow">{searchMsg}</div> : null}
+            {portfolio ? (
+              <div className="mt-1 max-h-[45vh] w-[360px] max-w-[calc(100vw-5.5rem)] space-y-1 overflow-y-auto max-md:max-h-[35vh] rounded-xl border border-line bg-surface/97 p-2 text-xs shadow backdrop-blur">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-fg">{portfolio.name} — {portfolio.lvs.length} LV v {new Set(portfolio.lvs.map((l) => l.datasetId)).size} k.ú.</span>
+                  <button onClick={() => { setPortfolio(null); setHighlight(null); }} className="text-muted hover:text-fg" title="Zavrieť">✕</button>
+                </div>
+                <a href={`/vypis-hromadne?lv=${encodeURIComponent(portfolio.lvs.slice(0, 40).map((l) => `${l.datasetId}:${l.lvNo}`).join(","))}&print=1`} target="_blank" rel="noopener"
+                  className="block rounded-md bg-ink px-2 py-1.5 text-center font-medium text-cream hover:opacity-90">🖨️ Tlačiť všetky LV{portfolio.lvs.length > 40 ? " (prvých 40)" : ""} — jedno PDF</a>
+                {portfolio.lvs.map((l) => (
+                  <button key={`${l.datasetId}:${l.lvNo}`} onClick={() => setLvPanel({ datasetId: l.datasetId, lvNo: l.lvNo, label: `LV ${l.lvNo} · ${l.kuName}` })}
+                    className="flex w-full items-center justify-between gap-2 rounded px-1.5 py-1 text-left hover:bg-surface-2">
+                    <span className="text-fg">LV {l.lvNo} · {l.kuName}</span><span className="text-muted">{l.share ?? ""}</span>
+                  </button>
+                ))}
+                <div className="text-[10px] text-muted">Tá istá osoba = rovnaké meno a dátum narodenia. Parcely LV sú zvýraznené na mape.</div>
+              </div>
+            ) : null}
             {lvPanel ? (
-              <div className="mt-1 w-[360px] max-w-[calc(100vw-2rem)] space-y-1 rounded-xl border border-line bg-surface/97 p-2 shadow backdrop-blur">
+              <div className="mt-1 w-[360px] max-w-[calc(100vw-5.5rem)] space-y-1 overflow-y-auto rounded-xl border border-line bg-surface/97 p-2 shadow backdrop-blur max-md:max-h-[40vh]">
                 <div className="flex items-center justify-between text-xs"><span className="font-medium text-fg">{lvPanel.label}</span>
                   <button onClick={() => setLvPanel(null)} className="text-muted hover:text-fg" title="Zavrieť">✕</button></div>
                 <LvCard datasetId={lvPanel.datasetId} lvNo={lvPanel.lvNo} />
@@ -333,7 +376,7 @@ function ZSearch({ datasets, onPick, onLock, onPickPlace }: { datasets: Dataset[
 
   const list = [...hits];
   return (
-    <div className="w-[360px] max-w-[calc(100vw-2rem)]">
+    <div className="w-[360px] max-w-[calc(100vw-5.5rem)] max-md:w-full">
       <div className="flex items-center gap-1.5 rounded-full border border-line bg-paper px-2 py-1 shadow-lg focus-within:border-brand">
         {lock ? (
           <span className="flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-xs text-fg" title="Vyhľadávanie je zamknuté na toto k.ú.">

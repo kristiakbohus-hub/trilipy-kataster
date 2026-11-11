@@ -6396,7 +6396,7 @@ async function esknUnitOf(did: string): Promise<number | null> {
 // ostane aspoň stred na priblíženie.
 const numA = (v: unknown) => { const n = Number(String(v ?? "").replace(/\s/g, "").replace(",", ".")); return Number.isFinite(n) ? n : null; };
 const merc2ll = (x: number, y: number) => ({ lng: (x / 6378137) * 180 / Math.PI, lat: (2 * Math.atan(Math.exp(y / 6378137)) - Math.PI / 2) * 180 / Math.PI });
-async function esknFindParcel(reg: "C" | "E", unit: number | null, no: string): Promise<{ rings: MapRing[]; center: { lat: number; lng: number } } | null> {
+async function esknFindParcel(reg: "C" | "E", unit: number | null, no: string, withGeom = true): Promise<{ rings: MapRing[]; center: { lat: number; lng: number }; areaM2: number | null } | null> {
   const svc = reg === "C" ? "kn" : "uo", lid = reg === "C" ? 9 : 2, field = reg === "C" ? "PARCEL_NUMBER_LABEL" : "PARCEL_NUMBER_FULL";
   const j = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/${svc}/MapServer/find?searchText=${encodeURIComponent(no)}&contains=false&searchFields=${field}&layers=${lid}&returnGeometry=false&f=json`, 20000);
   const hit = (Array.isArray(j.results) ? j.results : []).map((r) => asObj(r) ?? {}).find((r) => {
@@ -6409,6 +6409,8 @@ async function esknFindParcel(reg: "C" | "E", unit: number | null, no: string): 
   const x0 = numA(a.XMIN), x1 = numA(a.XMAX), y0 = numA(a.YMIN), y1 = numA(a.YMAX);
   if (x0 == null || x1 == null || y0 == null || y1 == null) return null;
   const center = merc2ll((x0 + x1) / 2, (y0 + y1) / 2);
+  const areaM2 = numA(a.DESCRIPTIVE_AREA_OF_PARCEL ?? a["Výmera SPI (m2)"]);
+  if (!withGeom) return { rings: [], center, areaM2 };
   let rings: MapRing[] = [];
   try {
     const dd = 0.0015, ext = `${center.lng - dd},${center.lat - dd},${center.lng + dd},${center.lat + dd}`;
@@ -6423,7 +6425,55 @@ async function esknFindParcel(reg: "C" | "E", unit: number | null, no: string): 
     const p0 = merc2ll(x0, y0), p1 = merc2ll(x1, y1);
     rings = [[[p0.lng, p0.lat], [p1.lng, p0.lat], [p1.lng, p1.lat], [p0.lng, p1.lat], [p0.lng, p0.lat]]];
   }
-  return { rings, center };
+  return { rings, center, areaM2 };
+}
+
+// ——— Akékoľvek k.ú. SR (zadanie 2026-11-11): zoznam z ÚGKK KATUZ (ArcGIS Online), parcely cez ESKN ———
+const KATUZ = "https://services5.arcgis.com/xLgsg0kCC5lIjsBX/arcgis/rest/services/KATUZ/FeatureServer/0/query";
+type KuSr = { code: string; name: string; obec: string; okres: string; kraj: string };
+async function katuzList(): Promise<KuSr[]> {
+  const c = await regCacheRead("katuz-list", false, 30 * 24 * 3600).catch(() => null);
+  if (c && Array.isArray(c.payload) && (c.payload as KuSr[]).length > 3000) return c.payload as KuSr[];
+  const out: KuSr[] = [];
+  for (let off = 0; off < 8000; off += 2000) {
+    const j = asObj(await fetchJsonTimed(`${KATUZ}?where=1%3D1&outFields=IDN5,NM5,NM4,NM3,NM2&returnGeometry=false&orderByFields=IDN5&resultOffset=${off}&resultRecordCount=2000&f=json`, 20000)) ?? {};
+    const fs = Array.isArray(j.features) ? j.features : [];
+    for (const f of fs) { const a = asObj(asObj(f)?.attributes) ?? {}; out.push({ code: String(a.IDN5 ?? ""), name: String(a.NM5 ?? ""), obec: String(a.NM4 ?? ""), okres: String(a.NM3 ?? ""), kraj: String(a.NM2 ?? "") }); }
+    if (fs.length < 2000) break;
+  }
+  if (out.length > 3000) await regCacheWrite("katuz-list", "katuz", out).catch(() => {});
+  return out;
+}
+async function katuzCenter(code: string): Promise<{ lat: number; lng: number } | null> {
+  const j = asObj(await fetchJsonTimed(`${KATUZ}?where=IDN5%3D${Number(code)}&outFields=IDN5&returnGeometry=false&returnCentroid=true&outSR=4326&f=json`, 15000)) ?? {};
+  const c = asObj(asObj((Array.isArray(j.features) ? j.features : [])[0])?.centroid);
+  return c && typeof c.x === "number" && typeof c.y === "number" ? { lng: c.x, lat: c.y } : null;
+}
+async function katuzCodeAt(lat: number, lng: number): Promise<string | null> {
+  const j = asObj(await fetchJsonTimed(`${KATUZ}?geometry=${lng},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=IDN5&returnGeometry=false&f=json`, 15000)) ?? {};
+  const a = asObj(asObj((Array.isArray(j.features) ? j.features : [])[0])?.attributes);
+  return a?.IDN5 != null ? String(a.IDN5) : null;
+}
+// ESKN ID k.ú. pre ľubovoľný kód: identify parcely C pri strede k.ú. a overenie, že bod naozaj leží v tom k.ú.
+async function esknUnitOfKu(code: string): Promise<number | null> {
+  const key = `eskn-unit-ku:${code}`;
+  const c = await regCacheRead(key, false, 30 * 24 * 3600).catch(() => null);
+  const cu = (c?.payload as { unit?: number } | undefined)?.unit;
+  if (cu) return cu;
+  const ctr = await katuzCenter(code).catch(() => null);
+  if (!ctr) return null;
+  for (const [dx, dy] of [[0, 0], [0.004, 0], [-0.004, 0], [0, 0.003], [0, -0.003], [0.008, 0.006], [-0.008, -0.006]]) {
+    const lat = ctr.lat + dy, lng = ctr.lng + dx;
+    try {
+      if ((await katuzCodeAt(lat, lng)) !== code) continue;
+      const dd = 0.0008, ext = `${lng - dd},${lat - dd},${lng + dd},${lat + dd}`;
+      const j = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer/identify?geometry=${lng},${lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:9&tolerance=1&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=false&f=json`, 9000);
+      const a = asObj(asObj((Array.isArray(j.results) ? j.results : [])[0])?.attributes) ?? {};
+      const unit = Number(a["Identifikátor katastrálneho územia"]);
+      if (Number.isFinite(unit) && unit > 0) { await regCacheWrite(key, "eskn-unit", { unit }).catch(() => {}); return unit; }
+    } catch { /* ďalší bod */ }
+  }
+  return null;
 }
 async function esknEParcels(did: string, nos: string[]): Promise<MapRing[]> {
   if (!nos.length) return [];
@@ -6458,6 +6508,14 @@ export const mapSearch = createServerFn({ method: "POST" })
           }
         }
       }
+      // ostatné k.ú. SR (mimo našich dát) — zamknúť a hľadať parcely cez národný kataster
+      if (nq.length >= 3 && !MAP_NUM.test(qq)) {
+        const ours = new Set(ds.map((x) => x.ku_code));
+        const sr = await katuzList().catch(() => [] as KuSr[]);
+        for (const k of sr.filter((k) => !ours.has(k.code) && normTxt(k.name).includes(nq)).slice(0, 8)) {
+          hits.push({ kind: "ku", label: k.name, sub: `k.ú. ${k.code} · ${k.obec && k.obec !== k.name ? `${k.obec}, ` : ""}okres ${k.okres} · mimo našich dát (len ESKN)`, datasetId: `sr-${k.code}`, kuCode: k.code });
+        }
+      }
       if (full && qq.length >= 3 && !MAP_NUM.test(qq)) {
         const ow = await q<{ dataset_id: string; lv_no: number; name: string }>(
           "SELECT dataset_id, lv_no, name FROM lv_owners WHERE name LIKE ? LIMIT 12", [`%${qq}%`]).catch(() => []);
@@ -6466,7 +6524,18 @@ export const mapSearch = createServerFn({ method: "POST" })
       return { hits: hits.slice(0, 24), needLock: MAP_NUM.test(qq) };
     }
     const d = ds.find((x) => x.ku_code === data.ku);
-    if (!d) return { hits: [] };
+    if (!d) {
+      // k.ú. mimo našich dát: parcely C a E len z národného katastra (bez LV — ten je v ZBGIS)
+      if (!MAP_NUM.test(qq)) return { hits: [] };
+      const unit = await esknUnitOfKu(data.ku).catch(() => null);
+      if (!unit) return { hits: [] };
+      for (const reg of ["C", "E"] as const) {
+        if (kind && kind !== reg) continue;
+        const f = await esknFindParcel(reg, unit, qq, false).catch(() => null);
+        if (f) hits.push({ kind: reg, label: `parcela ${reg} ${qq}`, sub: `${f.areaM2 != null ? `${Math.round(f.areaM2).toLocaleString("sk-SK")} m² · ` : ""}mimo našich dát — LV v ZBGIS`, datasetId: `sr-${data.ku}`, kuCode: data.ku, no: qq, lvNo: null });
+      }
+      return { hits };
+    }
     const did = d.id;
     if (MAP_NUM.test(qq)) {
       const like = `${qq}/%`;
@@ -6504,6 +6573,18 @@ export const mapSearch = createServerFn({ method: "POST" })
 export const mapFeature = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string().optional(), datasetId: z.string(), kind: z.enum(["C", "E", "LV", "SC", "owner"]), no: z.string().max(30).nullable().optional(), lvNo: z.number().int().nullable().optional() }))
   .handler(async ({ data }): Promise<MapFeature> => {
+    if (data.datasetId.startsWith("sr-")) {
+      const code = data.datasetId.slice(3);
+      const ku = (await katuzList().catch(() => [] as KuSr[])).find((k) => k.code === code);
+      const base = { ok: true, kind: data.kind, datasetId: data.datasetId, kuName: ku?.name ?? code, lvNo: null };
+      if ((data.kind === "C" || data.kind === "E") && data.no) {
+        const unit = await esknUnitOfKu(code).catch(() => null);
+        const f = unit ? await esknFindParcel(data.kind, unit, data.no).catch(() => null) : null;
+        if (!f) return { ok: false, message: "Parcela sa v národnom katastri nenašla." };
+        return { ...base, no: data.no, rings: f.rings, center: f.center, areaM2: f.areaM2 };
+      }
+      return { ...base, rings: [], center: await katuzCenter(code).catch(() => null) };   // zamknutie k.ú. → priblíž naň
+    }
     const d = (await q<{ ku_name: string }>("SELECT ku_name FROM datasets WHERE id = ?", [data.datasetId]))[0];
     if (!d) return { ok: false, message: "Katastrálne územie nie je v appke." };
     const base = { ok: true, kind: data.kind, datasetId: data.datasetId, kuName: d.ku_name };
@@ -6600,3 +6681,28 @@ export const parcelBuildings = createServerFn({ method: "POST" })
     q<{ descr: string; sc: string | null; lvNo: number }>(
       "SELECT descr, supisne_cislo AS sc, lv_no AS lvNo FROM lv_buildings WHERE dataset_id = ? AND on_parcel = ? LIMIT 10",
       [data.datasetId, data.parcelNo]).catch(() => []));
+
+// Vlastník → všetky jeho LV v našich k.ú. (zadanie 2026-11-11). LEN plný prístup. Rovnaká osoba =
+// rovnaké meno (normalizované) A rovnaký dátum narodenia, ak ho má vybraný záznam — inak by sa zlúčili
+// rôzni ľudia s rovnakým menom. GDPR námietka (suppression) → nič. Obrysy: parcely C týchto LV.
+export const ownerPortfolio = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string().optional(), datasetId: z.string().max(40), lvNo: z.number().int(), name: z.string().min(2).max(200) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; name?: string; lvs?: { datasetId: string; kuName: string; lvNo: number; share: string | null }[]; rings?: MapRing[] }> => {
+    if (ownerAccess(await roleFromToken(data.token)) !== "full") return { ok: false, message: "Portfólio vlastníka vidí len rola s plným prístupom." };
+    if ((await suppressedNameSet()).has(normName(data.name))) return { ok: false, message: "Osoba uplatnila námietku — údaje sa nezobrazujú." };
+    const me = (await q<{ birth_date: string | null }>("SELECT birth_date FROM lv_owners WHERE dataset_id = ? AND lv_no = ? AND name = ? LIMIT 1", [data.datasetId, data.lvNo, data.name]))[0];
+    const rows = await q<{ dataset_id: string; lv_no: number; share: string | null; ku_name: string; birth_date: string | null }>(
+      `SELECT o.dataset_id, o.lv_no, o.share, d.ku_name, o.birth_date FROM lv_owners o JOIN datasets d ON d.id = o.dataset_id
+       WHERE o.name = ? ${me?.birth_date ? "AND o.birth_date = ?" : ""} ORDER BY d.ku_name, o.lv_no LIMIT 300`,
+      me?.birth_date ? [data.name, me.birth_date] : [data.name]).catch(() => []);
+    const seen = new Set<string>();
+    const lvs = rows.filter((r) => { const k = `${r.dataset_id}:${r.lv_no}`; if (seen.has(k)) return false; seen.add(k); return true; })
+      .map((r) => ({ datasetId: r.dataset_id, kuName: r.ku_name, lvNo: r.lv_no, share: r.share }));
+    const rings: MapRing[] = [];
+    for (const l of lvs.slice(0, 60)) {
+      const ps = await q<{ geometry_json: string | null }>("SELECT geometry_json FROM parcels WHERE dataset_id = ? AND lv_no = ? AND geometry_json IS NOT NULL LIMIT 80", [l.datasetId, l.lvNo]).catch(() => []);
+      for (const p of ps) rings.push(...geoRings(p.geometry_json));
+      if (rings.length > 1500) break;
+    }
+    return { ok: true, name: data.name, lvs, rings };
+  });

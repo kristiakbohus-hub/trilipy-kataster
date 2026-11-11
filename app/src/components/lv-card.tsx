@@ -56,9 +56,9 @@ export function LvCard({ datasetId, lvNo, note }: { datasetId: string; lvNo: num
       )}
       <div className="flex gap-1.5 pt-1">
         <a href={printUrl} target="_blank" rel="noopener"
-          className="flex-1 rounded-md bg-ink px-2 py-1.5 text-center font-medium text-cream hover:opacity-90">🖨️ Tlačiť / PDF</a>
+          className="flex-1 rounded-md bg-ink px-2 py-1.5 text-center font-medium text-cream hover:opacity-90 max-md:py-2.5 max-md:text-sm">🖨️ Tlačiť / PDF</a>
         <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId, lvNo: String(lvNo) }} search={{ typ: "vypis" as const }}
-          className="flex-1 rounded-md border border-line px-2 py-1.5 text-center text-fg hover:bg-surface-2">Celý výpis →</Link>
+          className="flex-1 rounded-md border border-line px-2 py-1.5 text-center text-fg hover:bg-surface-2 max-md:py-2.5 max-md:text-sm">Celý výpis →</Link>
       </div>
     </div>
   );
