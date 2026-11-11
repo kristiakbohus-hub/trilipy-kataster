@@ -4969,8 +4969,9 @@ export const getParcelAccessibility = createServerFn({ method: "POST" })
 
 // ——— Limity výstavby (úradné registre) — ArcGIS query s metrickým bufferom v ťažisku parcely ———
 // Presné „do X m od prvku" (returnCountOnly). Zdroje overené dostupné; ostatné pribudnú (graceful „nedostupné").
-export type LimitHit = { category: string; key: string; label: string; hit: boolean; count: number; buffer: number; attribution: string; error: boolean };
-export type LimitsResult = { items: LimitHit[]; cached?: boolean; ageDays?: number };
+export type LimitHit = { category: string; key: string; label: string; hit: boolean; count: number; buffer: number; attribution: string; error: boolean; names?: string[] };
+/** landPrice = úradná cena poľnohospodárskej pôdy (vyhl. 38/2005, VÚPOP) — podklad pre odvody a spodnú hranicu, NIE trhová cena. */
+export type LimitsResult = { items: LimitHit[]; cached?: boolean; ageDays?: number; landPrice?: { eurM2: number; attribution: string } | null };
 const LIMIT_SOURCES: { category: string; key: string; label: string; url: string; layer: number; buffer: number; attr: string }[] = [
   { category: "Geohazardy", key: "zosuvy",  label: "Zosuv / svahová deformácia",        url: "https://ags.geology.sk/arcgis/rest/services/Geofond/zosuvy_vect/MapServer",  layer: 2, buffer: 30, attr: "ŠGÚDŠ" },
   { category: "Geohazardy", key: "env",     label: "Environmentálna záťaž",             url: "https://ags.geology.sk/arcgis/rest/services/Geofond/skladky_vect/MapServer", layer: 1, buffer: 50, attr: "ŠGÚDŠ" },
@@ -4979,10 +4980,32 @@ const LIMIT_SOURCES: { category: string; key: string; label: string; url: string
   { category: "Les a pôda", key: "les",     label: "Les / ochranné pásmo (50 m)",       url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/JPRL/MapServer",          layer: 0, buffer: 50, attr: "NLC" },
   { category: "Vodné toky", key: "tok",     label: "Vodný tok / ochranné pásmo (15 m)", url: "https://gis.nlcsk.org/ArcGIS/rest/services/Inspire/TokySR/MapServer",         layer: 0, buffer: 15, attr: "NLC" },
   { category: "Záplavy",    key: "zaplava", label: "Záplavové riziko (APSFR)",          url: "https://mpt.svp.sk/server/rest/services/inspire/AreaofPotentialSignificantFloodRisk_Polygon_SK40000/MapServer", layer: 0, buffer: 10, attr: "SVP" },
+  // 2026-11-11: register environmentálnych záťaží SAŽP (A pravdepodobné, B potvrdené, C sanované) — body, pásmo 150 m
+  { category: "Geohazardy", key: "ez_sazp", label: "Register environmentálnych záťaží (150 m)", url: "https://arc.sazp.sk/arcgis/rest/services/env_zataze/environmentalna_zataz/MapServer", layer: 0, buffer: 150, attr: "SAŽP" },
 ];
+// Chránené územia a Natura 2000 — ŠOP SR INSPIRE WFS (stabilnejší než maps.sopsr.sk, ktorý padal na 504).
+// GeoServer WFS 2.0, EPSG:4258 → bbox v poradí lat,lon. Malý bbox okolo ťažiska ≈ „parcela je v území".
+async function protectedSitesAt(lat: number, lng: number): Promise<LimitHit> {
+  const base: LimitHit = { category: "Chránené územia", key: "sop", label: "Chránené územie / Natura 2000", hit: false, count: 0, buffer: 0, attribution: "ŠOP SR", error: false };
+  const d = 0.0002;
+  const u = `https://inspire.biomonitoring.sk/geoserver/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=wms-ps:ProtectedSite&count=10&outputFormat=application/json&propertyName=SITENAME&bbox=${lat - d},${lng - d},${lat + d},${lng + d},urn:ogc:def:crs:EPSG::4258`;
+  try {
+    const j = asObj(await fetchJsonTimed(u, 15000)) ?? {};
+    const names = [...new Set((Array.isArray(j.features) ? j.features : []).map((f) => String(asObj(asObj(f)?.properties)?.SITENAME ?? "").trim()).filter(Boolean))];
+    return { ...base, hit: names.length > 0, count: names.length, names: names.slice(0, 6) };
+  } catch { return { ...base, error: true }; }
+}
+async function officialLandPrice(lat: number, lng: number): Promise<LimitsResult["landPrice"]> {
+  try {
+    const j = asObj(await fetchJsonTimed(`https://portal.vupop.sk/arcgis/rest/services/BPEJ/Hodnota_pozemkov_pre_pozemkove_upravy/MapServer/76/query?geometry=${lng},${lat}&geometryType=esriGeometryPoint&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=EUR&returnGeometry=false&f=json`, 12000)) ?? {};
+    const a = asObj(asObj((Array.isArray(j.features) ? j.features : [])[0])?.attributes);
+    const v = a && typeof a.EUR === "number" ? a.EUR : null;
+    return v != null && v > 0 ? { eurM2: Math.round(v * 10000) / 10000, attribution: "VÚPOP (vyhl. 38/2005)" } : null;
+  } catch { return null; }
+}
 // Core (volateľný aj z nlQuery post-filtra) — getParcelLimits je tenký wrapper.
 async function limitsCore(lat: number, lng: number, refresh?: boolean): Promise<LimitsResult> {
-  const key = `limits:${lat.toFixed(4)}:${lng.toFixed(4)}`;
+  const key = `limits2:${lat.toFixed(4)}:${lng.toFixed(4)}`;   // v2: + SAŽP, ŠOP, úradná cena pôdy
   const cached = await regCacheRead(key, !!refresh, 30 * 24 * 3600);
   if (cached) return { ...(cached.payload as LimitsResult), cached: true, ageDays: cached.ageDays };
   const one = async (s: (typeof LIMIT_SOURCES)[number]): Promise<LimitHit> => {
@@ -4999,8 +5022,9 @@ async function limitsCore(lat: number, lng: number, refresh?: boolean): Promise<
     } catch { return { ...base, error: true }; }
     finally { clearTimeout(to); }
   };
-  const items = await Promise.all(LIMIT_SOURCES.map(one));
-  const out: LimitsResult = { items };
+  const [items, sop, landPrice] = await Promise.all([Promise.all(LIMIT_SOURCES.map(one)), protectedSitesAt(lat, lng), officialLandPrice(lat, lng)]);
+  items.push(sop);
+  const out: LimitsResult = { items, landPrice };
   if (items.some((i) => !i.error)) await regCacheWrite(key, "limits", out); // necachuj samé chyby
   return out;
 }
@@ -7096,11 +7120,47 @@ async function esknUnitOfKu(code: string): Promise<number | null> {
   }
   return null;
 }
+// INSPIRE parcely ÚGKK (CC BY 4.0) — presný obrys C/E podľa kódu k.ú. a čísla JEDNÝM dopytom (2026-11-11).
+// nationalCadastralReference = „<kód k.ú.>_<číslo>.<C|E>". Nahrádza ESKN find+identify (2 dopyty na parcelu
+// a pri konkávnej parcele len obdĺžnik). Firewall servera odmieta falošné „Mozilla/5.0" — fetchJsonTimed posiela
+// poctivé „tri-lipy/1.0" (overené). Pri výpadku ostáva záloha cez ESKN.
+type InspireParcel = { rings: MapRing[]; areaM2: number | null; center: { lat: number; lng: number } };
+async function inspireParcels(code: string, reg: "C" | "E", nos: string[]): Promise<Map<string, InspireParcel>> {
+  const out = new Map<string, InspireParcel>();
+  const list = [...new Set(nos.map((n) => n.trim()).filter((n) => /^[\d/]{1,20}$/.test(n)))].slice(0, 40);
+  if (!/^\d{6}$/.test(code) || !list.length) return out;
+  const ws = reg === "C" ? "cp" : "cp_uo", tn = reg === "C" ? "cp:CP.CadastralParcel" : "cp_uo:CP.CadastralParcelUO";
+  const cql = `nationalCadastralReference IN (${list.map((n) => `'${code}_${n}.${reg}'`).join(",")})`;
+  const j = asObj(await fetchJsonTimed(`https://inspirews.skgeodesy.sk/geoserver/${ws}/ows?service=WFS&version=2.0.0&request=GetFeature&typeNames=${tn}&outputFormat=application/json&count=${list.length * 3}&CQL_FILTER=${encodeURIComponent(cql)}`, 15000)) ?? {};
+  for (const f0 of Array.isArray(j.features) ? j.features : []) {
+    const f = asObj(f0) ?? {}; const pr = asObj(f.properties) ?? {}; const g = asObj(f.geometry) ?? {};
+    const ref = String(pr.nationalCadastralReference ?? ""); const no = ref.replace(/^\d{6}_/, "").replace(/\.[CE]$/, "");
+    if (!no) continue;
+    const polys: unknown[] = g.type === "MultiPolygon" && Array.isArray(g.coordinates) ? g.coordinates : g.type === "Polygon" ? [g.coordinates] : [];
+    const rings: MapRing[] = [];
+    for (const poly of polys) { const outer = Array.isArray(poly) ? poly[0] : null; if (Array.isArray(outer)) rings.push(outer.filter((p): p is [number, number] => Array.isArray(p) && typeof p[0] === "number" && typeof p[1] === "number").map((p) => [p[0], p[1]])); }
+    if (!rings.length) continue;
+    const rp = asObj(pr.referencePoint); const rc = Array.isArray(rp?.coordinates) ? (rp!.coordinates as number[]) : null;
+    const pts = rings.flat(); const center = rc && rc.length >= 2 ? { lng: rc[0], lat: rc[1] } : { lng: pts.reduce((a, p) => a + p[0], 0) / pts.length, lat: pts.reduce((a, p) => a + p[1], 0) / pts.length };
+    const av = asObj(pr.areaValue); const areaM2 = typeof av?.value === "number" ? av.value : null;
+    const prev = out.get(no);
+    if (prev) prev.rings.push(...rings); else out.set(no, { rings, areaM2, center });
+  }
+  return out;
+}
+
 async function esknEParcels(did: string, nos: string[]): Promise<MapRing[]> {
   if (!nos.length) return [];
+  // 1) INSPIRE podľa kódu k.ú. (did = kn-<kód>) — jeden dopyt pre všetky čísla
+  const code = did.replace(/^kn-/, "");
+  const ins = await inspireParcels(code, "E", nos).catch(() => new Map<string, InspireParcel>());
+  const rest = nos.filter((n) => !ins.has(n));
+  const got: MapRing[] = [...ins.values()].flatMap((x) => x.rings);
+  if (!rest.length) return got;
+  nos = rest;
   const unit = await esknUnitOf(did);
-  if (unit == null) return [];              // bez ID k.ú. by find vrátil rovnaké číslo z ľubovoľného k.ú. SR
-  const out: MapRing[] = [];
+  if (unit == null) return got;             // bez ID k.ú. by find vrátil rovnaké číslo z ľubovoľného k.ú. SR
+  const out: MapRing[] = [...got];
   for (const no of nos.slice(0, 12)) {      // každé číslo = 2 dopyty na ESKN → strop
     try { const f = await esknFindParcel("E", unit, no); if (f) out.push(...f.rings); } catch { /* ďalšie */ }
   }
@@ -7199,6 +7259,8 @@ export const mapFeature = createServerFn({ method: "POST" })
       const ku = (await katuzList().catch(() => [] as KuSr[])).find((k) => k.code === code);
       const base = { ok: true, kind: data.kind, datasetId: data.datasetId, kuName: ku?.name ?? code, lvNo: null };
       if ((data.kind === "C" || data.kind === "E") && data.no) {
+        const ins = (await inspireParcels(code, data.kind, [data.no]).catch(() => new Map<string, InspireParcel>())).get(data.no);
+        if (ins) return { ...base, no: data.no, rings: ins.rings, center: ins.center, areaM2: ins.areaM2 };
         const unit = await esknUnitOfKu(code).catch(() => null);
         const f = unit ? await esknFindParcel(data.kind, unit, data.no).catch(() => null) : null;
         if (!f) return { ok: false, message: "Parcela sa v národnom katastri nenašla." };

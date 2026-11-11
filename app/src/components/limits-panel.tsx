@@ -1,6 +1,6 @@
 // Limity výstavby na parcele — signály z úradných registrov (ŠGÚDŠ, NLC …).
-type LimitHit = { category: string; key: string; label: string; hit: boolean; count: number; buffer: number; attribution: string; error: boolean };
-type LimitsResult = { items: LimitHit[]; cached?: boolean; ageDays?: number };
+type LimitHit = { category: string; key: string; label: string; hit: boolean; count: number; buffer: number; attribution: string; error: boolean; names?: string[] };
+type LimitsResult = { items: LimitHit[]; cached?: boolean; ageDays?: number; landPrice?: { eurM2: number; attribution: string } | null };
 
 const CAT_ICON: Record<string, string> = {
   "Geohazardy": "⛰️", "Les a pôda": "🌲", "Vodné toky": "💧", "Chránené územia": "🛡️", "Pamiatky": "🏛️", "Infraštruktúra": "🚧",
@@ -32,7 +32,7 @@ export function LimitsPanel({ data }: { data: LimitsResult }) {
           </div>
           {data.items.filter((i) => i.category === cat).map((h) => (
             <div key={h.key} className="flex items-center justify-between gap-2 border-b border-line/40 py-1">
-              <span className="min-w-0 truncate text-muted">{h.label}</span>
+              <span className="min-w-0 truncate text-muted" title={h.names?.join(", ")}>{h.label}{h.hit && h.names?.length ? <b className="font-medium text-fg"> — {h.names.join(", ")}</b> : null}</span>
               <span className="flex items-center gap-1 whitespace-nowrap">
                 <StatusBadge h={h} />
                 <span className="text-[9px] text-muted/70">{h.attribution}</span>
@@ -41,8 +41,14 @@ export function LimitsPanel({ data }: { data: LimitsResult }) {
           ))}
         </div>
       ))}
+      {data.landPrice ? (
+        <div className="flex items-center justify-between gap-2 border-b border-line/40 py-1">
+          <span className="text-muted">Úradná cena poľnohosp. pôdy (pre odvody, nie trhová)</span>
+          <span className="whitespace-nowrap tabular-nums text-fg">{data.landPrice.eurM2.toLocaleString("sk-SK", { maximumFractionDigits: 4 })} €/m² <span className="text-[9px] text-muted/70">{data.landPrice.attribution}</span></span>
+        </div>
+      ) : null}
       <div className="pt-0.5 text-[10px] text-muted">
-        Orientačné — dopyt v ťažisku parcely do uvedeného pásma. Zdroje: ŠGÚDŠ (geológia/geohazardy), NLC (lesy/vodné toky).
+        Orientačné — dopyt v ťažisku parcely do uvedeného pásma. Zdroje: ŠGÚDŠ (geológia/geohazardy), NLC (lesy/vodné toky), SAŽP (environmentálne záťaže), ŠOP SR (chránené územia), SVP (záplavy).
         {errs > 0 ? " Niektoré zdroje práve nedostupné." : ""} Overte vždy na príslušnom úrade.
       </div>
     </div>
