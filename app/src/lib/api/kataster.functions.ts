@@ -5012,7 +5012,28 @@ export type EsknParcel = {
   found: boolean; parcel_no: string | null; area_m2: number | null; druh_pozemku: string | null;
   umiestnenie: string | null; ku_id: number | null; lv_id: number | null;
   lat: number; lng: number; ours?: EsknOurParcel | null; avm?: AvmResult | null; cached?: boolean; ageDays?: number; message?: string;
+  // parcely E v bode (mapa určeného operátu) a ich LV v našich dátach — pre parcelu C bez LV
+  eUnder?: { no: string; lvNo: number | null; areaM2: number | null; datasetId: string | null }[];
 };
+
+// Parcely E v bode z národnej mapy určeného operátu (ESKN VRM/uo, vrstva 2) → ich LV v našich dátach.
+async function esknEUnder(lat: number, lng: number, datasetId: string | null): Promise<NonNullable<EsknParcel["eUnder"]>> {
+  const dd = 0.0012, ext = `${lng - dd},${lat - dd},${lng + dd},${lat + dd}`;
+  const j = asObj(await fetchJsonTimed(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/uo/MapServer/identify?geometry=${lng},${lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:2&tolerance=1&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=false&f=json`, 12000)) ?? {};
+  const did = datasetId ?? (await q<{ dataset_id: string }>(
+    "SELECT dataset_id FROM parcels WHERE centroid_lat BETWEEN ? AND ? AND centroid_lng BETWEEN ? AND ? LIMIT 1",
+    [lat - 0.003, lat + 0.003, lng - 0.003, lng + 0.003]).catch(() => []))[0]?.dataset_id ?? null;
+  const out: NonNullable<EsknParcel["eUnder"]> = [];
+  for (const r of (Array.isArray(j.results) ? j.results : []).slice(0, 6)) {
+    const a = asObj(asObj(r)?.attributes) ?? {};
+    const no = a.PARCEL_NUMBER_FULL != null ? String(a.PARCEL_NUMBER_FULL) : null;
+    if (!no) continue;
+    const area = a.GEODETIC_AREA_OF_PARCEL != null ? Number(String(a.GEODETIC_AREA_OF_PARCEL).replace(",", ".")) : null;
+    const lv = did ? (await q<{ lv_no: number; area_m2: number }>("SELECT lv_no, area_m2 FROM lv_parcels WHERE dataset_id = ? AND register='E' AND parcel_no = ? LIMIT 1", [did, no]))[0] : undefined;
+    out.push({ no, lvNo: lv?.lv_no ?? null, areaM2: lv?.area_m2 ?? (area != null && isFinite(area) ? Math.round(area) : null), datasetId: lv ? did : null });
+  }
+  return out;
+}
 
 // ——— AVM (automatický odhad hodnoty) — comparables z trhu + úpravy podľa druhu/umiestnenia/BPEJ/veľkosti/vysporiadanosti ———
 // Orientačný model, NIE znalecký posudok. Sadzby sú laditeľné (kataster profík vie dodať reálne čísla).
@@ -5162,7 +5183,12 @@ async function lookupOurParcel(lat: number, lng: number, esknNo: string | null):
   if (!cands.length) return null;
   const dist = (c: OurCand) => ((c.centroid_lat ?? 0) - lat) ** 2 + ((c.centroid_lng ?? 0) - lng) ** 2;
   const byNo = esknNo ? cands.find((c) => String(c.parcel_no) === esknNo) : undefined;
-  const pick = byNo ?? [...cands].sort((a, b) => dist(a) - dist(b))[0];
+  // Keď ESKN číslo parcely pozná a u nás nesedí, NEberie sa najbližšia iná parcela — panel by ponúkol
+  // výpis CUDZIEHO LV (opravené 2026-11-11). Bez čísla len parcela do ~30 m.
+  if (esknNo && !byNo) return null;
+  const nearest = [...cands].sort((a, b) => dist(a) - dist(b))[0];
+  const pick = byNo ?? (dist(nearest) < 0.0003 ** 2 ? nearest : undefined);
+  if (!pick) return null;
   let score: number | null = null, co_owners: number | null = null, has_spf: number | null = null;
   if (pick.lv_no != null) {
     const sig = (await q<{ co_owners: number; has_spf: number; dedic: number; buildable: number; clean_title: number; absenter_ratio: number }>(
@@ -5189,7 +5215,7 @@ export const esknIdentify = createServerFn({ method: "POST" })
   .validator(z.object({ lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<EsknParcel> => {
     const base: EsknParcel = { found: false, parcel_no: null, area_m2: null, druh_pozemku: null, umiestnenie: null, ku_id: null, lv_id: null, lat: data.lat, lng: data.lng };
-    const key = `eskn3:${data.lat.toFixed(5)}:${data.lng.toFixed(5)}`;
+    const key = `eskn4:${data.lat.toFixed(5)}:${data.lng.toFixed(5)}`;   // eskn4: oprava „našej" parcely + parcely E (2026-11-11)
     const cached = await regCacheRead(key, !!data.refresh, 7 * 24 * 3600);
     if (cached) return { ...(cached.payload as EsknParcel), cached: true, ageDays: cached.ageDays };
     const dd = 0.0012;
@@ -5226,6 +5252,7 @@ export const esknIdentify = createServerFn({ method: "POST" })
     // Best-effort obohatenie — nesmie zhodiť ESKN výsledok ani zobraziť zavádzajúcu hlášku
     try { out.ours = await lookupOurParcel(data.lat, data.lng, out.parcel_no); } catch { /* ignore */ }
     try { const obec = out.ours?.ku_name ? out.ours.ku_name.replace(/^k\.ú\.\s*/i, "").trim() : null; const calib = await getCalibMap(); out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null, out.ours?.okres ?? null, obec, calib); } catch { /* ignore */ }
+    try { out.eUnder = await esknEUnder(data.lat, data.lng, out.ours?.dataset_id ?? null); } catch { out.eUnder = []; }
     try { if (out.found || out.ours) await regCacheWrite(key, "eskn", out); } catch { /* ignore */ }
     return out;
   });
@@ -6287,4 +6314,207 @@ export const ingestLvParts = createServerFn({ method: "POST" })
     ];
     for (let i = 0; i < stmts.length; i += 100) await DB.batch(stmts.slice(i, i + 100));
     return { ok: true, inserted: stmts.length };
+  });
+
+// ——— MAPA AKO ZBGIS: vyhľadávanie (zamknuté k.ú.), objekt na mapu, identifikácia v bode ———
+// Zadanie vlastníka 2026-11-11: zamknúť k.ú. a napísať číslo → parcela C / E, LV, stavba (súpisné č.),
+// vlastník (len plný prístup) → priblíži, zvýrazní a ukáže LV s tlačou/PDF; klik kdekoľvek v našich
+// k.ú. (nie len v načítanom) ukáže našu parcelu a LV; parcela C bez LV → LV parciel E pod ňou.
+export type MapHit = {
+  kind: "ku" | "C" | "E" | "LV" | "SC" | "owner"; label: string; sub: string;
+  datasetId: string; kuCode: string; no?: string | null; lvNo?: number | null;
+};
+export type MapRing = [number, number][];
+export type MapFeature = {
+  ok: boolean; message?: string; kind?: string; datasetId?: string; kuName?: string | null; no?: string | null;
+  lvNo?: number | null; areaM2?: number | null; druh?: string | null; rings?: MapRing[];
+  center?: { lat: number; lng: number } | null; building?: string | null;
+  eUnder?: { no: string; lvNo: number | null; areaM2: number | null }[];
+};
+const MAP_NUM = /^\d+(?:\/\d+)?$/;
+const normTxt = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+function geoRings(g: string | null): MapRing[] {
+  if (!g) return [];
+  try {
+    const o = JSON.parse(g) as { type?: string; coordinates?: unknown };
+    if (o.type === "Polygon") return (o.coordinates as MapRing[]) ?? [];
+    if (o.type === "MultiPolygon") return ((o.coordinates as MapRing[][]) ?? []).flat();
+  } catch { /* nič */ }
+  return [];
+}
+function ringsCenter(rs: MapRing[]): { lat: number; lng: number } | null {
+  const pts = rs.flat(); if (!pts.length) return null;
+  let a = 0, b = 0; for (const [x, y] of pts) { a += x; b += y; }
+  return { lng: a / pts.length, lat: b / pts.length };
+}
+async function eskn(url: string, ms = 12000): Promise<Record<string, unknown>> {
+  return (asObj(await fetchJsonTimed(url, ms)) ?? {}) as Record<string, unknown>;
+}
+const esknRings = (geom: unknown): MapRing[] => ((asObj(geom)?.rings as MapRing[] | undefined) ?? []);
+async function datasetBbox(did: string): Promise<[number, number, number, number] | null> {
+  const r = (await q<{ a: number | null; b: number | null; c: number | null; d: number | null }>(
+    "SELECT MIN(centroid_lng) a, MIN(centroid_lat) b, MAX(centroid_lng) c, MAX(centroid_lat) d FROM parcels WHERE dataset_id = ? AND centroid_lat IS NOT NULL", [did]))[0];
+  return r && r.a != null && r.b != null && r.c != null && r.d != null ? [r.a - 0.01, r.b - 0.01, r.c + 0.01, r.d + 0.01] : null;
+}
+
+export const mapSearch = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string().optional(), q: z.string().max(120), ku: z.string().regex(/^\d{6}$/).optional() }))
+  .handler(async ({ data }): Promise<{ hits: MapHit[]; needLock?: boolean }> => {
+    const full = ownerAccess(await roleFromToken(data.token)) === "full";
+    const sup = full ? await suppressedNameSet() : new Set<string>();   // GDPR námietka → meno sa nehľadá
+    let qq = data.q.trim();
+    let kind: MapHit["kind"] | null = null;
+    // skratky ako v ZBGIS: „c 1500", „e 1500", „lv 1500", „sc 563" / „s.č. 563"
+    const pm = qq.match(/^(c|e|lv|sc|s\.?\s?[čc]\.?|s[úu]p\.?)\s*[:.]?\s*(\d.*)$/i);
+    if (pm) { const k = pm[1].toLowerCase(); kind = k === "c" ? "C" : k === "e" ? "E" : k === "lv" ? "LV" : "SC"; qq = pm[2].trim(); }
+    const ds = await q<{ id: string; ku_code: string; ku_name: string; region: string | null }>("SELECT id, ku_code, ku_name, region FROM datasets").catch(() => []);
+    const kuOf = (id: string) => ds.find((d) => d.id === id);
+    const hits: MapHit[] = [];
+    if (!data.ku) {
+      const nq = normTxt(qq);
+      if (nq.length >= 2) {
+        for (const d of ds) {
+          if (normTxt(d.ku_name).includes(nq) || d.ku_code.startsWith(qq)) {
+            hits.push({ kind: "ku", label: d.ku_name, sub: `k.ú. ${d.ku_code}${d.region ? ` · ${d.region.split("·")[0].trim()}` : ""}`, datasetId: d.id, kuCode: d.ku_code });
+          }
+        }
+      }
+      if (full && qq.length >= 3 && !MAP_NUM.test(qq)) {
+        const ow = await q<{ dataset_id: string; lv_no: number; name: string }>(
+          "SELECT dataset_id, lv_no, name FROM lv_owners WHERE name LIKE ? LIMIT 12", [`%${qq}%`]).catch(() => []);
+        for (const o of ow) { const d = kuOf(o.dataset_id); if (d && !sup.has(normName(o.name))) hits.push({ kind: "owner", label: o.name, sub: `LV ${o.lv_no} · ${d.ku_name}`, datasetId: d.id, kuCode: d.ku_code, lvNo: o.lv_no }); }
+      }
+      return { hits: hits.slice(0, 24), needLock: MAP_NUM.test(qq) };
+    }
+    const did = `kn-${data.ku}`;
+    const d = kuOf(did);
+    if (!d) return { hits: [] };
+    if (MAP_NUM.test(qq)) {
+      const like = `${qq}/%`;
+      if (!kind || kind === "C") {
+        const cs = await q<{ parcel_no: string; lv_no: number | null; area_m2: number; use_type: string | null }>(
+          `SELECT parcel_no, lv_no, area_m2, use_type FROM parcels WHERE dataset_id = ? AND kn_type NOT LIKE 'E%' AND (parcel_no = ? OR parcel_no LIKE ?)
+           ORDER BY (parcel_no = ?) DESC, LENGTH(parcel_no), parcel_no LIMIT 8`, [did, qq, like, qq]).catch(() => []);
+        for (const c of cs) hits.push({ kind: "C", label: `parcela C ${c.parcel_no}`, sub: `${c.area_m2.toLocaleString("sk-SK")} m²${c.use_type ? ` · ${c.use_type}` : ""}${c.lv_no ? ` · LV ${c.lv_no}` : " · bez LV"}`, datasetId: did, kuCode: d.ku_code, no: c.parcel_no, lvNo: c.lv_no });
+      }
+      if (!kind || kind === "E") {
+        const es = await q<{ parcel_no: string; lv_no: number; area_m2: number; drp_text: string | null }>(
+          `SELECT parcel_no, lv_no, area_m2, drp_text FROM lv_parcels WHERE dataset_id = ? AND register = 'E' AND (parcel_no = ? OR parcel_no LIKE ?)
+           ORDER BY (parcel_no = ?) DESC, LENGTH(parcel_no), parcel_no LIMIT 8`, [did, qq, like, qq]).catch(() => []);
+        for (const e of es) hits.push({ kind: "E", label: `parcela E ${e.parcel_no}`, sub: `${e.area_m2.toLocaleString("sk-SK")} m²${e.drp_text ? ` · ${e.drp_text}` : ""} · LV ${e.lv_no}`, datasetId: did, kuCode: d.ku_code, no: e.parcel_no, lvNo: e.lv_no });
+      }
+      if ((!kind || kind === "LV") && !qq.includes("/")) {
+        const lv = Number(qq);
+        const n = (await q<{ n: number }>("SELECT COUNT(*) n FROM lv_parcels WHERE dataset_id = ? AND lv_no = ?", [did, lv]).catch(() => []))[0]?.n ?? 0;
+        const own = (await q<{ n: number }>("SELECT COUNT(*) n FROM lv_owners WHERE dataset_id = ? AND lv_no = ?", [did, lv]).catch(() => []))[0]?.n ?? 0;
+        if (n || own) hits.push({ kind: "LV", label: `LV č. ${lv}`, sub: `${n} parciel · ${own} vlastníkov`, datasetId: did, kuCode: d.ku_code, lvNo: lv });
+      }
+      if ((!kind || kind === "SC") && !qq.includes("/")) {
+        const bs = await q<{ descr: string; on_parcel: string | null; lv_no: number }>(
+          "SELECT descr, on_parcel, lv_no FROM lv_buildings WHERE dataset_id = ? AND supisne_cislo = ? LIMIT 8", [did, qq]).catch(() => []);
+        for (const b of bs) hits.push({ kind: "SC", label: `stavba s. č. ${qq}`, sub: `${b.descr}${b.on_parcel ? ` · na parc. C ${b.on_parcel}` : ""} · LV ${b.lv_no}`, datasetId: did, kuCode: d.ku_code, no: b.on_parcel, lvNo: b.lv_no });
+      }
+    } else if (qq.length >= 3 && full) {
+      const ow = await q<{ lv_no: number; name: string }>(
+        "SELECT lv_no, name FROM lv_owners WHERE dataset_id = ? AND name LIKE ? LIMIT 12", [did, `%${qq}%`]).catch(() => []);
+      for (const o of ow) if (!sup.has(normName(o.name))) hits.push({ kind: "owner", label: o.name, sub: `LV ${o.lv_no}`, datasetId: did, kuCode: d.ku_code, lvNo: o.lv_no });
+    }
+    return { hits };
+  });
+
+export const mapFeature = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string().optional(), datasetId: z.string(), kind: z.enum(["C", "E", "LV", "SC", "owner"]), no: z.string().max(30).nullable().optional(), lvNo: z.number().int().nullable().optional() }))
+  .handler(async ({ data }): Promise<MapFeature> => {
+    const d = (await q<{ ku_name: string }>("SELECT ku_name FROM datasets WHERE id = ?", [data.datasetId]))[0];
+    if (!d) return { ok: false, message: "Katastrálne územie nie je v appke." };
+    const base = { ok: true, kind: data.kind, datasetId: data.datasetId, kuName: d.ku_name };
+    const cParcel = async (no: string) => (await q<{ parcel_no: string; lv_no: number | null; area_m2: number; use_type: string | null; geometry_json: string | null; centroid_lat: number | null; centroid_lng: number | null; ekn_ref: string | null }>(
+      "SELECT parcel_no, lv_no, area_m2, use_type, geometry_json, centroid_lat, centroid_lng, ekn_ref FROM parcels WHERE dataset_id = ? AND parcel_no = ? AND kn_type NOT LIKE 'E%' LIMIT 1", [data.datasetId, no]))[0];
+    if ((data.kind === "C" || data.kind === "SC") && data.no) {
+      const p = await cParcel(data.no);
+      const lvC = p?.lv_no ?? (await q<{ lv_no: number }>("SELECT lv_no FROM lv_parcels WHERE dataset_id = ? AND register='C' AND parcel_no = ? LIMIT 1", [data.datasetId, data.no]))[0]?.lv_no ?? null;
+      const rings = geoRings(p?.geometry_json ?? null);
+      const building = data.kind === "SC" ? (await q<{ descr: string }>("SELECT descr FROM lv_buildings WHERE dataset_id = ? AND on_parcel = ? LIMIT 1", [data.datasetId, data.no]))[0]?.descr ?? null : null;
+      const eUnder = lvC == null && p?.ekn_ref
+        ? await q<{ no: string; lvNo: number | null; areaM2: number | null }>("SELECT parcel_no AS no, lv_no AS lvNo, area_m2 AS areaM2 FROM lv_parcels WHERE dataset_id = ? AND register='E' AND parcel_no = ?", [data.datasetId, p.ekn_ref])
+        : [];
+      return { ...base, no: data.no, lvNo: data.kind === "SC" ? (data.lvNo ?? lvC) : lvC, areaM2: p?.area_m2 ?? null, druh: p?.use_type ?? null, rings,
+        center: ringsCenter(rings) ?? (p?.centroid_lat != null && p.centroid_lng != null ? { lat: p.centroid_lat, lng: p.centroid_lng } : null), building, eUnder };
+    }
+    if (data.kind === "E" && data.no) {
+      const e = (await q<{ lv_no: number; area_m2: number; drp_text: string | null }>("SELECT lv_no, area_m2, drp_text FROM lv_parcels WHERE dataset_id = ? AND register='E' AND parcel_no = ? LIMIT 1", [data.datasetId, data.no]))[0];
+      // obrys parcely E nemáme — vezme sa z národnej mapy určeného operátu (ESKN VRM/uo) v rozsahu k.ú.
+      let rings: MapRing[] = [];
+      const bb = await datasetBbox(data.datasetId);
+      if (bb) {
+        try {
+          const where = encodeURIComponent(`PARCEL_NUMBER_FULL='${data.no.replace(/'/g, "")}'`);
+          const j = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/uo/MapServer/2/query?where=${where}&geometry=${bb.join(",")}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=PARCEL_NUMBER_FULL&returnGeometry=true&outSR=4326&f=json`);
+          const feats = Array.isArray(j.features) ? j.features : [];
+          if (feats.length) rings = esknRings(asObj(feats[0])?.geometry);
+        } catch { /* ESKN nedostupné → bez obrysu, LV aj tak */ }
+      }
+      return { ...base, no: data.no, lvNo: e?.lv_no ?? data.lvNo ?? null, areaM2: e?.area_m2 ?? null, druh: e?.drp_text ?? null, rings, center: ringsCenter(rings) };
+    }
+    // LV / vlastník → všetky parcely C daného LV s obrysom
+    const lv = data.lvNo ?? null;
+    if (lv == null) return { ok: false, message: "Chýba číslo LV." };
+    const ps = await q<{ geometry_json: string | null }>("SELECT geometry_json FROM parcels WHERE dataset_id = ? AND lv_no = ? AND geometry_json IS NOT NULL LIMIT 200", [data.datasetId, lv]);
+    const rings = ps.flatMap((p) => geoRings(p.geometry_json));
+    return { ...base, lvNo: lv, rings, center: ringsCenter(rings) };
+  });
+
+export type MapIdentify = {
+  ok: boolean; message?: string; lat: number; lng: number;
+  eskn: { no: string | null; areaM2: number | null; rings: MapRing[] } | null;
+  ours: { datasetId: string; kuName: string; no: string; lvNo: number | null; areaM2: number | null; druh: string | null } | null;
+  eUnder: { no: string; lvNo: number | null; areaM2: number | null; datasetId: string | null }[];
+};
+export const mapIdentify = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string().optional(), lat: z.number(), lng: z.number() }))
+  .handler(async ({ data }): Promise<MapIdentify> => {
+    const out: MapIdentify = { ok: true, lat: data.lat, lng: data.lng, eskn: null, ours: null, eUnder: [] };
+    const dd = 0.0012, ext = `${data.lng - dd},${data.lat - dd},${data.lng + dd},${data.lat + dd}`;
+    const idUrl = (svc: string, layer: number) => `https://kataster.skgeodesy.sk/eskn/rest/services/VRM/${svc}/MapServer/identify?geometry=${data.lng},${data.lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:${layer}&tolerance=1&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=true&f=json`;
+    const [cj, ej] = await Promise.all([eskn(idUrl("kn", 9)).catch(() => null), eskn(idUrl("uo", 2)).catch(() => null)]);
+    if (!cj && !ej) return { ...out, ok: false, message: "Národný kataster (ESKN) neodpovedá — skús znova." };
+    const cRes = cj && Array.isArray(cj.results) ? cj.results.map((r) => asObj(r) ?? {}) : [];
+    const c = cRes.find((r) => r.layerId === 9) ?? cRes[0];
+    if (c) {
+      const a = asObj(c.attributes) ?? {};
+      const no = a["Parcelné číslo"] != null ? String(a["Parcelné číslo"]) : null;
+      const area = a["Výmera SPI (m2)"] != null ? Number(String(a["Výmera SPI (m2)"]).replace(",", ".")) : null;
+      out.eskn = { no, areaM2: area != null && isFinite(area) ? area : null, rings: esknRings(c.geometry) };
+    }
+    // NAŠA parcela: rovnaké číslo v okolí bodu (naprieč všetkými k.ú.). Dovtedy sa pri nenájdenom čísle
+    // brala NAJBLIŽŠIA parcela → panel mohol ponúknuť výpis CUDZIEHO LV.
+    const d = 0.02;
+    const near = await q<{ dataset_id: string; parcel_no: string; lv_no: number | null; area_m2: number; use_type: string | null; centroid_lat: number; centroid_lng: number; ku_name: string }>(
+      `SELECT p.dataset_id, p.parcel_no, p.lv_no, p.area_m2, p.use_type, p.centroid_lat, p.centroid_lng, d.ku_name
+       FROM parcels p JOIN datasets d ON d.id = p.dataset_id
+       WHERE p.centroid_lat BETWEEN ? AND ? AND p.centroid_lng BETWEEN ? AND ? AND p.parcel_no = ? AND p.kn_type NOT LIKE 'E%' LIMIT 20`,
+      [data.lat - d, data.lat + d, data.lng - d, data.lng + d, out.eskn?.no ?? "__"]).catch(() => []);
+    const dist = (x: { centroid_lat: number; centroid_lng: number }) => (x.centroid_lat - data.lat) ** 2 + (x.centroid_lng - data.lng) ** 2;
+    const best = near.sort((x, y) => dist(x) - dist(y))[0];
+    let did: string | null = best?.dataset_id ?? null;
+    if (best) {
+      const lvC = best.lv_no ?? (await q<{ lv_no: number }>("SELECT lv_no FROM lv_parcels WHERE dataset_id = ? AND register='C' AND parcel_no = ? LIMIT 1", [best.dataset_id, best.parcel_no]))[0]?.lv_no ?? null;
+      out.ours = { datasetId: best.dataset_id, kuName: best.ku_name, no: best.parcel_no, lvNo: lvC, areaM2: best.area_m2, druh: best.use_type };
+    } else {
+      // k.ú. aspoň podľa najbližšej našej parcely (na napárovanie parciel E) — bez tvrdenia o parcele C
+      did = (await q<{ dataset_id: string }>(
+        "SELECT dataset_id FROM parcels WHERE centroid_lat BETWEEN ? AND ? AND centroid_lng BETWEEN ? AND ? LIMIT 1",
+        [data.lat - 0.003, data.lat + 0.003, data.lng - 0.003, data.lng + 0.003]).catch(() => []))[0]?.dataset_id ?? null;
+    }
+    // parcely E v bode (mapa určeného operátu) → ich LV v našich dátach
+    const eRes = ej && Array.isArray(ej.results) ? ej.results.map((r) => asObj(r) ?? {}) : [];
+    for (const r of eRes.slice(0, 6)) {
+      const a = asObj(r.attributes) ?? {};
+      const no = a.PARCEL_NUMBER_FULL != null ? String(a.PARCEL_NUMBER_FULL) : null;
+      if (!no) continue;
+      const area = a.GEODETIC_AREA_OF_PARCEL != null ? Number(String(a.GEODETIC_AREA_OF_PARCEL).replace(",", ".")) : null;
+      const lv = did ? (await q<{ lv_no: number; area_m2: number }>("SELECT lv_no, area_m2 FROM lv_parcels WHERE dataset_id = ? AND register='E' AND parcel_no = ? LIMIT 1", [did, no]))[0] : undefined;
+      out.eUnder.push({ no, lvNo: lv?.lv_no ?? null, areaM2: lv?.area_m2 ?? (area != null && isFinite(area) ? Math.round(area) : null), datasetId: lv ? did : null });
+    }
+    return out;
   });

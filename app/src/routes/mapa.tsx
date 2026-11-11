@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, searchDataset, geocodePlace, type GeoPlace } from "../lib/api/kataster.functions";
+import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, geocodePlace, mapSearch, mapFeature, type GeoPlace, type MapHit, type MapRing } from "../lib/api/kataster.functions";
+import { LvCard } from "../components/lv-card";
 import { STATUS_META, canRunPipeline, type Dataset, type MapText, type Parcel, type Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import { MapView, type WmsDef } from "../components/map-view";
@@ -45,6 +46,36 @@ function MapPage() {
   const [fs, setFs] = useState(false);
   const [userNavigated, setUserNavigated] = useState(false);  // false = otvor národne (ESKN); true = fitnuté na zvolené k.ú.
   const [flyTo, setFlyTo] = useState<{ lat: number; lng: number; zoom: number; nonce: number } | null>(null);  // prelet na vyhľadané miesto
+  const [highlight, setHighlight] = useState<{ rings: MapRing[]; nonce: number } | null>(null);   // obrys nájdeného objektu
+  const [identifyAt, setIdentifyAt] = useState<{ lat: number; lng: number; nonce: number } | null>(null);
+  const [lvPanel, setLvPanel] = useState<{ datasetId: string; lvNo: number; label: string } | null>(null);
+  const [searchMsg, setSearchMsg] = useState<string | null>(null);
+
+  // Výber z vyhľadávania (ako ZBGIS): priblíž, zvýrazni obrys a otvor panel s LV (tlač/PDF).
+  async function pickHit(h: MapHit) {
+    setSearchMsg(null); setLvPanel(null);
+    const f = await mapFeature({ data: { token: token ?? undefined, datasetId: h.datasetId, kind: h.kind === "ku" ? "LV" : h.kind, no: h.no ?? null, lvNo: h.lvNo ?? null } }).catch(() => null);
+    if (!f?.ok) { setSearchMsg(f?.message ?? "Objekt sa nepodarilo načítať."); return; }
+    const n = Date.now();
+    setHighlight(f.rings?.length ? { rings: f.rings, nonce: n } : null);
+    if (f.center) { setUserNavigated(true); setFlyTo({ lat: f.center.lat, lng: f.center.lng, zoom: h.kind === "LV" || h.kind === "owner" ? 16 : 18, nonce: n }); }
+    if (h.kind === "LV" || h.kind === "owner") {
+      if (h.lvNo != null) setLvPanel({ datasetId: h.datasetId, lvNo: h.lvNo, label: h.label });
+    } else if (f.center) {
+      setIdentifyAt({ lat: f.center.lat, lng: f.center.lng, nonce: n });
+    } else if (f.lvNo != null) {
+      setLvPanel({ datasetId: h.datasetId, lvNo: f.lvNo, label: h.label });   // bez obrysu (napr. ESKN nedostupné) aspoň LV
+      setSearchMsg("Obrys objektu sa nenašiel — zobrazený je aspoň list vlastníctva.");
+    }
+    // zdieľateľný odkaz ako ZBGIS: /mapa?ku=866083&c=1500
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams();
+      sp.set("ku", h.kuCode);
+      const k = h.kind === "C" ? "c" : h.kind === "E" ? "e" : h.kind === "SC" ? "sc" : "lv";
+      sp.set(k, k === "lv" ? String(h.lvNo ?? "") : (h.kind === "SC" ? h.label.replace(/^stavba s\. č\. /, "") : h.no ?? ""));
+      window.history.replaceState(null, "", `/mapa?${sp.toString()}`);
+    }
+  }
 
   // pridať WMS
   const [wName, setWName] = useState("");
@@ -160,8 +191,16 @@ function MapPage() {
       <div className={fs ? "fixed inset-0 z-40 bg-paper" : "relative h-[62vh] min-h-[440px] w-full"}>
         {datasetId ? (
           <div className="absolute left-3 top-3 z-30">
-            <MapSearch datasetId={datasetId} datasets={datasets} role={role} onPick={setFocusId} onPickDataset={switchDataset}
+            <ZSearch datasets={datasets} onPick={(h) => void pickHit(h)} onLock={(id) => { if (id !== datasetId) void switchDataset(id); }}
               onPickPlace={(lat, lng) => { setUserNavigated(true); setFlyTo({ lat, lng, zoom: 18, nonce: Date.now() }); }} />
+            {searchMsg ? <div className="mt-1 w-[360px] max-w-[calc(100vw-2rem)] rounded-lg border border-line bg-paper px-3 py-1.5 text-xs text-muted shadow">{searchMsg}</div> : null}
+            {lvPanel ? (
+              <div className="mt-1 w-[360px] max-w-[calc(100vw-2rem)] space-y-1 rounded-xl border border-line bg-surface/97 p-2 shadow backdrop-blur">
+                <div className="flex items-center justify-between text-xs"><span className="font-medium text-fg">{lvPanel.label}</span>
+                  <button onClick={() => setLvPanel(null)} className="text-muted hover:text-fg" title="Zavrieť">✕</button></div>
+                <LvCard datasetId={lvPanel.datasetId} lvNo={lvPanel.lvNo} />
+              </div>
+            ) : null}
           </div>
         ) : null}
         <button
@@ -184,6 +223,8 @@ function MapPage() {
             focusParcelId={focusId}
             initialCenter={userNavigated ? null : SR_VIEW}
             flyTo={flyTo}
+            highlight={highlight}
+            identifyAt={identifyAt}
           />
         ) : (
           <div className="grid h-full place-items-center rounded-xl border border-dashed border-line bg-surface/50 text-sm text-muted">
@@ -226,95 +267,117 @@ const NATIONAL_WMS = [
   { name: "ZBGIS základná mapa", url: "https://zbgisws.skgeodesy.sk/zbgis_wms_featureinfo/service.svc/get", layers: "0", format: "image/png" },
 ];
 
-// ——— ZBGIS-style vyhľadávanie na mape: k.ú. / parcela / LV / vlastník → skok / fokus ———
-function MapSearch({ datasetId, datasets, role, onPick, onPickDataset, onPickPlace }: { datasetId: string; datasets: Dataset[]; role: Role; onPick: (id: string) => void; onPickDataset: (id: string) => void; onPickPlace: (lat: number, lng: number) => void }) {
+// ——— ZBGIS vyhľadávanie (zadanie vlastníka 2026-11-11) ———
+// Bez zámku: k.ú. (🔒 zamknúť), vlastník (len plný prístup), miesto/adresa. So zámkom k.ú. stačí číslo:
+// „1500" → parcela C, parcela E, LV č. 1500, stavba so súpisným číslom 1500. Skratky: c / e / lv / sc.
+const HIT_BADGE: Record<string, { t: string; cls: string }> = {
+  ku: { t: "k.ú.", cls: "bg-ink/10 text-fg" }, C: { t: "C", cls: "bg-brand/15 text-brand" }, E: { t: "E", cls: "bg-green/15 text-green" },
+  LV: { t: "LV", cls: "bg-ink text-cream" }, SC: { t: "s.č.", cls: "bg-surface-2 text-fg" }, owner: { t: "V", cls: "bg-ink/10 text-fg" },
+};
+function ZSearch({ datasets, onPick, onLock, onPickPlace }: { datasets: Dataset[]; onPick: (h: MapHit) => void; onLock: (datasetId: string) => void; onPickPlace: (lat: number, lng: number) => void }) {
   const { token } = useAuth();
   const [q, setQ] = useState("");
-  const [res, setRes] = useState<Awaited<ReturnType<typeof searchDataset>> | null>(null);
+  const [lock, setLock] = useState<{ kuCode: string; datasetId: string; name: string } | null>(null);
+  const [hits, setHits] = useState<MapHit[]>([]);
+  const [needLock, setNeedLock] = useState(false);
   const [places, setPlaces] = useState<GeoPlace[]>([]);
   const [open, setOpen] = useState(false);
   const tRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const gRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reqRef = useRef(0);
 
-  const kuMatches = q.trim().length >= 2
-    ? datasets.filter((d) => d.ku_name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8)
-    : [];
-
-  function onChange(v: string) {
-    setQ(v); setOpen(true);
+  function run(v: string, lk: typeof lock) {
     if (tRef.current) clearTimeout(tRef.current);
     if (gRef.current) clearTimeout(gRef.current);
-    if (v.trim().length < 1) { setRes(null); setPlaces([]); return; }
+    if (!v.trim()) { setHits([]); setPlaces([]); setNeedLock(false); return; }
+    const my = ++reqRef.current;
     tRef.current = setTimeout(async () => {
-      try { setRes(await searchDataset({ data: { token: token ?? undefined, datasetId, q: v.trim(), role } })); } catch { setRes(null); }
-    }, 220);
-    // národné geokódovanie (ZBGIS-style našepkávač) — dlhší debounce (Nominatim policy)
-    if (v.trim().length >= 3) {
+      try {
+        const r = await mapSearch({ data: { token: token ?? undefined, q: v.trim(), ku: lk?.kuCode } });
+        if (my === reqRef.current) { setHits(r.hits); setNeedLock(!!r.needLock); }
+      } catch { if (my === reqRef.current) setHits([]); }
+    }, 200);
+    if (!lk && v.trim().length >= 3 && !/^\d/.test(v.trim())) {
       gRef.current = setTimeout(async () => {
         try { setPlaces(await geocodePlace({ data: { q: v.trim() } })); } catch { setPlaces([]); }
-      }, 400);
+      }, 450);
     } else setPlaces([]);
   }
-  function pick(id: string | null, label: string) {
-    if (!id) return;
-    onPick(id); setOpen(false); setQ(label);
+  function onChange(v: string) { setQ(v); setOpen(true); run(v, lock); }
+  function doLock(h: MapHit) {
+    const lk = { kuCode: h.kuCode, datasetId: h.datasetId, name: h.label };
+    setLock(lk); setQ(""); setHits([]); setPlaces([]); setOpen(false);
+    onLock(h.datasetId);
   }
-  function pickKu(id: string, label: string) {
-    onPickDataset(id); setOpen(false); setQ(label);
+  function choose(h: MapHit) {
+    if (h.kind === "ku") { doLock(h); return; }
+    onPick(h); setOpen(false);
   }
-  function pickPlace(p: GeoPlace) {
-    onPickPlace(p.lat, p.lng); setOpen(false); setQ(p.label);
-  }
-  const hasResults = kuMatches.length + places.length + (res ? res.parcels.length + res.lvs.length + res.owners.length : 0) > 0;
+  // deep link /mapa?ku=866083&c=1500 (ako ZBGIS) — zamkni a otvor
+  useEffect(() => {
+    if (typeof window === "undefined" || !datasets.length) return;
+    const sp = new URLSearchParams(window.location.search);
+    const ku = sp.get("ku"); if (!ku) return;
+    const d = datasets.find((x) => x.ku_code === ku); if (!d) return;
+    const lk = { kuCode: ku, datasetId: d.id, name: d.ku_name };
+    setLock(lk);
+    const [k, val] = (["c", "e", "lv", "sc"] as const).map((x) => [x, sp.get(x)] as const).find(([, v]) => v) ?? [null, null];
+    if (k && val) {
+      mapSearch({ data: { token: token ?? undefined, q: `${k} ${val}`, ku } }).then((r) => {
+        const h = r.hits.find((x) => (x.no ?? String(x.lvNo ?? "")) === val || x.kind === "SC" || x.kind === "LV") ?? r.hits[0];
+        if (h) onPick(h); else onLock(d.id);
+      }).catch(() => onLock(d.id));
+    } else onLock(d.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datasets.length]);
+
+  const list = [...hits];
   return (
-    <div className="w-[320px] max-w-[calc(100vw-2rem)]">
-      <input
-        value={q}
-        onChange={(e) => onChange(e.target.value)}
-        onFocus={() => setOpen(true)}
-        placeholder="Hľadať: k.ú. / parcela / LV / vlastník…"
-        className="w-full rounded-full border border-line bg-paper px-4 py-2 text-sm text-fg shadow-lg outline-none focus:border-brand"
-      />
-      {open && hasResults ? (
+    <div className="w-[360px] max-w-[calc(100vw-2rem)]">
+      <div className="flex items-center gap-1.5 rounded-full border border-line bg-paper px-2 py-1 shadow-lg focus-within:border-brand">
+        {lock ? (
+          <span className="flex shrink-0 items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-xs text-fg" title="Vyhľadávanie je zamknuté na toto k.ú.">
+            🔒 {lock.name} ({lock.kuCode})
+            <button onClick={() => { setLock(null); setHits([]); run(q, null); }} className="text-muted hover:text-fg" title="Odomknúť">✕</button>
+          </span>
+        ) : null}
+        <input
+          value={q}
+          onChange={(e) => onChange(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => { if (e.key === "Enter" && list[0]) choose(list[0]); if (e.key === "Escape") setOpen(false); }}
+          placeholder={lock ? "číslo parcely C/E, LV, súpisné č.…" : "k.ú. / obec (🔒 zamknúť), vlastník, adresa…"}
+          className="min-w-0 flex-1 bg-transparent px-1.5 py-1 text-sm text-fg outline-none"
+        />
+      </div>
+      {open && (list.length || places.length || needLock) ? (
         <div className="mt-1 max-h-[52vh] overflow-y-auto rounded-xl border border-line bg-paper shadow-xl">
-          {kuMatches.map((d) => (
-            <button key={`ku-${d.id}`} onClick={() => pickKu(d.id, d.ku_name)}
-              className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
-              <span className="rounded bg-ink/10 px-1.5 py-0.5 text-[10px] font-bold text-fg">k.ú.</span>
-              <span className="truncate text-sm text-fg">{d.ku_name}</span>
-              <span className="ml-auto shrink-0 text-[11px] text-muted">{d.kn_type}</span>
-            </button>
-          ))}
+          {needLock && !lock ? (
+            <div className="border-b border-line px-3 py-2 text-xs text-muted">Pre hľadanie podľa čísla najprv zamkni katastrálne územie: napíš jeho názov a klikni 🔒.</div>
+          ) : null}
+          {list.map((h, i) => {
+            const b = HIT_BADGE[h.kind] ?? HIT_BADGE.ku;
+            return (
+              <div key={`${h.kind}-${h.datasetId}-${h.no ?? h.lvNo ?? h.label}-${i}`} className="flex items-center border-b border-line last:border-0 hover:bg-surface">
+                <button onClick={() => choose(h)} className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left">
+                  <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${b.cls}`}>{b.t}</span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm text-fg">{h.label}</span>
+                    <span className="block truncate text-[11px] text-muted">{h.sub}</span>
+                  </span>
+                </button>
+                {h.kind === "ku" ? (
+                  <button onClick={() => doLock(h)} title="Zamknúť vyhľadávanie na toto k.ú." className="px-3 py-2 text-base text-muted hover:text-fg">🔒</button>
+                ) : null}
+              </div>
+            );
+          })}
           {places.map((p, i) => (
-            <button key={`geo-${i}`} onClick={() => pickPlace(p)}
+            <button key={`geo-${i}`} onClick={() => { onPickPlace(p.lat, p.lng); setOpen(false); setQ(p.label); }}
               className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
               <span className="rounded bg-brand/10 px-1.5 py-0.5 text-[10px] font-bold text-brand">📍</span>
               <span className="truncate text-sm text-fg">{p.label}</span>
               <span className="ml-auto shrink-0 text-[11px] text-muted">{p.kind}</span>
-            </button>
-          ))}
-          {(res?.parcels ?? []).map((p) => (
-            <button key={`p-${p.id}`} onClick={() => pick(p.id, `parcela ${p.parcel_no}`)}
-              className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
-              <span className="rounded bg-brand/15 px-1.5 py-0.5 text-[10px] font-bold text-brand">C-KN</span>
-              <span className="text-sm text-fg">parcela {p.parcel_no}</span>
-              <span className="ml-auto shrink-0 text-[11px] text-muted">{p.use_type ?? ""} · {p.area_m2} m²</span>
-            </button>
-          ))}
-          {(res?.lvs ?? []).map((l) => (
-            <button key={`l-${l.lv_no}`} onClick={() => pick(l.parcel_id, `LV ${l.lv_no}`)}
-              className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
-              <span className="rounded bg-green/15 px-1.5 py-0.5 text-[10px] font-bold text-green">LV</span>
-              <span className="text-sm text-fg">LV č. {l.lv_no}</span>
-              <span className="ml-auto shrink-0 text-[11px] text-muted">{l.n} parciel</span>
-            </button>
-          ))}
-          {(res?.owners ?? []).map((o, i) => (
-            <button key={`o-${i}`} onClick={() => pick(o.parcel_id, o.name)}
-              className="flex w-full items-center gap-2 border-b border-line px-3 py-2 text-left last:border-0 hover:bg-surface">
-              <span className="rounded bg-ink/10 px-1.5 py-0.5 text-[10px] font-bold text-fg">V</span>
-              <span className="truncate text-sm text-fg">{o.name}</span>
-              <span className="ml-auto shrink-0 text-[11px] text-muted">LV {o.lv_no}</span>
             </button>
           ))}
         </div>

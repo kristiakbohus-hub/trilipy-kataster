@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility, getChanges, getLvZoning, getLvAvm, type LvParcelAvm } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
@@ -21,8 +21,10 @@ const eur = (n: number) => n.toLocaleString("sk-SK", { maximumFractionDigits: n 
 // Viď pamäť cf_app_ssr_loader_leak. Reťazec content → zoning/avm presunutý do efektu.
 export const Route = createFileRoute("/vypis/$datasetId/$lvNo")({
   head: () => ({ meta: [{ title: "Výpis z LV / evidenčný list — TRI LIPY KATASTER CORE" }] }),
-  validateSearch: (s: Record<string, unknown>): { typ: DocType } => ({
+  // print=1 → po načítaní sa hneď otvorí tlač (Tlačiť / uložiť PDF) — z panela na mape jedným klikom
+  validateSearch: (s: Record<string, unknown>): { typ: DocType; print?: boolean } => ({
     typ: s.typ === "el" ? "el" : "vypis",
+    ...(s.print === true || s.print === 1 || s.print === "1" || s.print === "true" ? { print: true } : {}),
   }),
   component: VypisPage,
 });
@@ -39,7 +41,7 @@ function VypisPage() {
     const k = (n: number | null) => (n == null ? "—" : n >= 10000 ? Math.round(n / 1000) + "k €" : n.toLocaleString("sk-SK") + " €");
     return a.margin ? `${k(a.asIs)} → ${k(a.potential)} (+${a.margin} %)` : k(a.potential);
   };
-  const { typ } = Route.useSearch();
+  const { typ, print } = Route.useSearch();
   const { role } = useRole();
   const { token } = useAuth();
   const [c, setC] = useState<Content | null>(null);
@@ -63,6 +65,14 @@ function VypisPage() {
     });
     return () => { alive = false; };
   }, [datasetId, lvNo, role, token]);
+  // tlač až keď je výpis vykreslený (aj územný plán/AVM stĺpce dobehnú), a len raz
+  const printed = useRef(false);
+  useEffect(() => {
+    if (!print || !c || printed.current || typeof window === "undefined") return;
+    printed.current = true;
+    const t = setTimeout(() => window.print(), 1200);
+    return () => clearTimeout(t);
+  }, [print, c]);
 
   // Stráž je až tu, pod všetkými hookmi komponentu (posledný je efekt vyššie).
   if (!c) return <div className="p-8 text-center text-sm text-muted">Načítavam výpis…</div>;

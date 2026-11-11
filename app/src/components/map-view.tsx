@@ -5,8 +5,9 @@ import { decSk } from "../lib/domain";
 import type { LvOwner, Parcel, Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
-import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, type EsknParcel } from "../lib/api/kataster.functions";
+import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, mapIdentify, type EsknParcel, type MapRing } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
+import { LvCard } from "./lv-card";
 import { marketValueEur } from "../lib/domain";
 import { REGULATIV, type ZoneLike } from "../lib/development";
 import { useCalibDev } from "../lib/calib";
@@ -305,6 +306,8 @@ export function MapView({
   focusParcelId = null,
   initialCenter = null,
   flyTo = null,
+  highlight = null,
+  identifyAt = null,
 }: {
   parcels: Parcel[];
   datasetName?: string;
@@ -316,6 +319,10 @@ export function MapView({
   focusParcelId?: string | null;
   initialCenter?: { lat: number; lng: number; zoom: number } | null;
   flyTo?: { lat: number; lng: number; zoom: number; nonce: number } | null;
+  // nájdený objekt z vyhľadávania (obrys v WGS84) — zvýrazní sa ako vo ZBGIS
+  highlight?: { rings: MapRing[]; nonce: number } | null;
+  // otvor panel parcely v bode (výsledok vyhľadávania mimo načítaného k.ú.) — ESKN + naše dáta + LV
+  identifyAt?: { lat: number; lng: number; nonce: number } | null;
 }) {
   // token pre serverové funkcie, ktoré vydávajú mená vlastníkov (rola sa berie zo session)
   const { token } = useAuth();
@@ -880,6 +887,15 @@ export function MapView({
     getMarketListingsNear({ data: { lat, lng, radiusKm: 5 } }).then((m) => setEsknMarket(m)).catch(() => {});
   }, [pushEvent]);
 
+  // Výsledok vyhľadávania mimo načítaného k.ú. → panel parcely v bode (ESKN + naše dáta + LV + parcely E)
+  useEffect(() => {
+    if (!identifyAt) return;
+    setIdentified(null);
+    setEsknMode(true);
+    runEsknIdentify(identifyAt.lng, identifyAt.lat);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [identifyAt?.nonce]);
+
   // ÚP zóna pre ESKN parcelu — kde máme importovaný územný plán (podľa nášho datasetu)
   useEffect(() => {
     const o = esknHit?.ours;
@@ -1423,6 +1439,17 @@ export function MapView({
               return <g><path d={d} fill="none" stroke="#fffdf8" strokeWidth="4" strokeOpacity="0.7" /><path d={d} fill="none" stroke="#e0561f" strokeWidth="2.4" strokeDasharray="5 3" /></g>;
             })() : null}
 
+            {/* Nájdený objekt (vyhľadávanie) — obrys navrchu */}
+            {highlight && highlight.rings.length ? (
+              <g>
+                {highlight.rings.map((ring, i) => {
+                  const pts = ring.map(([lng, lat]) => project(lng, lat));
+                  const d = pts.map((p, j) => (j === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ") + " Z";
+                  return <g key={`hl-${i}`}><path d={d} fill="#e0561f" fillOpacity="0.12" stroke="#fffdf8" strokeWidth="4" strokeOpacity="0.8" /><path d={d} fill="none" stroke="#e0561f" strokeWidth="2.6" /></g>;
+                })}
+              </g>
+            ) : null}
+
             {measurePx.length > 0 ? (
               <g>
                 <polyline points={measurePx.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke="#9a7b3e" strokeWidth="2" strokeDasharray="4 3" />
@@ -1532,11 +1559,27 @@ export function MapView({
                     {esknHit.ours.bpej ? <div className="text-muted">BPEJ {esknHit.ours.bpej}{esknHit.ours.bpej_skupina ? ` · skupina ${esknHit.ours.bpej_skupina}` : ""}</div> : null}
                     {esknHit.ours.score != null ? <div className="text-muted">Skóre príležitosti: <b className="text-fg">{esknHit.ours.score}</b></div> : null}
                     {esknHit.ours.lv_no != null ? (
-                      <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: esknHit.ours.dataset_id, lvNo: String(esknHit.ours.lv_no) }} search={{ typ: "vypis" as const }} className="mt-1 inline-block rounded-md border border-ink bg-ink px-2 py-1 text-cream hover:opacity-90">Výpis z LV — všetky údaje ↗</Link>
-                    ) : null}
+                      <div className="mt-1"><LvCard datasetId={esknHit.ours.dataset_id} lvNo={esknHit.ours.lv_no} /></div>
+                    ) : (
+                      <div className="text-[11px]" style={{ color: "#9a7b3e" }}>Parcela C nemá založený LV — vlastníctvo je na parcelách E nižšie.</div>
+                    )}
                   </div>
                 ) : esknHit.found ? (
                   <div className="text-[10px] text-muted">Túto parcelu zatiaľ nemáme v našich k.ú. — zobrazené len ESKN. Vlastníci/LV sú na oficiálnom portáli.</div>
+                ) : null}
+
+                {/* Parcely E v bode — pri parcele C bez LV je vlastníctvo zapísané na nich (rozhodnutie 2026-11-11) */}
+                {esknHit.eUnder && esknHit.eUnder.length ? (
+                  <div className="space-y-1.5 rounded-lg border border-line p-2">
+                    <div className="text-[10px] font-semibold uppercase tracking-wide text-muted">Parcely E v tomto mieste (mapa určeného operátu)</div>
+                    {esknHit.eUnder.map((e, i) => (
+                      <div key={e.no} className="space-y-1">
+                        <div className="text-muted">Parcela E <b className="text-fg">{e.no}</b>{e.areaM2 ? ` · ${e.areaM2.toLocaleString("sk-SK")} m²` : ""}{e.lvNo ? ` · LV ${e.lvNo}` : " · LV nie je v našich dátach"}</div>
+                        {e.lvNo && e.datasetId && i < 3 ? <LvCard datasetId={e.datasetId} lvNo={e.lvNo} note="parcela E" /> : null}
+                      </div>
+                    ))}
+                    <div className="text-[10px] text-muted">Prepojenie C → E je odvodené z polohy na mape (ESKN), nie zápis v LV.</div>
+                  </div>
                 ) : null}
 
                 {/* Územný plán — funkčná zóna (kde máme importovaný ÚP) */}
@@ -2316,14 +2359,11 @@ export function MapView({
             <div className="mt-3"><SietiPanel lat={identified.centroid_lat} lng={identified.centroid_lng} /></div>
           ) : null}
 
-          {/* Primárna akcia — Výpis z LV (jeden klik, hore v paneli, netreba rozbaľovať) */}
-          {identified.lv_no != null && datasetId ? (
-            <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId, lvNo: String(identified.lv_no) }} search={{ typ: "vypis" as const }}
-              className="mt-3 flex items-center justify-center gap-1 rounded-md border border-ink bg-ink px-3 py-2 text-sm font-medium text-cream hover:opacity-90">
-              📄 Výpis z LV č. {identified.lv_no} →
-            </Link>
-          ) : identified.lv_no != null && !datasetId ? (
-            <div className="mt-3 rounded-md border border-line px-3 py-2 text-center text-xs text-muted">Výpis LV otvoríš z datasetu (vyber k.ú. v Datasety) — táto mapa nemá kontext datasetu.</div>
+          {/* Primárna akcia — skrátený výpis z LV s Tlačiť/PDF a celým výpisom (zadanie 2026-11-11: „oboje") */}
+          {identified.lv_no != null && (identified.dataset_id || datasetId) ? (
+            <div className="mt-3"><LvCard datasetId={identified.dataset_id || datasetId!} lvNo={identified.lv_no} /></div>
+          ) : identified.lv_no == null ? (
+            <EUnderParcel parcel={identified} />
           ) : null}
 
           {/* PDF dossier parcely — jedno-klik podklad na klienta/kolegu */}
@@ -2521,6 +2561,37 @@ function Row({ k, v }: { k: string; v: ReactNode }) {
     <div className="flex items-center justify-between gap-3">
       <dt className="text-muted">{k}</dt>
       <dd className="text-fg">{v}</dd>
+    </div>
+  );
+}
+
+// Parcela C bez LV (vlastníctvo na parcelách E pod ňou) → parcely E v jej strede z národnej mapy
+// určeného operátu a ich LV v našich dátach (rozhodnutie vlastníka 2026-11-11).
+function EUnderParcel({ parcel }: { parcel: Parcel }) {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<{ no: string; lvNo: number | null; areaM2: number | null; datasetId: string | null }[] | null>(null);
+  useEffect(() => {
+    let alive = true;
+    setRows(null);
+    const lat = parcel.centroid_lat, lng = parcel.centroid_lng;
+    if (lat == null || lng == null) { setRows([]); return; }
+    mapIdentify({ data: { token: token ?? undefined, lat, lng } })
+      .then((r) => { if (alive) setRows(r.eUnder); })
+      .catch(() => { if (alive) setRows([]); });
+    return () => { alive = false; };
+  }, [parcel.id, parcel.centroid_lat, parcel.centroid_lng, token]);
+  return (
+    <div className="mt-3 space-y-1.5 rounded-lg border border-line p-2 text-xs">
+      <div style={{ color: "#9a7b3e" }}>Parcela C nemá založený LV — vlastníctvo je zapísané na parcelách E pod ňou.</div>
+      {rows == null ? <div className="text-muted">Hľadám parcely E…</div> : rows.length === 0 ? (
+        <div className="text-muted">V strede parcely sa parcela E nenašla.</div>
+      ) : rows.map((e, i) => (
+        <div key={e.no} className="space-y-1">
+          <div className="text-muted">Parcela E <b className="text-fg">{e.no}</b>{e.areaM2 ? ` · ${e.areaM2.toLocaleString("sk-SK")} m²` : ""}{e.lvNo ? ` · LV ${e.lvNo}` : " · LV nie je v našich dátach"}</div>
+          {e.lvNo && e.datasetId && i < 3 ? <LvCard datasetId={e.datasetId} lvNo={e.lvNo} note="parcela E" /> : null}
+        </div>
+      ))}
+      <div className="text-[10px] text-muted">Prepojenie C → E je odvodené z polohy na mape (ESKN), nie zápis v LV.</div>
     </div>
   );
 }
