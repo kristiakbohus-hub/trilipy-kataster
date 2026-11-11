@@ -29,6 +29,8 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ProblemoveLvRouteImport } from './routes/problemove-lv'
+import { Route as ApiIngestLvflagsRouteImport } from './routes/api.ingest-lvflags'
 import { Route as ApiIngestStateContractsRouteImport } from './routes/api.ingest-state-contracts'
 import { Route as ApiIngestPricesRouteImport } from './routes/api.ingest-prices'
 import { Route as PonukaIdRouteImport } from './routes/ponuka.$id'
@@ -177,6 +179,16 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProblemoveLvRoute = ProblemoveLvRouteImport.update({
+  id: '/problemove-lv',
+  path: '/problemove-lv',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestLvflagsRoute = ApiIngestLvflagsRouteImport.update({
+  id: '/api/ingest-lvflags',
+  path: '/api/ingest-lvflags',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIngestStateContractsRoute = ApiIngestStateContractsRouteImport.update({
@@ -458,6 +470,8 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/problemove-lv': typeof ProblemoveLvRoute
+  '/api/ingest-lvflags': typeof ApiIngestLvflagsRoute
   '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
   '/api/ingest-prices': typeof ApiIngestPricesRoute
   '/ponuka/$id': typeof PonukaIdRoute
@@ -529,6 +543,8 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/problemove-lv': typeof ProblemoveLvRoute
+  '/api/ingest-lvflags': typeof ApiIngestLvflagsRoute
   '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
   '/api/ingest-prices': typeof ApiIngestPricesRoute
   '/ponuka/$id': typeof PonukaIdRoute
@@ -601,6 +617,8 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/problemove-lv': typeof ProblemoveLvRoute
+  '/api/ingest-lvflags': typeof ApiIngestLvflagsRoute
   '/api/ingest-state-contracts': typeof ApiIngestStateContractsRoute
   '/api/ingest-prices': typeof ApiIngestPricesRoute
   '/ponuka/$id': typeof PonukaIdRoute
@@ -674,6 +692,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/problemove-lv'
+    | '/api/ingest-lvflags'
     | '/api/ingest-state-contracts'
     | '/api/ingest-prices'
     | '/ponuka/$id'
@@ -745,6 +765,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/problemove-lv'
+    | '/api/ingest-lvflags'
     | '/api/ingest-state-contracts'
     | '/api/ingest-prices'
     | '/ponuka/$id'
@@ -816,6 +838,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/problemove-lv'
+    | '/api/ingest-lvflags'
     | '/api/ingest-state-contracts'
     | '/api/ingest-prices'
     | '/ponuka/$id'
@@ -884,6 +908,8 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ProblemoveLvRoute: typeof ProblemoveLvRoute
+  ApiIngestLvflagsRoute: typeof ApiIngestLvflagsRoute
   ApiIngestStateContractsRoute: typeof ApiIngestStateContractsRoute
   ApiIngestPricesRoute: typeof ApiIngestPricesRoute
   PonukaIdRoute: typeof PonukaIdRoute
@@ -1192,6 +1218,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZadaniaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/problemove-lv': {
+      id: '/problemove-lv'
+      path: '/problemove-lv'
+      fullPath: '/problemove-lv'
+      preLoaderRoute: typeof ProblemoveLvRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-lvflags': {
+      id: '/api/ingest-lvflags'
+      path: '/api/ingest-lvflags'
+      fullPath: '/api/ingest-lvflags'
+      preLoaderRoute: typeof ApiIngestLvflagsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ingest-state-contracts': {
       id: '/api/ingest-state-contracts'
       path: '/api/ingest-state-contracts'
@@ -1447,6 +1487,8 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ProblemoveLvRoute: ProblemoveLvRoute,
+  ApiIngestLvflagsRoute: ApiIngestLvflagsRoute,
   ApiIngestStateContractsRoute: ApiIngestStateContractsRoute,
   ApiIngestPricesRoute: ApiIngestPricesRoute,
   PonukaIdRoute: PonukaIdRoute,

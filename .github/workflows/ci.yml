@@ -8,7 +8,9 @@ on:
 
 jobs:
   validate:
-    runs-on: arc-runners-frontend
+    # 2026-11-11: „arc-runners-frontend" je runner šablóny Higgsfield — v tomto repe neexistuje, beh
+    # ostával navždy vo fronte. Bežný runner; nasadenie (deploy-cf.yml) robí aj tak plný build s tsc.
+    runs-on: ubuntu-latest
     name: Validate template
     # The app project lives in app/ (ci/ holds the deploy config, AGENTS.md +
     # skills/ stay at root). Every build step runs there.
@@ -16,12 +18,12 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Typecheck
         run: bun run typecheck

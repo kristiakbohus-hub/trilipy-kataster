@@ -5488,6 +5488,8 @@ const buyerFields = {
   locations: z.string().trim().max(500).optional(), timeframe: z.string().trim().max(100).optional(),
   note: z.string().trim().max(2000).optional(),
   must: z.object({ intravilan: z.boolean().optional(), maxOwners: z.number().int().min(1).max(500).optional(), cleanTitle: z.boolean().optional() }).optional(),
+  /** dopyt založený z inzerátu „hľadám / kúpim" (bod 7) — URL inzerátu, nie kontakt */
+  fromAd: z.string().url().max(600).optional(),
 };
 
 const asciiLow = (s: string | null | undefined) => (s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
@@ -5538,8 +5540,8 @@ export const saveBuyerRequest = createServerFn({ method: "POST" })
       return { ok: true, id: data.id };
     }
     const r = await q<{ id: number }>(
-      `INSERT INTO buyer_requests (kind,name,ico,contact,ptype,purpose,area_min,area_max,budget_max,locations,timeframe,note,must,user_id,author)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`, [...vals, u.id, u.name || u.email]);
+      `INSERT INTO buyer_requests (kind,name,ico,contact,ptype,purpose,area_min,area_max,budget_max,locations,timeframe,note,must,user_id,author,source,external_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`, [...vals, u.id, u.name || u.email, data.fromAd ? "inzerat" : "manual", data.fromAd ?? null]);
     await logAudit("buyer.create", u.role, `Nový dopyt #${r[0]?.id ?? "?"} (${data.kind}, ${data.ptype})`);
     return { ok: true, id: r[0]?.id };
   });
@@ -5994,6 +5996,46 @@ export const setBuyerMatchStatus = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
+// ——— Zhoda kupca → obchod (bod 6, 2026-11-11): spis (case) „Kupec × ponuka" + pri LV aj deal v pipeline ———
+// Deal je v appke o ODKUPE od vlastníkov LV (úlohy po vlastníkoch) → zakladá ho len plný prístup a len keď zhoda
+// má LV. Inzerát (bez LV) dostane spis s odkazom. Zhoda sa označí „klient má záujem".
+export const buyerMatchToDeal = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), requestId: z.number().int(), hit: z.string().max(6000) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; caseId?: number | null; dealId?: string | null; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u || !canEditBuyers(u.role)) return { ok: false, message: "Bez oprávnenia." };
+    let h: BuyerHit;
+    try { h = JSON.parse(data.hit) as BuyerHit; } catch { return { ok: false, message: "Neplatná zhoda." }; }
+    if (!h?.key || !h.title) return { ok: false, message: "Neplatná zhoda." };
+    const r = (await q<BuyerRequest>("SELECT * FROM buyer_requests WHERE id=?", [data.requestId]))[0];
+    if (!r) return { ok: false, message: "Dopyt neexistuje." };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const who = r.kind === "osoba" ? `dopyt #${r.id}` : r.name;
+    const title = `Kupec ${who} × ${h.title}`.slice(0, 200);
+    const steps = [`Dopyt #${r.id} (${r.ptype}${r.budget_max ? `, do ${Math.round(r.budget_max).toLocaleString("sk-SK")} €` : ""})`, `Skóre zhody ${h.score}`, ...h.checks.slice(0, 4).map((c) => `Overiť: ${c}`)].join("\n");
+    const ins = await DB.prepare("INSERT INTO cases (dataset_id, title, kind, status, owner_role, linked_ref, next_steps) VALUES (?, ?, 'ine', 'open', ?, ?, ?) RETURNING id")
+      .bind(h.datasetId ?? "trh", title, u.role, h.key.slice(0, 300), steps).first<{ id: number }>().catch(() => null);
+    const caseId = ins?.id ?? null;
+    if (caseId != null) {
+      const links: [string, string | null, string, string][] = [];
+      if (h.url) links.push(["doc", null, h.url.slice(0, 500), "inzerát"]);
+      if (h.datasetId && h.lvNo != null) links.push(["lv", h.datasetId, String(h.lvNo), `LV ${h.lvNo}`]);
+      if (h.datasetId && h.parcelNo) links.push(["parcel", h.datasetId, h.parcelNo, `parcela ${h.parcelNo}`]);
+      for (const [t, d, ref, label] of links) await DB.prepare("INSERT INTO case_links (case_id, link_type, dataset_id, ref, label) VALUES (?,?,?,?,?)").bind(caseId, t, d, ref, label).run().catch(() => {});
+    }
+    let dealId: string | null = null;
+    if (h.datasetId && h.lvNo != null && ownerAccess(u.role) === "full") {
+      const d = await createDeal({ data: { datasetId: h.datasetId, lvNo: h.lvNo, role: u.role, caseId: caseId ?? undefined, nextStep: `Kupec ${who}: osloviť vlastníkov`, token: data.token } }).catch(() => null);
+      dealId = d?.ok ? d.id ?? null : null;
+    }
+    await q(`INSERT INTO buyer_match_status (request_id, mkey, status, snapshot, author, updated_at) VALUES (?,?,'zaujem',?,?,datetime('now'))
+             ON CONFLICT(request_id, mkey) DO UPDATE SET status=CASE WHEN buyer_match_status.status IN ('obhliadka') THEN buyer_match_status.status ELSE 'zaujem' END,
+             snapshot=COALESCE(buyer_match_status.snapshot, excluded.snapshot), updated_at=datetime('now')`, [data.requestId, h.key, data.hit.slice(0, 6000), u.name || u.email]).catch(() => {});
+    await logAudit("buyer.deal", u.role, `Dopyt #${data.requestId}: zhoda → spis #${caseId ?? "?"}${dealId ? `, deal ${dealId}` : ""}`);
+    return { ok: true, caseId, dealId };
+  });
+
 // ——— PONUKA PRE KLIENTA: vybrané zhody dopytu v jednom dokumente na tlač / PDF ———
 // Obsah = snapshot zhody z času výberu (inzerát sa môže zmeniť alebo zmiznúť). BEZ mien vlastníkov —
 // klient dostane parcelu, LV a dôvody, nie osobné údaje tretích osôb.
@@ -6016,11 +6058,28 @@ export const getBuyerOffer = createServerFn({ method: "POST" })
     return { ok: true, request: { ...safe, label: requestLabel(r, access) }, items };
   });
 
+// ——— Dopyty z inzercie „hľadám / kúpim" (bod 7) — návrhy na zaevidovanie, bez dohľadávania kontaktov ———
+export type DemandAdRow = { title: string | null; url: string | null; obec: string | null; okres: string | null; ptype: string | null; priceEur: number | null; firstSeen: string | null; inRegion: boolean; registered: boolean };
+export const listDemandAds = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), days: z.number().int().min(7).max(180).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: DemandAdRow[] }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [] };
+    const rows = await q<{ title: string | null; url: string | null; obec: string | null; okres: string | null; ptype: string | null; price_eur: number | null; first_seen: string | null }>(
+      `SELECT title, url, obec, okres, ptype, price_eur, first_seen FROM market_listings WHERE deal='dopyt' AND removed_at IS NULL
+       AND last_seen >= date('now', ?) ORDER BY first_seen DESC LIMIT 300`, [`-${data.days ?? 60} days`]).catch(() => []);
+    const dss = await q<DsRow>("SELECT id, ku_code, ku_name, region FROM datasets").catch(() => []);
+    const ours = new Set(dss.map(dsOkres));
+    const reg = new Set((await q<{ external_id: string }>("SELECT external_id FROM buyer_requests WHERE source='inzerat' AND external_id IS NOT NULL").catch(() => [])).map((x) => x.external_id));
+    return { ok: true, rows: rows.map((r) => ({ title: r.title, url: r.url, obec: r.obec, okres: r.okres, ptype: r.ptype, priceEur: r.price_eur, firstSeen: r.first_seen,
+      inRegion: ours.has(asciiLow(r.okres).replace(/^okres\s+/, "")), registered: !!r.url && reg.has(r.url) })) };
+  });
+
 // ——— Opačný smer: „KTO BY TO KÚPIL" k inzerátu (2026-11-11) ———
 // Zoradené: (1) aktívne dopyty so skóre (rovnaký výpočet ako dopyt → inzeráty), (2) dopytové inzeráty
 // „hľadám / kúpim" v tom istom okrese, (3) overení kupci z katastra — kto v okrese za 3 roky kúpil ≥ 2 LV,
 // (4) firmy z RPO v okrese. Mená fyzických osôb len pri plnom prístupe; kontakty sa NEdohľadávajú.
-export type RepeatBuyer = { name: string; isCompany: boolean; lvCount: number; kus: number; lastYear: number | null };
+export type RepeatBuyer = { name: string; isCompany: boolean; lvCount: number; kus: number; lastYear: number | null; priceMin?: number | null; priceMax?: number | null; priceMed?: number | null; nPrices?: number };
 export type DemandAd = { title: string | null; url: string | null; obec: string | null; priceEur: number | null; firstSeen: string | null };
 export type ScoredRequest = { id: number; name: string; kind: string; ptype: string; score: number; reasons: string[]; checks: string[] };
 export type ListingBuyers = {
@@ -6062,9 +6121,26 @@ async function repeatBuyersIn(dsList: DsRow[], fromYear: number, access: OwnerAc
       }
     }
   }
-  return [...agg.values()].map((x) => ({ name: x.name, isCompany: x.isCompany, lvCount: x.lvs.size, kus: x.kuSet.size, lastYear: x.lastYear }))
-    .filter((x) => x.lvCount >= 2 && (access === "full" || x.isCompany))
-    .sort((a, b) => b.lvCount - a.lvCount || (b.lastYear ?? 0) - (a.lastYear ?? 0)).slice(0, 30);
+  const top = [...agg.values()].filter((x) => x.lvs.size >= 2 && (access === "full" || x.isCompany))
+    .sort((a, b) => b.lvs.size - a.lvs.size || (b.lastYear ?? 0) - (a.lastYear ?? 0)).slice(0, 30);
+  // cenový profil (bod 8): ceny zo zmlúv na LV, kde kupec nadobúdal (len čisté zmluvy bez odchýlok)
+  const need = new Map<string, Set<number>>();
+  for (const x of top) for (const k of x.lvs) { const [d, lv] = [k.slice(0, k.lastIndexOf(":")), Number(k.slice(k.lastIndexOf(":") + 1))]; if (!need.has(d)) need.set(d, new Set()); need.get(d)!.add(lv); }
+  const price = new Map<string, number[]>();
+  for (const [d, set] of need) {
+    const all = [...set];
+    for (let i = 0; i < all.length; i += 90) {
+      const part = all.slice(i, i + 90);
+      const pr = await q<{ lv_no: number; cen: number }>(`SELECT lv_no, cen FROM lv_prices WHERE dataset_id=? AND cas >= ? AND flag IS NULL AND lv_no IN (${part.map(() => "?").join(",")})`,
+        [d, `${fromYear}-01-01`, ...part]).catch(() => []);
+      for (const p of pr) { const k = `${d}:${p.lv_no}`; if (!price.has(k)) price.set(k, []); price.get(k)!.push(p.cen); }
+    }
+  }
+  return top.map((x) => {
+    const ps = [...x.lvs].flatMap((k) => price.get(k) ?? []);
+    return { name: x.name, isCompany: x.isCompany, lvCount: x.lvs.size, kus: x.kuSet.size, lastYear: x.lastYear,
+      priceMin: ps.length ? Math.min(...ps) : null, priceMax: ps.length ? Math.max(...ps) : null, priceMed: ps.length ? Math.round(medianOf(ps) ?? 0) : null, nPrices: ps.length };
+  });
 }
 
 function requestCtx(r: BuyerReqFull, dss: DsRow[]) {
@@ -6890,6 +6966,61 @@ export const tgDigest = createServerFn({ method: "POST" })
 // ——— LV časti: parcely C/E pri LV + stavby so súpisným číslom (Mac → /api/ingest-lvparts, migrácia 0097) ———
 // Dovtedy D1 mala len parcely C s obrysom (z mapy) → LV založené na parcelách E nemali výpis časti A,
 // vyhľadávanie „E 1500" ani stavby „s.č. 563". reset = zmaž časti k.ú. pred prvou dávkou (dávky po 2 000).
+// ——— PRÍZNAKY LV zo SPI (2026-11-11): problémové LV, rozostavané stavby, chránené nehnuteľnosti ———
+export const LV_FLAG_KINDS = ["exekucia", "sudne_konanie", "konkurz", "drazba", "spochybnene", "zakaz", "poznamka", "rozostavana_stavba", "rozostavany_priestor", "chranena"] as const;
+export type LvFlag = { kind: string; label: string; year: number | null; parcelNo: string | null };
+export const ingestLvFlags = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), reset: z.boolean().optional(),
+    rows: z.array(z.object({
+      lvNo: z.number().int(), kind: z.enum(LV_FLAG_KINDS), label: z.string().min(1).max(80),
+      year: z.number().int().min(1900).max(2100).nullable().optional(), parcelNo: z.string().max(30).nullable().optional(),
+    })).max(3000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const did = `kn-${data.kodKu}`;
+    if (data.reset) await DB.prepare("DELETE FROM lv_flags WHERE dataset_id=?").bind(did).run();
+    const ps = DB.prepare("INSERT INTO lv_flags (dataset_id,lv_no,kind,label,year,parcel_no) VALUES (?,?,?,?,?,?)");
+    const stmts = data.rows.map((r) => ps.bind(did, r.lvNo, r.kind, r.label, r.year ?? null, r.parcelNo ?? null));
+    for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
+    return { ok: true, inserted: stmts.length };
+  });
+export const getLvFlags = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), lvNo: z.number().int() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: LvFlag[] }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [] };
+    const rows = await q<{ kind: string; label: string; year: number | null; parcel_no: string | null }>(
+      "SELECT kind, label, year, parcel_no FROM lv_flags WHERE dataset_id=? AND lv_no=? ORDER BY kind, year DESC LIMIT 200", [data.datasetId, data.lvNo]).catch(() => []);
+    return { ok: true, rows: rows.map((r) => ({ kind: r.kind, label: r.label, year: r.year, parcelNo: r.parcel_no })) };
+  });
+export type ProblemLv = { datasetId: string; kuName: string | null; lvNo: number; kinds: string[]; labels: string[]; lastYear: number | null; coOwners: number | null; totalArea: number | null; absenter: number | null; parcels: string | null };
+/** Problémové LV — zoznam LV s vybranými príznakmi (poznámky v časti C, rozostavané stavby). Bez mien. */
+export const listProblemLvs = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), kinds: z.array(z.enum(LV_FLAG_KINDS)).min(1).max(10), datasetId: z.string().max(40).optional(), fromYear: z.number().int().optional(), limit: z.number().int().min(1).max(500).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: ProblemLv[]; total: number; byKind: Record<string, number> }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [], total: 0, byKind: {} };
+    const cond = [`f.kind IN (${data.kinds.map(() => "?").join(",")})`]; const args: unknown[] = [...data.kinds];
+    if (data.datasetId) { cond.push("f.dataset_id = ?"); args.push(data.datasetId); }
+    if (data.fromYear) { cond.push("(f.year IS NULL OR f.year >= ?)"); args.push(data.fromYear); }
+    const rows = await q<{ dataset_id: string; lv_no: number; kinds: string; labels: string; y: number | null; parcels: string | null; co_owners: number | null; total_area: number | null; absenter_ratio: number | null; ku_name: string | null }>(
+      `SELECT f.dataset_id, f.lv_no, GROUP_CONCAT(DISTINCT f.kind) kinds, GROUP_CONCAT(DISTINCT f.label) labels, MAX(f.year) y, GROUP_CONCAT(DISTINCT f.parcel_no) parcels,
+              s.co_owners, s.total_area, s.absenter_ratio, d.ku_name
+       FROM lv_flags f LEFT JOIN lv_signals s ON s.dataset_id = f.dataset_id AND s.lv_no = f.lv_no LEFT JOIN datasets d ON d.id = f.dataset_id
+       WHERE ${cond.join(" AND ")} GROUP BY f.dataset_id, f.lv_no ORDER BY y DESC NULLS LAST, s.total_area DESC LIMIT ?`, [...args, data.limit ?? 200]).catch(() => []);
+    const cnt = await q<{ kind: string; n: number }>(
+      `SELECT f.kind, COUNT(DISTINCT f.dataset_id || ':' || f.lv_no) n FROM lv_flags f WHERE ${cond.join(" AND ")} GROUP BY f.kind`, args).catch(() => []);
+    const byKind = Object.fromEntries(cnt.map((c) => [c.kind, c.n]));
+    return { ok: true, total: Object.values(byKind).reduce((a, b) => a + b, 0), byKind, rows: rows.map((r) => ({
+      datasetId: r.dataset_id, kuName: r.ku_name, lvNo: r.lv_no, kinds: (r.kinds ?? "").split(",").filter(Boolean), labels: (r.labels ?? "").split(",").filter(Boolean),
+      lastYear: r.y, coOwners: r.co_owners, totalArea: r.total_area, absenter: r.absenter_ratio, parcels: r.parcels })) };
+  });
+
 // ——— ŠTÁTNE ZMLUVY O POZEMKOCH z CRZ (2026-11-11) — signál ponuky aj kupcov, bez osobných údajov ———
 export type StateContract = { crzId: string; day: string; signed: string | null; publisher: string; kind: string; amount: number | null; kuName: string | null; okres: string | null; party: string | null; url: string | null };
 export const ingestStateContracts = createServerFn({ method: "POST" })

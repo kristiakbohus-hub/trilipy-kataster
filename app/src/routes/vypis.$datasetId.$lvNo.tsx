@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LvMapSnapshot } from "../components/lv-map";
-import { getLvPrices, type LvPrice } from "../lib/api/kataster.functions";
+import { getLvPrices, getLvFlags, type LvPrice, type LvFlag } from "../lib/api/kataster.functions";
 import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility, getChanges, getLvZoning, getLvAvm, type LvParcelAvm } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
@@ -419,6 +419,7 @@ function VypisPage() {
         {/* Kópia z mapy — kde sú parcely LV (zadanie 2026-11-11) */}
         <div className="mt-4">
           <LvMapSnapshot datasetId={datasetId} lvNo={lvNo} hasE={cc.parcelsE.length > 0} onReady={() => setMapReady(true)} />
+          <LvFlagsSection datasetId={datasetId} lvNo={lvNo} />
         </div>
 
         {isEl ? (
@@ -1115,5 +1116,35 @@ function LvPricesSection({ datasetId, lvNo }: { datasetId: string; lvNo: number 
       </table>
       <p className="mt-1 text-[11px] text-muted">Cena je za celú zmluvu (môže zahŕňať viac položiek). Údaj z katastra, nie ocenenie. Kto nadobúdal, vidieť v časti B.</p>
     </Section>
+  );
+}
+
+// Príznaky LV zo SPI (2026-11-11): poznámky v časti C, rozostavané stavby, chránené nehnuteľnosti — bez mien.
+const FLAG_TONE: Record<string, string> = { exekucia: "danger", drazba: "danger", konkurz: "danger", spochybnene: "danger", zakaz: "danger", sudne_konanie: "warning", poznamka: "muted", rozostavana_stavba: "warning", rozostavany_priestor: "warning", chranena: "muted" };
+function LvFlagsSection({ datasetId, lvNo }: { datasetId: string; lvNo: number }) {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<LvFlag[] | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    getLvFlags({ data: { token, datasetId, lvNo } }).then((r) => setRows(r.rows)).catch(() => setRows([]));
+  }, [token, datasetId, lvNo]);
+  if (!rows || rows.length === 0) return null;
+  const groups = new Map<string, LvFlag[]>();
+  for (const r of rows) { const k = `${r.kind}|${r.label}`; if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(r); }
+  const color = (t: string) => (t === "danger" ? "var(--color-danger)" : t === "warning" ? "var(--color-warning)" : "var(--color-muted)");
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+      <span className="text-muted">Príznaky z katastra:</span>
+      {[...groups.entries()].map(([k, list]) => {
+        const f = list[0]; const years = [...new Set(list.map((x) => x.year).filter((y): y is number => y != null))].sort();
+        const parcels = [...new Set(list.map((x) => x.parcelNo).filter(Boolean))];
+        return (
+          <span key={k} className="rounded border px-1.5 py-0.5" style={{ borderColor: color(FLAG_TONE[f.kind] ?? "muted"), color: color(FLAG_TONE[f.kind] ?? "muted") }}
+            title={parcels.length ? `parcely: ${parcels.slice(0, 12).join(", ")}` : undefined}>
+            {f.label}{years.length ? ` (${years.slice(-3).join(", ")})` : ""}{list.length > 1 && !years.length ? ` ×${list.length}` : ""}
+          </span>
+        );
+      })}
+    </div>
   );
 }

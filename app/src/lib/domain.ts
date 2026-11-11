@@ -7,6 +7,7 @@ export type AppPath =
   | "/rano"
   | "/kupci"
   | "/zadania"
+  | "/problemove-lv"
   | "/prehlad"
   | "/kalibracia"
   | "/mapa"

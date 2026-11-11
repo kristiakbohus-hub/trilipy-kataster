@@ -532,7 +532,7 @@ function BuyersSection({ datasetId, parcelNo, token, kuName, areaM2 }: { dataset
             <ul>{b.repeatBuyers.map((x, i) => (
               <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
                 <span className="min-w-0">{x.name}{x.isCompany ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span>
-                <span className="shrink-0 text-muted">{x.lvCount} LV{x.kus > 1 ? ` v ${x.kus} k.ú.` : ""}{x.lastYear ? ` · naposledy ${x.lastYear}` : ""}</span>
+                <span className="shrink-0 text-muted">{x.lvCount} LV{x.kus > 1 ? ` v ${x.kus} k.ú.` : ""}{x.lastYear ? ` · naposledy ${x.lastYear}` : ""}{x.priceMed ? ` · zmluvy ${Math.round((x.priceMin ?? 0) / 1000)}–${Math.round((x.priceMax ?? 0) / 1000)} tis. €` : ""}</span>
               </li>))}</ul>
           )}
         </div>

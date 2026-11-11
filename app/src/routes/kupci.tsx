@@ -2,11 +2,11 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "../lib/auth-context";
 import {
-  listBuyerRequests, saveBuyerRequest, setBuyerRequestStatus, deleteBuyerRequest, matchBuyerRequestFull,
+  listBuyerRequests, saveBuyerRequest, setBuyerRequestStatus, deleteBuyerRequest, matchBuyerRequestFull, listDemandAds, type DemandAdRow,
   type BuyerRequest, type BuyerHit, type BuyerHitSrc, type BuyerMatchStats,
 } from "../lib/api/kataster.functions";
 import { Card, SectionHeader } from "../components/kit";
-import { MatchStatusSelect, ScorePill, MATCH_STATUS_SK, StateContractsCard } from "../components/buyer-ui";
+import { MatchStatusSelect, MatchToDealButton, ScorePill, MATCH_STATUS_SK, StateContractsCard } from "../components/buyer-ui";
 
 // KUPUJÚCI — evidencia dopytu a automatické párovanie (plán vlastníka 2026-11-10). BEZ `loader`
 // (pamäť cf_app_ssr_loader_leak) — dáta až po prihlásení v useEffect.
@@ -23,7 +23,7 @@ const eur = (n: number | null | undefined) => (n == null ? "—" : `${Math.round
 const m2 = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n).toLocaleString("sk-SK")} m²`);
 const range = (a: number | null, b: number | null) => (a == null && b == null ? "—" : `${a == null ? "" : Math.round(a).toLocaleString("sk-SK")}–${b == null ? "" : Math.round(b).toLocaleString("sk-SK")} m²`);
 
-type Form = { id?: number; kind: string; name: string; ico: string; contact: string; ptype: string; purpose: string; areaMin: string; areaMax: string; budgetMax: string; locations: string; timeframe: string; note: string; intravilan: boolean; cleanTitle: boolean; maxOwners: string };
+type Form = { id?: number; fromAd?: string; kind: string; name: string; ico: string; contact: string; ptype: string; purpose: string; areaMin: string; areaMax: string; budgetMax: string; locations: string; timeframe: string; note: string; intravilan: boolean; cleanTitle: boolean; maxOwners: string };
 const EMPTY: Form = { kind: "osoba", name: "", ico: "", contact: "", ptype: "pozemok", purpose: "", areaMin: "", areaMax: "", budgetMax: "", locations: "", timeframe: "", note: "", intravilan: false, cleanTitle: false, maxOwners: "" };
 const parseMustUi = (s: string | null | undefined): { intravilan?: boolean; cleanTitle?: boolean; maxOwners?: number } => { try { return JSON.parse(s ?? "{}") ?? {}; } catch { return {}; } };
 const numOrU = (s: string) => { const n = Number(String(s).replace(/\s/g, "").replace(",", ".")); return s.trim() === "" || !Number.isFinite(n) ? undefined : n; };
@@ -58,6 +58,7 @@ function KupciPage() {
         contact: form.contact || undefined, ptype: form.ptype as never, purpose: (form.ptype === "pozemok" && form.purpose ? form.purpose : undefined) as never,
         areaMin: numOrU(form.areaMin), areaMax: numOrU(form.areaMax), budgetMax: numOrU(form.budgetMax),
         locations: form.locations || undefined, timeframe: form.timeframe || undefined, note: form.note || undefined,
+        fromAd: form.fromAd || undefined,
         must: form.ptype === "pozemok" ? { intravilan: form.intravilan || undefined, cleanTitle: form.cleanTitle || undefined, maxOwners: numOrU(form.maxOwners) } : undefined,
       } });
       if (!r.ok) { setMsg(r.message ?? "Uloženie zlyhalo."); return; }
@@ -186,6 +187,11 @@ function KupciPage() {
       </Card>
 
       <Card className="p-4">
+        <SectionHeader title="Dopyty z inzercie („hľadám / kúpim“)" hint="ľudia, ktorí na portáloch hľadajú nehnuteľnosť — zaevidovaním z nich vznikne dopyt so zhodami" />
+        <div className="mt-2"><DemandAds canEdit={canEdit} onPick={(a) => { setForm({ ...EMPTY, fromAd: a.url ?? undefined, kind: "osoba", name: `Inzerát: ${(a.title ?? "hľadá").slice(0, 120)}`, ptype: ["pozemok", "byt", "dom", "chata"].includes(a.ptype ?? "") ? a.ptype! : "dom", budgetMax: a.priceEur && a.priceEur > 1000 ? String(Math.round(a.priceEur)) : "", locations: [a.obec, a.okres ? `okres ${a.okres}` : null].filter(Boolean).join(", "), note: `Z inzerátu: ${a.url ?? ""}` }); window.scrollTo({ top: 0, behavior: "smooth" }); }} /></div>
+      </Card>
+
+      <Card className="p-4">
         <SectionHeader title="Štátne zmluvy o pozemkoch (CRZ)" hint="predaje, zámeny, bremená a nájmy pozemkov SPF, Lesov SR, SVP, ŽSR, NDS" />
         <div className="mt-2"><StateContractsCard /></div>
       </Card>
@@ -244,6 +250,7 @@ function Matches({ m, requestId, canEdit, onHit }: { m: { hits: BuyerHit[]; stat
                 {h.datasetId && h.lvNo != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: h.datasetId, lvNo: String(h.lvNo) }} search={{ typ: "vypis" as const }} className="text-brand hover:underline">LV</Link> : null}
                 {h.datasetId && h.parcelNo && h.src !== "mimo_trhu" ? <Link to="/report/$datasetId/$parcelNo" params={{ datasetId: h.datasetId, parcelNo: h.parcelNo }} className="text-brand hover:underline">dossier</Link> : null}
                 <MatchStatusSelect requestId={requestId} hit={h} canEdit={canEdit} onChange={(s2, r2) => onHit(h.key, s2, r2)} />
+                {canEdit && h.status !== "odmietnuta" ? <MatchToDealButton requestId={requestId} hit={h} onDone={() => onHit(h.key, h.status === "obhliadka" ? "obhliadka" : "zaujem", null)} /> : null}
               </div>
             </li>
           ))}
@@ -254,6 +261,37 @@ function Matches({ m, requestId, canEdit, onHit }: { m: { hits: BuyerHit[]; stat
         <Link to="/ponuka/$id" params={{ id: String(requestId) }} className="rounded-md bg-ink px-2 py-0.5 font-medium text-cream max-md:py-1.5">Ponuka pre klienta →</Link>
         <span>Skóre je odvodené z dát katastra a inzercie — pomôcka na zoradenie, nie ocenenie.</span>
       </div>
+    </div>
+  );
+}
+
+function DemandAds({ canEdit, onPick }: { canEdit: boolean; onPick: (a: DemandAdRow) => void }) {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<DemandAdRow[] | null>(null);
+  const [all, setAll] = useState(false);
+  useEffect(() => {
+    if (!token) return;
+    listDemandAds({ data: { token } }).then((r) => setRows(r.rows)).catch(() => setRows([]));
+  }, [token]);
+  if (!rows) return <p className="text-xs text-muted">Načítavam…</p>;
+  const list = rows.filter((r) => all || r.inRegion);
+  return (
+    <div className="space-y-1.5 text-xs">
+      <label className="flex items-center gap-1.5 text-muted"><input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} />celé SR (inak len okresy s našimi dátami) · {list.length}</label>
+      {list.length === 0 ? <p className="text-muted">Žiadny dopytový inzerát za posledných 60 dní.</p> : (
+        <ul className="divide-y divide-line/60">
+          {list.slice(0, 50).map((a, i) => (
+            <li key={`${a.url}-${i}`} className="flex flex-wrap items-baseline justify-between gap-2 py-1">
+              <span className="min-w-0">{a.title ?? "hľadá"}<span className="text-muted"> · {[a.ptype, a.obec, a.okres].filter(Boolean).join(" · ")}{a.priceEur && a.priceEur > 1000 ? ` · do ${Math.round(a.priceEur).toLocaleString("sk-SK")} €` : ""}</span></span>
+              <span className="flex shrink-0 items-center gap-2">
+                {a.url ? <a href={a.url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">inzerát ↗</a> : null}
+                {a.registered ? <span className="text-green">zaevidované</span> : canEdit ? <button onClick={() => onPick(a)} className="rounded-md border border-line px-1.5 py-0.5 text-fg hover:border-ink max-md:py-1.5">Zaevidovať ako dopyt</button> : null}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[10px] text-muted">Kontakt sa nepreberá ani nedohľadáva — ak chceš záujemcu osloviť, urob to cez inzerát na portáli.</p>
     </div>
   );
 }

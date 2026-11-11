@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { getStateContracts, listingBuyers, setBuyerMatchStatus, type BuyerHit, type ListingBuyers, type StateContract } from "../lib/api/kataster.functions";
+import { buyerMatchToDeal, getStateContracts, listingBuyers, setBuyerMatchStatus, type BuyerHit, type ListingBuyers, type StateContract } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 
 // Spoločné prvky kupcov (2026-11-11): skóre zhody, stav zhody a panel „Kto by to kúpil" k inzerátu.
@@ -84,7 +84,7 @@ export function ListingBuyersPanel({ url }: { url: string }) {
           <ul>{d.repeatBuyers.slice(0, 15).map((x, i) => (
             <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
               <span className="min-w-0">{x.name}{x.isCompany ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span>
-              <span className="shrink-0 text-muted">{x.lvCount} LV{x.lastYear ? ` · ${x.lastYear}` : ""}</span>
+              <span className="shrink-0 text-muted">{x.lvCount} LV{x.lastYear ? ` · ${x.lastYear}` : ""}{x.priceMed ? ` · ${Math.round((x.priceMin ?? 0) / 1000)}–${Math.round((x.priceMax ?? 0) / 1000)} tis. €` : ""}</span>
             </li>))}</ul>
         )}
       </div>
@@ -156,4 +156,22 @@ export function StateContractsCard() {
       <p className="text-[10px] text-muted">Zdroj: Centrálny register zmlúv (verejné dáta). Mená fyzických osôb sa neukladajú. Firma, ktorá kupuje pozemky od štátu, je možný kupec aj predávajúci.</p>
     </div>
   );
+}
+
+/** Zhoda → spis (a pri LV aj deal v pipeline). Bod 6, 2026-11-11. */
+export function MatchToDealButton({ requestId, hit, onDone }: { requestId: number; hit: BuyerHit; onDone?: (msg: string) => void }) {
+  const { token } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState<string | null>(null);
+  if (done) return <Link to={done.includes("deal") ? "/deals" : "/cases"} className="text-[11px] text-green hover:underline">{done} →</Link>;
+  async function go() {
+    if (!token || !window.confirm(`Založiť spis „${hit.title}" pre tento dopyt${hit.lvNo != null ? " a obchod (oslovenie vlastníkov LV)" : ""}?`)) return;
+    setBusy(true);
+    try {
+      const r = await buyerMatchToDeal({ data: { token, requestId, hit: JSON.stringify(hit).slice(0, 6000) } });
+      const msg = r.ok ? (r.dealId ? "spis + deal založený" : "spis založený") : (r.message ?? "nepodarilo sa");
+      setDone(msg); onDone?.(msg);
+    } finally { setBusy(false); }
+  }
+  return <button onClick={() => void go()} disabled={busy} className="rounded-md border border-line px-1.5 py-0.5 text-[11px] text-fg hover:border-ink disabled:opacity-50 max-md:py-1.5">{busy ? "…" : "Do obchodu"}</button>;
 }
