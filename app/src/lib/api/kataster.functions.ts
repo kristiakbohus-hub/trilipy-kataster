@@ -5172,14 +5172,17 @@ function okresFromRegion(region: string | null): string | null {
   return m ? m[1].trim() : null;
 }
 async function lookupOurParcel(lat: number, lng: number, esknNo: string | null): Promise<EsknOurParcel | null> {
-  const d = 0.0009;
+  // S číslom z ESKN sa hľadá to číslo v okolí ~2 km: pri veľkej parcele (les, pasienok) je stred
+  // ďaleko od miesta kliku a pôvodné okno ~100 m ju nenašlo → panel neponúkol náš LV (2026-11-11).
+  const d = esknNo ? 0.02 : 0.0009;
   const cands = await q<OurCand>(
     `SELECT p.id AS parcel_id, p.dataset_id, p.parcel_no, p.lv_no, p.area_m2, p.use_type, p.kn_type,
             p.bpej, p.bpej_skupina, p.settled, p.celok, p.centroid_lat, p.centroid_lng, d.ku_name, d.region
      FROM parcels p JOIN datasets d ON d.id = p.dataset_id
      WHERE p.centroid_lat BETWEEN ? AND ? AND p.centroid_lng BETWEEN ? AND ? AND p.geometry_json IS NOT NULL
+       ${esknNo ? "AND p.parcel_no = ? AND p.kn_type NOT LIKE 'E%'" : ""}
      LIMIT 200`,
-    [lat - d, lat + d, lng - d, lng + d]);
+    esknNo ? [lat - d, lat + d, lng - d, lng + d, esknNo] : [lat - d, lat + d, lng - d, lng + d]);
   if (!cands.length) return null;
   const dist = (c: OurCand) => ((c.centroid_lat ?? 0) - lat) ** 2 + ((c.centroid_lng ?? 0) - lng) ** 2;
   const byNo = esknNo ? cands.find((c) => String(c.parcel_no) === esknNo) : undefined;
@@ -6357,6 +6360,42 @@ async function datasetBbox(did: string): Promise<[number, number, number, number
   return r && r.a != null && r.b != null && r.c != null && r.d != null ? [r.a - 0.01, r.b - 0.01, r.c + 0.01, r.d + 0.01] : null;
 }
 
+// Interné ESKN ID k.ú. (CADASTRAL_UNIT_ID) pre náš dataset — z identifikácie niekoľkých našich parciel C.
+// Bez neho sa parcela E hľadala podľa čísla v obdĺžniku okolo k.ú. a mohla sa vziať zo susedného k.ú.
+async function esknUnitOf(did: string): Promise<number | null> {
+  const key = `eskn-unit:${did}`;
+  const c = await regCacheRead(key, false, 30 * 24 * 3600).catch(() => null);
+  const cu = (c?.payload as { unit?: number } | undefined)?.unit;
+  if (cu) return cu;
+  const ps = await q<{ parcel_no: string; centroid_lat: number; centroid_lng: number }>(
+    "SELECT parcel_no, centroid_lat, centroid_lng FROM parcels WHERE dataset_id = ? AND centroid_lat IS NOT NULL AND area_m2 > 1500 AND kn_type NOT LIKE 'E%' LIMIT 4", [did]).catch(() => []);
+  for (const p of ps) {
+    const dd = 0.0008, ext = `${p.centroid_lng - dd},${p.centroid_lat - dd},${p.centroid_lng + dd},${p.centroid_lat + dd}`;
+    try {
+      const j = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer/identify?geometry=${p.centroid_lng},${p.centroid_lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:9&tolerance=1&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=false&f=json`, 9000);
+      for (const r of Array.isArray(j.results) ? j.results : []) {
+        const a = asObj(asObj(r)?.attributes) ?? {};
+        if (String(a["Parcelné číslo"] ?? "") === p.parcel_no) {
+          const unit = Number(a["Identifikátor katastrálneho územia"]);
+          if (Number.isFinite(unit) && unit > 0) { await regCacheWrite(key, "eskn-unit", { unit }).catch(() => {}); return unit; }
+        }
+      }
+    } catch { /* ďalšia parcela */ }
+  }
+  return null;
+}
+async function esknEParcels(did: string, nos: string[]): Promise<MapRing[]> {
+  if (!nos.length) return [];
+  const unit = await esknUnitOf(did);
+  const list = nos.slice(0, 60).map((n) => `'${n.replace(/'/g, "")}'`).join(",");
+  let where = `PARCEL_NUMBER_FULL IN (${list})`;
+  let geo = "";
+  if (unit) where += ` AND CADASTRAL_UNIT_ID=${unit}`;
+  else { const bb = await datasetBbox(did); if (!bb) return []; geo = `&geometry=${bb.join(",")}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects`; }
+  const j = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/uo/MapServer/2/query?where=${encodeURIComponent(where)}${geo}&outFields=PARCEL_NUMBER_FULL&returnGeometry=true&outSR=4326&f=json`);
+  return (Array.isArray(j.features) ? j.features : []).flatMap((f) => esknRings(asObj(f)?.geometry));
+}
+
 export const mapSearch = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string().optional(), q: z.string().max(120), ku: z.string().regex(/^\d{6}$/).optional() }))
   .handler(async ({ data }): Promise<{ hits: MapHit[]; needLock?: boolean }> => {
@@ -6386,9 +6425,9 @@ export const mapSearch = createServerFn({ method: "POST" })
       }
       return { hits: hits.slice(0, 24), needLock: MAP_NUM.test(qq) };
     }
-    const did = `kn-${data.ku}`;
-    const d = kuOf(did);
+    const d = ds.find((x) => x.ku_code === data.ku);
     if (!d) return { hits: [] };
+    const did = d.id;
     if (MAP_NUM.test(qq)) {
       const like = `${qq}/%`;
       if (!kind || kind === "C") {
@@ -6443,17 +6482,9 @@ export const mapFeature = createServerFn({ method: "POST" })
     }
     if (data.kind === "E" && data.no) {
       const e = (await q<{ lv_no: number; area_m2: number; drp_text: string | null }>("SELECT lv_no, area_m2, drp_text FROM lv_parcels WHERE dataset_id = ? AND register='E' AND parcel_no = ? LIMIT 1", [data.datasetId, data.no]))[0];
-      // obrys parcely E nemáme — vezme sa z národnej mapy určeného operátu (ESKN VRM/uo) v rozsahu k.ú.
+      // obrys parcely E nemáme — vezme sa z národnej mapy určeného operátu (ESKN VRM/uo) v TOMTO k.ú.
       let rings: MapRing[] = [];
-      const bb = await datasetBbox(data.datasetId);
-      if (bb) {
-        try {
-          const where = encodeURIComponent(`PARCEL_NUMBER_FULL='${data.no.replace(/'/g, "")}'`);
-          const j = await eskn(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/uo/MapServer/2/query?where=${where}&geometry=${bb.join(",")}&geometryType=esriGeometryEnvelope&inSR=4326&spatialRel=esriSpatialRelIntersects&outFields=PARCEL_NUMBER_FULL&returnGeometry=true&outSR=4326&f=json`);
-          const feats = Array.isArray(j.features) ? j.features : [];
-          if (feats.length) rings = esknRings(asObj(feats[0])?.geometry);
-        } catch { /* ESKN nedostupné → bez obrysu, LV aj tak */ }
-      }
+      try { rings = await esknEParcels(data.datasetId, [data.no]); } catch { /* ESKN nedostupné → bez obrysu, LV aj tak */ }
       return { ...base, no: data.no, lvNo: e?.lv_no ?? data.lvNo ?? null, areaM2: e?.area_m2 ?? null, druh: e?.drp_text ?? null, rings, center: ringsCenter(rings) };
     }
     // LV / vlastník → všetky parcely C daného LV s obrysom
@@ -6461,6 +6492,9 @@ export const mapFeature = createServerFn({ method: "POST" })
     if (lv == null) return { ok: false, message: "Chýba číslo LV." };
     const ps = await q<{ geometry_json: string | null }>("SELECT geometry_json FROM parcels WHERE dataset_id = ? AND lv_no = ? AND geometry_json IS NOT NULL LIMIT 200", [data.datasetId, lv]);
     const rings = ps.flatMap((p) => geoRings(p.geometry_json));
+    // LV založené na parcelách E (Kysuce) — obrysy z mapy určeného operátu, inak by sa nebolo kam priblížiť
+    const eNos = (await q<{ parcel_no: string }>("SELECT parcel_no FROM lv_parcels WHERE dataset_id = ? AND lv_no = ? AND register='E' LIMIT 60", [data.datasetId, lv]).catch(() => [])).map((r) => r.parcel_no);
+    if (eNos.length) { try { rings.push(...await esknEParcels(data.datasetId, eNos)); } catch { /* ESKN nedostupné */ } }
     return { ...base, lvNo: lv, rings, center: ringsCenter(rings) };
   });
 
