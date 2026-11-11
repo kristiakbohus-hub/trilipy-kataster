@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { ListingBuyersToggle } from "../components/buyer-ui";
 import { useEffect, useMemo, useState } from "react";
 import { getDealRadar, getMarketTree, type MarketTreeRow } from "../lib/api/kataster.functions";
 import { Card, SectionHeader, Disclaimer } from "../components/kit";
@@ -118,6 +119,7 @@ function DealRadarPage() {
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-fg">{m.title || "inzerát"}</div>
                   <div className="truncate text-[12px] text-muted">{[m.ptype, m.okres || m.obec].filter(Boolean).join(" · ")}{m.area_m2 ? ` · ${m.area_m2.toLocaleString("sk-SK")} m²` : ""}{m.days_on_market ? ` · ${m.days_on_market} dní na trhu` : ""}</div>
+                  <ListingBuyersToggle url={m.url} />
                 </div>
                 <div className="shrink-0 text-right text-xs">
                   <div className="font-semibold text-fg">{eur(m.price_eur)} €</div>

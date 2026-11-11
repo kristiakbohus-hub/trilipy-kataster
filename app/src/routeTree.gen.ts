@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as PonukaIdRouteImport } from './routes/ponuka.$id'
 import { Route as VypisHromadneRouteImport } from './routes/vypis-hromadne'
 import { Route as ZadanieIdRouteImport } from './routes/zadanie.$id'
 import { Route as ApiBriefQueueRouteImport } from './routes/api.brief-queue'
@@ -174,6 +175,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PonukaIdRoute = PonukaIdRouteImport.update({
+  id: '/ponuka/$id',
+  path: '/ponuka/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const VypisHromadneRoute = VypisHromadneRouteImport.update({
@@ -440,6 +446,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/ponuka/$id': typeof PonukaIdRoute
   '/vypis-hromadne': typeof VypisHromadneRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
@@ -508,6 +515,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/ponuka/$id': typeof PonukaIdRoute
   '/vypis-hromadne': typeof VypisHromadneRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
@@ -577,6 +585,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/ponuka/$id': typeof PonukaIdRoute
   '/vypis-hromadne': typeof VypisHromadneRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
@@ -647,6 +656,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/ponuka/$id'
     | '/vypis-hromadne'
     | '/zadanie/$id'
     | '/api/brief-queue'
@@ -715,6 +725,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/ponuka/$id'
     | '/vypis-hromadne'
     | '/zadanie/$id'
     | '/api/brief-queue'
@@ -783,6 +794,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/ponuka/$id'
     | '/vypis-hromadne'
     | '/zadanie/$id'
     | '/api/brief-queue'
@@ -848,6 +860,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  PonukaIdRoute: typeof PonukaIdRoute
   VypisHromadneRoute: typeof VypisHromadneRoute
   ZadanieIdRoute: typeof ZadanieIdRoute
   ApiBriefQueueRoute: typeof ApiBriefQueueRoute
@@ -1153,6 +1166,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZadaniaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ponuka/$id': {
+      id: '/ponuka/$id'
+      path: '/ponuka/$id'
+      fullPath: '/ponuka/$id'
+      preLoaderRoute: typeof PonukaIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/vypis-hromadne': {
       id: '/vypis-hromadne'
       path: '/vypis-hromadne'
@@ -1387,6 +1407,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  PonukaIdRoute: PonukaIdRoute,
   VypisHromadneRoute: VypisHromadneRoute,
   ZadanieIdRoute: ZadanieIdRoute,
   ApiBriefQueueRoute: ApiBriefQueueRoute,

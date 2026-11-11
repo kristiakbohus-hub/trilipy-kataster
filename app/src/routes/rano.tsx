@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { ListingBuyersToggle } from "../components/buyer-ui";
 import { useEffect, useState } from "react";
 import { getMorningBriefing, getFollowUps, type ContactRow } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
@@ -155,6 +156,7 @@ function RanoPage() {
                     {l.price_drop_pct ? ` · ▼ ${Math.round(l.price_drop_pct)} %` : ""}{l.below_market_pct ? ` · pod trhom ${Math.round(l.below_market_pct)} %` : ""}{l.belowAvm ? ` · pod AVM ${Math.round(l.belowAvm)} %` : ""}{l.days_on_market ? ` · ${l.days_on_market} dní` : ""}
                   </div>
                   <div className="mt-0.5 text-[12px] font-medium text-fg/80">→ {l.step}</div>
+                  <div className="mt-1"><ListingBuyersToggle url={l.url} /></div>
                 </div>
                 {l.url ? <a href={l.url} target="_blank" rel="noreferrer" className="shrink-0 rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-fg hover:border-ink">Inzerát ↗</a> : null}
               </div>

@@ -1,6 +1,7 @@
 // PDF dossier parcely — jedno-klik podklad (kataster + ESKN/AVM + ÚP + limity + trh + siete).
 // Tlač: window.print() (@media print skryje app chrome). Beží na CF (client-side print-to-PDF, bez server PDF).
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { ScorePill } from "../components/buyer-ui";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -505,8 +506,18 @@ function BuyersSection({ datasetId, parcelNo, token, kuName, areaM2 }: { dataset
   return (
     <div className="space-y-3 text-xs">
       <div>
-        <div className="font-medium text-fg">Zhodný dopyt z evidencie ({b.requests.length})</div>
-        {b.requests.length === 0 ? <Muted>Žiadny aktívny dopyt na pozemok v tejto lokalite a výmere. <Link to="/kupci" className="text-brand hover:underline print:hidden">Pridať záujemcu →</Link></Muted> : (
+        <div className="font-medium text-fg">Zhodný dopyt z evidencie ({b.scoredRequests?.length ?? b.requests.length})</div>
+        {(b.scoredRequests?.length ?? b.requests.length) === 0 ? <Muted>Žiadny aktívny dopyt na pozemok v tejto lokalite a výmere. <Link to="/kupci" className="text-brand hover:underline print:hidden">Pridať záujemcu →</Link></Muted>
+          : b.scoredRequests ? (
+          <ul>{b.scoredRequests.map((r) => (
+            <li key={r.id} className="border-b border-line/40 py-1">
+              <div className="flex justify-between gap-2">
+                <span className="min-w-0"><ScorePill n={r.score} /> <b>{r.name}</b> <span className="text-muted">({r.kind})</span></span>
+                <Link to="/kupci" className="shrink-0 text-brand hover:underline print:hidden">dopyt #{r.id} →</Link>
+              </div>
+              <div className="text-muted">{r.reasons.join(" · ")}{r.checks.length ? <span className="text-warning"> · overiť: {r.checks.join(", ")}</span> : null}</div>
+            </li>))}</ul>
+        ) : (
           <ul>{b.requests.map((r) => (
             <li key={r.id} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
               <span className="min-w-0"><b>{r.name}</b> <span className="text-muted">({r.kind}){r.contact ? ` · ${r.contact}` : ""}</span></span>
@@ -514,6 +525,28 @@ function BuyersSection({ datasetId, parcelNo, token, kuName, areaM2 }: { dataset
             </li>))}</ul>
         )}
       </div>
+      {b.repeatBuyers ? (
+        <div>
+          <div className="font-medium text-fg">Overení kupci v okrese — od {b.repeatFromYear} kúpili 2 a viac LV ({b.repeatBuyers.length})</div>
+          {b.repeatBuyers.length === 0 ? <Muted>{masked ? "Osoby vidí len rola s plným prístupom; firmy s viacerými kúpami sa v okrese nenašli." : "V okrese sa nenašiel nikto s viacerými kúpami."}</Muted> : (
+            <ul>{b.repeatBuyers.map((x, i) => (
+              <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+                <span className="min-w-0">{x.name}{x.isCompany ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span>
+                <span className="shrink-0 text-muted">{x.lvCount} LV{x.kus > 1 ? ` v ${x.kus} k.ú.` : ""}{x.lastYear ? ` · naposledy ${x.lastYear}` : ""}</span>
+              </li>))}</ul>
+          )}
+        </div>
+      ) : null}
+      {b.demandAds && b.demandAds.length ? (
+        <div>
+          <div className="font-medium text-fg">Inzeráty „hľadám pozemok" v okrese ({b.demandAds.length})</div>
+          <ul>{b.demandAds.map((d, i) => (
+            <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5">
+              <span className="min-w-0">{d.title ?? "dopyt"}<span className="text-muted">{d.obec ? ` · ${d.obec}` : ""}{d.priceEur ? ` · do ${Math.round(d.priceEur).toLocaleString("sk-SK")} €` : ""}</span></span>
+              {d.url ? <a href={d.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-brand hover:underline print:hidden">inzerát ↗</a> : null}
+            </li>))}</ul>
+        </div>
+      ) : null}
       <div>
         <div className="font-medium text-fg">Susedia — vlastníci priľahlých parciel ({b.neighborsCount})</div>
         {b.neighbors.length === 0 ? <Muted>{masked && b.neighborsCount ? "Mená susedov vidí len rola s plným prístupom." : "Susedné parcely s inými vlastníkmi sa nenašli."}</Muted> : (
