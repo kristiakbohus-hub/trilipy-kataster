@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { LvMapSnapshot } from "../components/lv-map";
 import { getLvVypis, lookupRpo, lookupRpvs, getLvIntel, getLvSettlement, getParcelLimits, getUpRegulativ, getParcelAccessibility, getChanges, getLvZoning, getLvAvm, type LvParcelAvm } from "../lib/api/kataster.functions";
 import { m2, marketValueEur } from "../lib/domain";
 import { useRole } from "../lib/role-context";
@@ -65,14 +66,17 @@ function VypisPage() {
     });
     return () => { alive = false; };
   }, [datasetId, lvNo, role, token]);
-  // tlač až keď je výpis vykreslený (aj územný plán/AVM stĺpce dobehnú), a len raz
+  // tlač až keď je výpis vykreslený a kópia z mapy načítaná (najdlhšie 10 s), a len raz
   const printed = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapWaitOver, setMapWaitOver] = useState(false);
+  useEffect(() => { if (!print) return; const t = setTimeout(() => setMapWaitOver(true), 10000); return () => clearTimeout(t); }, [print]);
   useEffect(() => {
-    if (!print || !c || printed.current || typeof window === "undefined") return;
+    if (!print || !c || printed.current || typeof window === "undefined" || !(mapReady || mapWaitOver)) return;
     printed.current = true;
-    const t = setTimeout(() => window.print(), 1200);
+    const t = setTimeout(() => window.print(), 700);
     return () => clearTimeout(t);
-  }, [print, c]);
+  }, [print, c, mapReady, mapWaitOver]);
 
   // Stráž je až tu, pod všetkými hookmi komponentu (posledný je efekt vyššie).
   if (!c) return <div className="p-8 text-center text-sm text-muted">Načítavam výpis…</div>;
@@ -409,6 +413,11 @@ function VypisPage() {
           <b>Interný pracovný podklad</b> — nie je to úradný výpis z katastra nehnuteľností ani právne potvrdenie vlastníctva.
           Owner-sensitive údaje (mená, dátumy narodenia, tituly, ťarchy) sú rolovo maskované — server ich vydá len role s plným prístupom (rola: {role}, prístup: {cc.access}).
           Odvodené z lokálneho SPI/VGI importu.
+        </div>
+
+        {/* Kópia z mapy — kde sú parcely LV (zadanie 2026-11-11) */}
+        <div className="mt-4">
+          <LvMapSnapshot datasetId={datasetId} lvNo={lvNo} hasE={cc.parcelsE.length > 0} onReady={() => setMapReady(true)} />
         </div>
 
         {isEl ? (

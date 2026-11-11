@@ -5,9 +5,10 @@ import { decSk } from "../lib/domain";
 import type { LvOwner, Parcel, Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
-import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, mapIdentify, type EsknParcel, type MapRing } from "../lib/api/kataster.functions";
+import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, mapIdentify, parcelBuildings, type EsknParcel, type MapRing } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
 import { LvCard } from "./lv-card";
+import { exportOutline, fmtSjtsk, type Ring as OutRing } from "../lib/sjtsk";
 import { marketValueEur } from "../lib/domain";
 import { REGULATIV, type ZoneLike } from "../lib/development";
 import { useCalibDev } from "../lib/calib";
@@ -1543,6 +1544,11 @@ export function MapView({
                     <div className="text-muted">Výmera: <b className="text-fg">{esknHit.area_m2?.toLocaleString("sk-SK") ?? "—"} m²</b></div>
                     <div className="text-muted">Druh pozemku: {esknHit.druh_pozemku ?? "—"}</div>
                     <div className="text-muted">Umiestnenie: {esknHit.umiestnenie ?? "—"}</div>
+                    <div className="text-muted" title="Prepočet WGS84 → S-JTSK, presnosť ~2 m (informatívne, nie na vytyčovanie)">S-JTSK bodu: <span className="tabular-nums text-fg">{fmtSjtsk(esknHit.lat, esknHit.lng)}</span></div>
+                    {esknHit.buildings?.length ? (
+                      <div className="text-muted">Stavba: {esknHit.buildings.map((b) => `${b.descr}${b.sc && !b.descr.includes(b.sc) ? ` (s. č. ${b.sc})` : ""} · LV ${b.lvNo}`).join("; ")}</div>
+                    ) : null}
+                    {esknHit.rings?.length ? <OutlineExport name={`parcela_C_${esknHit.parcel_no ?? ""}`} feats={[{ name: `C ${esknHit.parcel_no ?? ""}`, rings: esknHit.rings as OutRing[] }]} /> : null}
                     <a href={`https://zbgis.skgeodesy.sk/mkzbgis/sk/kataster?pos=${esknHit.lat.toFixed(6)},${esknHit.lng.toFixed(6)},19`} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block rounded-md border border-line px-2 py-1 text-fg hover:border-ink">Otvoriť v ZBGIS ↗</a>
                   </div>
                 ) : (
@@ -2176,6 +2182,18 @@ export function MapView({
             <button onClick={zoomToSelection} className="flex-1 rounded-md border border-line px-2 py-1.5 text-xs text-fg hover:bg-surface-2">Zoom</button>
             <button onClick={exportSelectionCsv} className="flex-1 rounded-md bg-ink px-2 py-1.5 text-xs font-medium text-cream hover:opacity-90">Súpis (CSV)</button>
           </div>
+          <OutlineExport name={`vyber_${selectedParcels.length}_parciel`}
+            feats={selectedParcels.map((p) => ({ name: `C ${p.parcel_no}`, rings: [rings.find((x) => x.parcel.id === p.id)?.ring ?? []].filter((r) => r.length) as OutRing[] })).filter((f) => f.rings.length)} />
+          {/* Hromadná tlač (2026-11-11): všetky LV vybraných parciel v jednom dokumente na tlač / PDF */}
+          {(() => {
+            const lvs = [...new Set(selectedParcels.filter((p) => p.lv_no != null).map((p) => `${p.dataset_id}:${p.lv_no}`))];
+            return lvs.length ? (
+              <a href={`/vypis-hromadne?lv=${encodeURIComponent(lvs.slice(0, 40).join(","))}&print=1`} target="_blank" rel="noopener"
+                className="mt-2 block rounded-md border border-ink px-2 py-1.5 text-center text-xs font-medium text-fg hover:bg-surface-2">
+                🖨️ Tlačiť LV výberu ({Math.min(lvs.length, 40)}{lvs.length > 40 ? ` z ${lvs.length}` : ""}) — jedno PDF
+              </a>
+            ) : null;
+          })()}
           <a href="/reporty" className="mt-1.5 block text-center text-[10px] text-muted underline hover:text-fg">Report Center (evidenčný list, pack) →</a>
         </div>
       ) : identified ? (
@@ -2359,6 +2377,7 @@ export function MapView({
             <div className="mt-3"><SietiPanel lat={identified.centroid_lat} lng={identified.centroid_lng} /></div>
           ) : null}
 
+          <ParcelExtras parcel={identified} ring={rings.find((x) => x.parcel.id === identified.id)?.ring ?? null} />
           {/* Primárna akcia — skrátený výpis z LV s Tlačiť/PDF a celým výpisom (zadanie 2026-11-11: „oboje") */}
           {identified.lv_no != null && (identified.dataset_id || datasetId) ? (
             <div className="mt-3"><LvCard datasetId={identified.dataset_id || datasetId!} lvNo={identified.lv_no} /></div>
@@ -2592,6 +2611,42 @@ function EUnderParcel({ parcel }: { parcel: Parcel }) {
         </div>
       ))}
       <div className="text-[10px] text-muted">Prepojenie C → E je odvodené z polohy na mape (ESKN), nie zápis v LV.</div>
+    </div>
+  );
+}
+
+// Export obrysu (2026-11-11): KML / GeoJSON vo WGS84, DXF v S-JTSK (EPSG:5514) pre architekta/geodeta.
+function OutlineExport({ name, feats }: { name: string; feats: { name: string; rings: OutRing[] }[] }) {
+  if (!feats.length) return null;
+  const b = "rounded border border-line px-1.5 py-0.5 text-[11px] text-fg hover:bg-surface-2";
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-1 text-[11px] text-muted">
+      Obrys{feats.length > 1 ? ` (${feats.length})` : ""}:
+      <button className={b} onClick={() => exportOutline("kml", name, feats)}>KML</button>
+      <button className={b} onClick={() => exportOutline("geojson", name, feats)}>GeoJSON</button>
+      <button className={b} onClick={() => exportOutline("dxf", name, feats)} title="Súradnice S-JTSK (EPSG:5514), presnosť ~2 m">DXF</button>
+    </div>
+  );
+}
+
+// „Klik = všetko v bode" pre našu parcelu: S-JTSK stredu, stavby na parcele, export obrysu.
+function ParcelExtras({ parcel, ring }: { parcel: Parcel; ring: [number, number][] | null }) {
+  const [bs, setBs] = useState<{ descr: string; sc: string | null; lvNo: number }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    setBs([]);
+    if (parcel.dataset_id && parcel.parcel_no) {
+      parcelBuildings({ data: { datasetId: parcel.dataset_id, parcelNo: parcel.parcel_no } }).then((r) => { if (alive) setBs(r); }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [parcel.id, parcel.dataset_id, parcel.parcel_no]);
+  return (
+    <div className="mt-2 space-y-0.5 text-xs">
+      {parcel.centroid_lat != null && parcel.centroid_lng != null ? (
+        <div className="text-muted" title="Prepočet WGS84 → S-JTSK, presnosť ~2 m (informatívne)">S-JTSK stredu: <span className="tabular-nums text-fg">{fmtSjtsk(parcel.centroid_lat, parcel.centroid_lng)}</span></div>
+      ) : null}
+      {bs.length ? <div className="text-muted">Stavba: {bs.map((b) => `${b.descr}${b.sc && !b.descr.includes(b.sc) ? ` (s. č. ${b.sc})` : ""} · LV ${b.lvNo}`).join("; ")}</div> : null}
+      {ring?.length ? <OutlineExport name={`parcela_C_${parcel.parcel_no}`} feats={[{ name: `C ${parcel.parcel_no}`, rings: [ring] }]} /> : null}
     </div>
   );
 }

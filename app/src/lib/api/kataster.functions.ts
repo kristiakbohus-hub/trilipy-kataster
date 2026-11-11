@@ -5014,6 +5014,9 @@ export type EsknParcel = {
   lat: number; lng: number; ours?: EsknOurParcel | null; avm?: AvmResult | null; cached?: boolean; ageDays?: number; message?: string;
   // parcely E v bode (mapa určeného operátu) a ich LV v našich dátach — pre parcelu C bez LV
   eUnder?: { no: string; lvNo: number | null; areaM2: number | null; datasetId: string | null }[];
+  // „klik = všetko v bode" (2026-11-11): obrys parcely C z ESKN (export KML/GeoJSON/DXF) a stavby na nej
+  rings?: [number, number][][];
+  buildings?: { descr: string; sc: string | null; lvNo: number }[];
 };
 
 // Parcely E v bode z národnej mapy určeného operátu (ESKN VRM/uo, vrstva 2) → ich LV v našich dátach.
@@ -5218,12 +5221,12 @@ export const esknIdentify = createServerFn({ method: "POST" })
   .validator(z.object({ lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<EsknParcel> => {
     const base: EsknParcel = { found: false, parcel_no: null, area_m2: null, druh_pozemku: null, umiestnenie: null, ku_id: null, lv_id: null, lat: data.lat, lng: data.lng };
-    const key = `eskn4:${data.lat.toFixed(5)}:${data.lng.toFixed(5)}`;   // eskn4: oprava „našej" parcely + parcely E (2026-11-11)
+    const key = `eskn5:${data.lat.toFixed(5)}:${data.lng.toFixed(5)}`;   // eskn5: + obrys, stavby, parcely E (2026-11-11)
     const cached = await regCacheRead(key, !!data.refresh, 7 * 24 * 3600);
     if (cached) return { ...(cached.payload as EsknParcel), cached: true, ageDays: cached.ageDays };
     const dd = 0.0012;
     const ext = `${data.lng - dd},${data.lat - dd},${data.lng + dd},${data.lat + dd}`;
-    const url = `https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer/identify?geometry=${data.lng},${data.lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:9&tolerance=3&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=false&f=json`;
+    const url = `https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer/identify?geometry=${data.lng},${data.lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:9&tolerance=3&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=true&f=json`;
     let out: EsknParcel = { ...base };
     let druhCode: number | null = null, umCode: number | null = null;
     try {
@@ -5237,6 +5240,7 @@ export const esknIdentify = createServerFn({ method: "POST" })
         return n != null && isFinite(n) ? n : null;
       };
       const parcel_no = a["Parcelné číslo"] != null ? String(a["Parcelné číslo"]) : null;
+      const hitRings = (asObj(asObj(hit)?.geometry)?.rings as [number, number][][] | undefined) ?? [];
       druhCode = numAttr("Identifikátor druhu pozemku");
       umCode = numAttr("Identifikátor umiestnenia pozemku");
       out = {
@@ -5248,6 +5252,7 @@ export const esknIdentify = createServerFn({ method: "POST" })
         umiestnenie: umCode != null ? (UMIESTNENIE_POZEMKU[umCode] ?? null) : null,
         ku_id: numAttr("Identifikátor katastrálneho územia"),
         lv_id: numAttr("Identifikátor listu vlastníctva"),
+        rings: hitRings,
       };
     } catch {
       out = { ...base, message: "ESKN nedostupné — skús znova." };
@@ -5256,6 +5261,11 @@ export const esknIdentify = createServerFn({ method: "POST" })
     try { out.ours = await lookupOurParcel(data.lat, data.lng, out.parcel_no); } catch { /* ignore */ }
     try { const obec = out.ours?.ku_name ? out.ours.ku_name.replace(/^k\.ú\.\s*/i, "").trim() : null; const calib = await getCalibMap(); out.avm = await computeAvm(data.lat, data.lng, out.area_m2 ?? out.ours?.area_m2 ?? null, druhCode, umCode, out.ours?.bpej_skupina ?? null, out.ours?.settled ?? null, out.ours?.okres ?? null, obec, calib); } catch { /* ignore */ }
     try { out.eUnder = await esknEUnder(data.lat, data.lng, out.ours?.dataset_id ?? null); } catch { out.eUnder = []; }
+    if (out.ours?.parcel_no) {
+      out.buildings = await q<{ descr: string; sc: string | null; lvNo: number }>(
+        "SELECT descr, supisne_cislo AS sc, lv_no AS lvNo FROM lv_buildings WHERE dataset_id = ? AND on_parcel = ? LIMIT 10",
+        [out.ours.dataset_id, out.ours.parcel_no]).catch(() => []);
+    }
     try { if (out.found || out.ours) await regCacheWrite(key, "eskn", out); } catch { /* ignore */ }
     return out;
   });
@@ -6582,3 +6592,11 @@ export const mapIdentify = createServerFn({ method: "POST" })
     }
     return out;
   });
+
+// Stavby na parcele C (panel našej parcely na mape — „klik = všetko v bode", 2026-11-11)
+export const parcelBuildings = createServerFn({ method: "POST" })
+  .validator(z.object({ datasetId: z.string().max(40), parcelNo: z.string().max(30) }))
+  .handler(async ({ data }): Promise<{ descr: string; sc: string | null; lvNo: number }[]> =>
+    q<{ descr: string; sc: string | null; lvNo: number }>(
+      "SELECT descr, supisne_cislo AS sc, lv_no AS lvNo FROM lv_buildings WHERE dataset_id = ? AND on_parcel = ? LIMIT 10",
+      [data.datasetId, data.parcelNo]).catch(() => []));

@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as VypisHromadneRouteImport } from './routes/vypis-hromadne'
 import { Route as ZadanieIdRouteImport } from './routes/zadanie.$id'
 import { Route as ApiBriefQueueRouteImport } from './routes/api.brief-queue'
 import { Route as ApiMarketExportRouteImport } from './routes/api.market-export'
@@ -173,6 +174,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const VypisHromadneRoute = VypisHromadneRouteImport.update({
+  id: '/vypis-hromadne',
+  path: '/vypis-hromadne',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ZadanieIdRoute = ZadanieIdRouteImport.update({
@@ -434,6 +440,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/vypis-hromadne': typeof VypisHromadneRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
@@ -501,6 +508,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/vypis-hromadne': typeof VypisHromadneRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
@@ -569,6 +577,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/vypis-hromadne': typeof VypisHromadneRoute
   '/zadanie/$id': typeof ZadanieIdRoute
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
@@ -638,6 +647,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/vypis-hromadne'
     | '/zadanie/$id'
     | '/api/brief-queue'
     | '/api/market-export'
@@ -705,6 +715,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/vypis-hromadne'
     | '/zadanie/$id'
     | '/api/brief-queue'
     | '/api/market-export'
@@ -772,6 +783,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/vypis-hromadne'
     | '/zadanie/$id'
     | '/api/brief-queue'
     | '/api/market-export'
@@ -836,6 +848,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  VypisHromadneRoute: typeof VypisHromadneRoute
   ZadanieIdRoute: typeof ZadanieIdRoute
   ApiBriefQueueRoute: typeof ApiBriefQueueRoute
   ApiMarketExportRoute: typeof ApiMarketExportRoute
@@ -1140,6 +1153,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZadaniaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/vypis-hromadne': {
+      id: '/vypis-hromadne'
+      path: '/vypis-hromadne'
+      fullPath: '/vypis-hromadne'
+      preLoaderRoute: typeof VypisHromadneRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/zadanie/$id': {
       id: '/zadanie/$id'
       path: '/zadanie/$id'
@@ -1367,6 +1387,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  VypisHromadneRoute: VypisHromadneRoute,
   ZadanieIdRoute: ZadanieIdRoute,
   ApiBriefQueueRoute: ApiBriefQueueRoute,
   ApiMarketExportRoute: ApiMarketExportRoute,
