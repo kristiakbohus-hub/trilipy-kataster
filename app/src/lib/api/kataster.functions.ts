@@ -1142,12 +1142,44 @@ async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; 
 // Volané z route /api/run-alerts — overí zdieľaný secret (D1 market_meta.alert_secret) a spustí runner.
 export const runAlertsCron = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string() }))
-  .handler(async ({ data }): Promise<{ ok: boolean; checked?: number; newTotal?: number; messages?: string[]; message?: string }> => {
+  .handler(async ({ data }): Promise<{ ok: boolean; checked?: number; newTotal?: number; messages?: string[]; message?: string; purged?: { contacts: number; buyers: number; dealTasks: number; dealNotes: number } }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
     if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const r = await runAllAlertsCore();
-    return { ok: true, ...r };
+    // raz denne: uchovávanie osobných údajov (OI-14) — beží s alertmi, ktoré volá cloud 2× denne
+    const purged = await purgeExpiredPersonalData().catch(() => null);
+    return { ok: true, ...r, ...(purged ? { purged } : {}) };
   });
+
+// ——— Uchovávanie osobných údajov (OI-14, rozhodnutie vlastníka 2026-11-11) ———
+// Pracovné záznamy o ľuďoch (kontaktný denník, úlohy a poznámky dealu, evidencia dopytu) sa uchovávajú
+// 5 ROKOV od poslednej zmeny, ak k nim nie je otvorený deal. GDPR námietky a výmazy (suppression) sa
+// uchovávajú VŽDY — inak by sa vymazaní ľudia vrátili s ďalším importom. Údaje z katastra (lv_owners)
+// sa sem nerátajú: obnovujú sa s každým importom zo zdroja.
+// POZOR (authz-guard): funkcia stojí hneď za runAlertsCron, lebo stráž priraďuje kód medzi server
+// funkciami tej predchádzajúcej — a tá má secret.
+const RETENTION = "-5 years";
+async function purgeExpiredPersonalData(): Promise<{ contacts: number; buyers: number; dealTasks: number; dealNotes: number } | null> {
+  const today = new Date().toISOString().slice(0, 10);
+  const last = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='retention_last_run'").catch(() => []))[0]?.value;
+  if (last === today) return null;
+  const del = async (sql: string) => (await q<{ id: number }>(`${sql} RETURNING id`)).length;
+  const closedOld = `SELECT id FROM deals WHERE status IN ('closed_won','closed_lost') AND updated_at < datetime('now', '${RETENTION}')`;
+  const contacts = await del(
+    `DELETE FROM contact_log WHERE created_at < datetime('now', '${RETENTION}')
+       AND NOT EXISTS (SELECT 1 FROM deals d WHERE d.dataset_id = contact_log.dataset_id AND d.lv_no = contact_log.lv_no
+                       AND d.status NOT IN ('closed_won','closed_lost'))`);
+  const dealTasks = await del(`DELETE FROM deal_tasks WHERE deal_id IN (${closedOld})`);
+  const dealNotes = await del(`DELETE FROM deal_notes WHERE deal_id IN (${closedOld})`);
+  const oldBuyers = `SELECT id FROM buyer_requests WHERE COALESCE(updated_at, created_at) < datetime('now', '${RETENTION}')`;
+  await q(`DELETE FROM buyer_match_seen WHERE request_id IN (${oldBuyers})`);
+  const buyers = await del(`DELETE FROM buyer_requests WHERE id IN (${oldBuyers})`);
+  await q("INSERT INTO market_meta (key,value) VALUES ('retention_last_run', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [today]);
+  if (contacts + dealTasks + dealNotes + buyers > 0) {
+    await logAudit("retention.purge", "system", `Uchovávanie 5 rokov: zmazané kontakty ${contacts}, úlohy dealov ${dealTasks}, poznámky dealov ${dealNotes}, dopyty ${buyers}`);
+  }
+  return { contacts, buyers, dealTasks, dealNotes };
+}
 
 // ——— Fáza 3: História zmien v katastri (change_log) ———
 export type ChangeRow = { id: number; dataset_id: string | null; lv_no: number | null; parcel_no: string | null; entity: string; field: string | null; old_value: string | null; new_value: string | null; change_type: string; importance: string; detected_at: string };
