@@ -29,6 +29,8 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiIngestUnregisteredRouteImport } from './routes/api.ingest-unregistered'
+import { Route as ApiIngestGeometryRouteImport } from './routes/api.ingest-geometry'
 import { Route as ApiIngestConstructionRouteImport } from './routes/api.ingest-construction'
 import { Route as ApiIngestFirmFinanceRouteImport } from './routes/api.ingest-firm-finance'
 import { Route as PTokenRouteImport } from './routes/p.$token'
@@ -183,6 +185,16 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestUnregisteredRoute = ApiIngestUnregisteredRouteImport.update({
+  id: '/api/ingest-unregistered',
+  path: '/api/ingest-unregistered',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestGeometryRoute = ApiIngestGeometryRouteImport.update({
+  id: '/api/ingest-geometry',
+  path: '/api/ingest-geometry',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIngestConstructionRoute = ApiIngestConstructionRouteImport.update({
@@ -494,6 +506,8 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
+  '/api/ingest-geometry': typeof ApiIngestGeometryRoute
   '/api/ingest-construction': typeof ApiIngestConstructionRoute
   '/api/ingest-firm-finance': typeof ApiIngestFirmFinanceRoute
   '/p/$token': typeof PTokenRoute
@@ -571,6 +585,8 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
+  '/api/ingest-geometry': typeof ApiIngestGeometryRoute
   '/api/ingest-construction': typeof ApiIngestConstructionRoute
   '/api/ingest-firm-finance': typeof ApiIngestFirmFinanceRoute
   '/p/$token': typeof PTokenRoute
@@ -649,6 +665,8 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-unregistered': typeof ApiIngestUnregisteredRoute
+  '/api/ingest-geometry': typeof ApiIngestGeometryRoute
   '/api/ingest-construction': typeof ApiIngestConstructionRoute
   '/api/ingest-firm-finance': typeof ApiIngestFirmFinanceRoute
   '/p/$token': typeof PTokenRoute
@@ -728,6 +746,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-unregistered'
+    | '/api/ingest-geometry'
     | '/api/ingest-construction'
     | '/api/ingest-firm-finance'
     | '/p/$token'
@@ -805,6 +825,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-unregistered'
+    | '/api/ingest-geometry'
     | '/api/ingest-construction'
     | '/api/ingest-firm-finance'
     | '/p/$token'
@@ -882,6 +904,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-unregistered'
+    | '/api/ingest-geometry'
     | '/api/ingest-construction'
     | '/api/ingest-firm-finance'
     | '/p/$token'
@@ -956,6 +980,8 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiIngestUnregisteredRoute: typeof ApiIngestUnregisteredRoute
+  ApiIngestGeometryRoute: typeof ApiIngestGeometryRoute
   ApiIngestConstructionRoute: typeof ApiIngestConstructionRoute
   ApiIngestFirmFinanceRoute: typeof ApiIngestFirmFinanceRoute
   PTokenRoute: typeof PTokenRoute
@@ -1270,6 +1296,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ZadaniaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ingest-unregistered': {
+      id: '/api/ingest-unregistered'
+      path: '/api/ingest-unregistered'
+      fullPath: '/api/ingest-unregistered'
+      preLoaderRoute: typeof ApiIngestUnregisteredRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-geometry': {
+      id: '/api/ingest-geometry'
+      path: '/api/ingest-geometry'
+      fullPath: '/api/ingest-geometry'
+      preLoaderRoute: typeof ApiIngestGeometryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ingest-construction': {
       id: '/api/ingest-construction'
       path: '/api/ingest-construction'
@@ -1567,6 +1607,8 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiIngestUnregisteredRoute: ApiIngestUnregisteredRoute,
+  ApiIngestGeometryRoute: ApiIngestGeometryRoute,
   ApiIngestConstructionRoute: ApiIngestConstructionRoute,
   ApiIngestFirmFinanceRoute: ApiIngestFirmFinanceRoute,
   PTokenRoute: PTokenRoute,

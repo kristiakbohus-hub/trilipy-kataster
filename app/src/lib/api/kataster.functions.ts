@@ -7303,6 +7303,58 @@ export const getConstruction = createServerFn({ method: "POST" })
       spots: sp.filter((x) => x.kod_ku === k.kod_ku).map((x) => ({ id: x.id, lat: x.lat, lon: x.lon, areaM2: x.area_m2, period: x.period, typ: x.typ, density: x.density })) })) };
   });
 
+// ——— (bod 3) presnejšie obrysy parciel bez celého reimportu; (bod 24) stavby v teréne bez zápisu ———
+export const ingestGeometry = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), rows: z.array(z.object({
+    parcelNo: z.string().min(1).max(30), lat: z.number(), lng: z.number(), geometryJson: z.string().max(200_000),
+  })).max(1500) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; updated?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const did = `kn-${data.kodKu}`;
+    const ps = DB.prepare("UPDATE parcels SET geometry_json=?, centroid_lat=?, centroid_lng=?, geometry_quality='vgi' WHERE dataset_id=? AND parcel_no=?");
+    const st = data.rows.map((r) => ps.bind(r.geometryJson, r.lat, r.lng, did, r.parcelNo));
+    for (let i = 0; i < st.length; i += 50) await DB.batch(st.slice(i, i + 50));
+    return { ok: true, updated: st.length };
+  });
+export const ingestUnregistered = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), reset: z.boolean().optional(), rows: z.array(z.object({
+    parcelNo: z.string().min(1).max(30), buildingM2: z.number().nullable().optional(), parcelM2: z.number().nullable().optional(), share: z.number().nullable().optional(),
+    nBudov: z.number().int().nullable().optional(), maxM2: z.number().nullable().optional(), vyuzitie: z.string().max(40).nullable().optional(),
+    druh: z.string().max(40).nullable().optional(), kategoria: z.enum(["A", "B"]), lat: z.number(), lon: z.number(),
+  })).max(3000) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const did = `kn-${data.kodKu}`;
+    if (data.reset) await DB.prepare("DELETE FROM unregistered_buildings WHERE dataset_id=?").bind(did).run();
+    const ps = DB.prepare("INSERT OR REPLACE INTO unregistered_buildings (dataset_id,parcel_no,building_m2,parcel_m2,share,n_budov,max_m2,vyuzitie,druh,kategoria,lat,lon) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
+    const st = data.rows.map((r) => ps.bind(did, r.parcelNo, r.buildingM2 ?? null, r.parcelM2 ?? null, r.share ?? null, r.nBudov ?? null, r.maxM2 ?? null, r.vyuzitie ?? null, r.druh ?? null, r.kategoria, r.lat, r.lon));
+    for (let i = 0; i < st.length; i += 50) await DB.batch(st.slice(i, i + 50));
+    return { ok: true, inserted: st.length };
+  });
+export type UnregBuilding = { datasetId: string; kuName: string | null; parcelNo: string; lvNo: number | null; buildingM2: number | null; parcelM2: number | null; nBudov: number | null; vyuzitie: string | null; kategoria: string; lat: number; lon: number };
+export const listUnregistered = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), onlyHouses: z.boolean().optional(), kategoria: z.enum(["A", "B"]).optional(), minM2: z.number().optional(), limit: z.number().int().min(1).max(500).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: UnregBuilding[]; total: number }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [], total: 0 };
+    const cond = ["1=1"]; const args: unknown[] = [];
+    if (data.onlyHouses) cond.push("ub.vyuzitie IN ('individualResidence','residential','collectiveResidence','trade','industrial','commerceAndServices','office')");
+    if (data.kategoria) { cond.push("ub.kategoria = ?"); args.push(data.kategoria); }
+    if (data.minM2) { cond.push("ub.building_m2 >= ?"); args.push(data.minM2); }
+    const total = (await q<{ n: number }>(`SELECT COUNT(*) n FROM unregistered_buildings ub WHERE ${cond.join(" AND ")}`, args).catch(() => []))[0]?.n ?? 0;
+    const rows = await q<{ dataset_id: string; ku_name: string | null; parcel_no: string; lv_no: number | null; building_m2: number | null; parcel_m2: number | null; n_budov: number | null; vyuzitie: string | null; kategoria: string; lat: number; lon: number }>(
+      `SELECT ub.dataset_id, d.ku_name, ub.parcel_no, p.lv_no, ub.building_m2, ub.parcel_m2, ub.n_budov, ub.vyuzitie, ub.kategoria, ub.lat, ub.lon
+       FROM unregistered_buildings ub LEFT JOIN datasets d ON d.id = ub.dataset_id LEFT JOIN parcels p ON p.dataset_id = ub.dataset_id AND p.parcel_no = ub.parcel_no
+       WHERE ${cond.join(" AND ")} ORDER BY ub.building_m2 DESC LIMIT ?`, [...args, data.limit ?? 200]).catch(() => []);
+    return { ok: true, total, rows: rows.map((r) => ({ datasetId: r.dataset_id, kuName: r.ku_name, parcelNo: r.parcel_no, lvNo: r.lv_no, buildingM2: r.building_m2, parcelM2: r.parcel_m2, nBudov: r.n_budov, vyuzitie: r.vyuzitie, kategoria: r.kategoria, lat: r.lat, lon: r.lon })) };
+  });
+
 // ——— CENY ZO ZMLÚV z katastra (SPI CEN/CAS) — ingest z Macu, výpis pri LV a súhrny (2026-11-11) ———
 export const ingestLvPrices = createServerFn({ method: "POST" })
   .validator(z.object({

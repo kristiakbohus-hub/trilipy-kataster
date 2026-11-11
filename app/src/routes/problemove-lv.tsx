@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { listProblemLvs, type ProblemLv } from "../lib/api/kataster.functions";
+import { listProblemLvs, listUnregistered, type ProblemLv, type UnregBuilding } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { Card, SectionHeader } from "../components/kit";
 
@@ -85,6 +85,51 @@ function ProblemPage() {
         )}
         <p className="mt-2 text-[11px] text-muted">Zdroj: kataster (SPI, poznámky časti C). Odvodený signál, nie právne posúdenie. Mená vidí len plný prístup na výpise LV.</p>
       </Card>
+      <Unregistered />
     </div>
+  );
+}
+
+const USE_SK: Record<string, string> = { individualResidence: "rodinný dom", ancillary: "vedľajšia stavba", industrial: "priemysel / sklad", trade: "obchod", publicServices: "verejná", office: "kancelárie", commerceAndServices: "služby", residential: "bývanie", collectiveResidence: "bytový dom", agriculture: "poľnohosp." };
+// STAVBY V TERÉNE BEZ ZÁPISU (bod 24): budova v ZBGIS na parcele, kde kataster stavbu nemá. Pre kupca riziko
+// (nezapísaná/nepovolená stavba), pre vysporiadanie príležitosť (dozápis stavby).
+function Unregistered() {
+  const { token } = useAuth();
+  const [onlyHouses, setOnlyHouses] = useState(true);
+  const [res, setRes] = useState<{ rows: UnregBuilding[]; total: number } | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    setRes(null);
+    listUnregistered({ data: { token, onlyHouses, minM2: onlyHouses ? 40 : 25, limit: 200 } }).then((r) => setRes({ rows: r.rows, total: r.total })).catch(() => setRes({ rows: [], total: 0 }));
+  }, [token, onlyHouses]);
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <SectionHeader title={`Stavby v teréne bez zápisu v katastri${res ? ` (${res.total})` : ""}`} hint="budova v ZBGIS stojí na parcele, kde kataster nemá zapísanú stavbu" />
+        <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={onlyHouses} onChange={(e) => setOnlyHouses(e.target.checked)} />len domy a prevádzky (bez kôlní a garáží)</label>
+      </div>
+      {!res ? <p className="mt-2 text-sm text-muted">Načítavam…</p> : res.rows.length === 0 ? <p className="mt-2 text-sm text-muted">Nič pre tento výber.</p> : (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead><tr className="text-left text-[11px] uppercase tracking-wide text-muted">
+              <th className="py-1 pr-3 font-medium">k.ú. · parcela</th><th className="py-1 pr-3 font-medium">stavba (ZBGIS)</th><th className="py-1 pr-3 text-right font-medium">plocha</th><th className="py-1 pr-3 font-medium">kataster</th><th className="py-1 font-medium"></th>
+            </tr></thead>
+            <tbody>
+              {res.rows.map((r) => (
+                <tr key={`${r.datasetId}:${r.parcelNo}`} className="border-t border-line/60 align-top">
+                  <td className="py-1 pr-3 text-fg">{r.kuName ?? r.datasetId} · <b>C {r.parcelNo}</b>{r.lvNo != null ? <span className="text-muted"> · LV {r.lvNo}</span> : null}</td>
+                  <td className="py-1 pr-3">{USE_SK[r.vyuzitie ?? ""] ?? r.vyuzitie ?? "budova"}{(r.nBudov ?? 1) > 1 ? ` (${r.nBudov}×)` : ""}</td>
+                  <td className="py-1 pr-3 text-right tabular-nums">{Math.round(r.buildingM2 ?? 0).toLocaleString("sk-SK")} m²</td>
+                  <td className="py-1 pr-3 text-muted">{r.kategoria === "A" ? "žiadna stavba" : "obrys v mape, bez zápisu stavby"}</td>
+                  <td className="py-1 text-right"><a href={`/mapa?ll=${r.lat.toFixed(5)},${r.lon.toFixed(5)}`} className="text-brand hover:underline">mapa</a>
+                    {" · "}<Link to="/report/$datasetId/$parcelNo" params={{ datasetId: r.datasetId, parcelNo: r.parcelNo }} className="text-brand hover:underline">dossier</Link></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-2 text-[11px] text-muted">Zdroj: ZBGIS budovy (© ÚGKK SR, CC BY 4.0) × kataster. Približne 8 % falošných zhôd (zastaraná ZBGIS, dom zapísaný na susednej parcele). Overte na ortofote a vo výpise LV.</p>
+    </Card>
   );
 }
