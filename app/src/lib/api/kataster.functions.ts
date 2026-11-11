@@ -5988,8 +5988,25 @@ function localNow(): { date: string; hm: string } {
     hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());   // „2026-11-11 07:45"
   return { date: p.slice(0, 10), hm: p.slice(11, 16) };
 }
-function sizeBand(pt: string | null, a: number | null): string {
+// €/m² má zmysel len pri ÚŽITKOVEJ ploche. Pri domoch a chatách inzeráty často uvádzajú výmeru
+// POZEMKU (1 580 m² „dom") → „−69 % pod porovnateľnými" by bol nezmysel (memory: €/m² meria veľkosť
+// pozemku, nie hodnotu). Mimo rozsahu sa ponuka do top 50 dostane len poklesom ceny.
+const USABLE: Record<string, [number, number]> = { byt: [15, 250], dom: [50, 350], chata: [15, 200] };
+function comparable(pt: string | null, a: number | null): boolean {
+  if (!a || a <= 5) return false;
+  const r = USABLE[pt ?? ""];
+  return !r || (a >= r[0] && a <= r[1]);
+}
+// Pozemky: stavebný vs. poľnohospodársky/les sa líšia rádovo — porovnávať v rámci druhu
+function plotKind(title: string | null): string {
+  const t = title ?? "";
+  if (/stavebn|\bibv\b|rodinn\p{L}*\s+dom|novostavb|developer/iu.test(t)) return "st";
+  if (/orn[áa]|poľnohosp|polnohosp|\bpole\b|ttp|tr[áa]vn|l[úu]k|pasien|les|lesn|sad\b|vinic|z[áa]hrad/iu.test(t)) return "ag";
+  return "x";
+}
+function sizeBand(pt: string | null, a: number | null, title?: string | null): string {
   if (!a) return "?";
+  if (pt === "pozemok") return `${plotKind(title ?? null)}-${a < 800 ? "s" : a < 2000 ? "m" : a < 10000 ? "l" : "xl"}`;
   if (pt === "byt") return a < 45 ? "s" : a < 75 ? "m" : a < 110 ? "l" : "xl";
   if (pt === "dom") return a < 120 ? "s" : a < 200 ? "m" : a < 400 ? "l" : "xl";
   if (pt === "chata") return a < 60 ? "s" : a < 120 ? "m" : "l";
@@ -6047,12 +6064,15 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
   // ① TOP 50 — porovnateľné = rovnaký okres + typ + veľkostné pásmo, aktívne inzeráty za 21 dní
   let nTop = 0;
   if (asOf) {
-    const comp = await q<{ okres: string; ptype: string; area_m2: number; ppm2: number }>(
-      `SELECT okres, ptype, area_m2, ppm2 FROM market_listings WHERE deal='predaj' AND removed_at IS NULL
+    const comp = await q<{ okres: string; ptype: string; area_m2: number; ppm2: number; title: string | null }>(
+      `SELECT okres, ptype, area_m2, ppm2, CASE WHEN ptype='pozemok' THEN title END AS title FROM market_listings
+       WHERE deal='predaj' AND removed_at IS NULL
          AND last_seen >= date(?, '-21 day') AND ppm2 > 0 AND area_m2 > 5 AND okres IS NOT NULL`, [asOf]).catch(() => []);
     const grp = new Map<string, number[]>();
     for (const c of comp) {
-      for (const k of [`${c.okres}|${c.ptype}|${sizeBand(c.ptype, c.area_m2)}`, `${c.okres}|${c.ptype}|*`]) {
+      if (!comparable(c.ptype, c.area_m2)) continue;
+      const kind = c.ptype === "pozemok" ? plotKind(c.title) : "";
+      for (const k of [`${c.okres}|${c.ptype}|${sizeBand(c.ptype, c.area_m2, c.title)}`, `${c.okres}|${c.ptype}|${kind}*`]) {
         if (!grp.has(k)) grp.set(k, []);
         grp.get(k)!.push(c.ppm2);
       }
@@ -6070,7 +6090,10 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
       if (young.has(r.source) && !(r.first_price != null && r.price_eur != null && r.first_price > r.price_eur)) continue;
       const stavba = r.ptype !== "pozemok";
       if (!r.price_eur || r.price_eur < (stavba ? 15000 : 3000)) continue;
-      const m = med.get(`${r.okres}|${r.ptype}|${sizeBand(r.ptype, r.area_m2)}`) ?? med.get(`${r.okres}|${r.ptype}|*`);
+      const kind = r.ptype === "pozemok" ? plotKind(r.title) : "";
+      const m = comparable(r.ptype, r.area_m2)
+        ? med.get(`${r.okres}|${r.ptype}|${sizeBand(r.ptype, r.area_m2, r.title)}`) ?? med.get(`${r.okres}|${r.ptype}|${kind}*`)
+        : undefined;
       const below = m && r.ppm2 ? ((m - r.ppm2) / m) * 100 : 0;
       const drop = r.first_price && r.first_price > r.price_eur ? ((r.first_price - r.price_eur) / r.first_price) * 100 : 0;
       if (below > 70 || drop > 60) continue;                       // takmer isto chyba údajov
