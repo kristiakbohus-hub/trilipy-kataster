@@ -6294,6 +6294,7 @@ export const ingestLvParts = createServerFn({ method: "POST" })
     lvParcels: z.array(z.object({
       lvNo: z.number().int(), register: z.enum(["C", "E"]), parcelNo: z.string().min(1).max(30),
       areaM2: z.number().nullable().optional(), drpCode: z.number().int().nullable().optional(), drpText: z.string().max(80).nullable().optional(),
+      placement: z.string().max(60).nullable().optional(),   // SPI ump: v / mimo zastavaného územia obce
     })).max(3000).optional(),
     buildings: z.array(z.object({
       lvNo: z.number().int(), descr: z.string().min(1).max(200), onParcel: z.string().max(30).nullable().optional(),
@@ -6309,10 +6310,10 @@ export const ingestLvParts = createServerFn({ method: "POST" })
     if (data.reset) {
       await DB.batch([DB.prepare("DELETE FROM lv_parcels WHERE dataset_id=?").bind(did), DB.prepare("DELETE FROM lv_buildings WHERE dataset_id=?").bind(did)]);
     }
-    const ps = DB.prepare("INSERT INTO lv_parcels (dataset_id,lv_no,register,parcel_no,area_m2,drp_code,drp_text,placement) VALUES (?,?,?,?,?,?,?,NULL)");
+    const ps = DB.prepare("INSERT INTO lv_parcels (dataset_id,lv_no,register,parcel_no,area_m2,drp_code,drp_text,placement) VALUES (?,?,?,?,?,?,?,?)");
     const bs = DB.prepare("INSERT INTO lv_buildings (dataset_id,lv_no,descr,on_parcel,supisne_cislo) VALUES (?,?,?,?,?)");
     const stmts = [
-      ...(data.lvParcels ?? []).map((p) => ps.bind(did, p.lvNo, p.register, p.parcelNo, Math.round(p.areaM2 ?? 0), p.drpCode ?? null, p.drpText ?? null)),
+      ...(data.lvParcels ?? []).map((p) => ps.bind(did, p.lvNo, p.register, p.parcelNo, Math.round(p.areaM2 ?? 0), p.drpCode ?? null, p.drpText ?? null, p.placement ?? null)),
       ...(data.buildings ?? []).map((b) => bs.bind(did, b.lvNo, b.descr, b.onParcel ?? null, b.supisneCislo ?? null)),
     ];
     for (let i = 0; i < stmts.length; i += 100) await DB.batch(stmts.slice(i, i + 100));
