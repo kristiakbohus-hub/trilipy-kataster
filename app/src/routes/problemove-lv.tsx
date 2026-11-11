@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { listProblemLvs, listUnregistered, type ProblemLv, type UnregBuilding } from "../lib/api/kataster.functions";
+import { listAuctions, listProblemLvs, listUnregistered, type Auction, type ProblemLv, type UnregBuilding } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { Card, SectionHeader } from "../components/kit";
 
@@ -85,8 +85,51 @@ function ProblemPage() {
         )}
         <p className="mt-2 text-[11px] text-muted">Zdroj: kataster (SPI, poznámky časti C). Odvodený signál, nie právne posúdenie. Mená vidí len plný prístup na výpise LV.</p>
       </Card>
+      <Auctions />
       <Unregistered />
     </div>
+  );
+}
+
+// DRAŽBY NEHNUTEĽNOSTÍ (bod 26): oznámenia o dražbách (Notársky centrálny register dražieb a i.) — kúpa pod cenou,
+// aj signál, že vlastník je v probléme. Fyzická osoba nikdy menom.
+function Auctions() {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<Auction[] | null>(null);
+  const [okres, setOkres] = useState("");
+  const [upcoming, setUpcoming] = useState(true);
+  useEffect(() => { if (token) listAuctions({ data: { token, upcoming } }).then((r) => setRows(r.rows)).catch(() => setRows([])); }, [token, upcoming]);
+  if (!rows) return null;
+  const okresy = [...new Set(rows.map((r) => r.okres).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, "sk"));
+  const list = rows.filter((r) => !okres || r.okres === okres);
+  const eur = (n: number | null) => (n == null ? null : `${Math.round(n).toLocaleString("sk-SK")} €`);
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <SectionHeader title={`Dražby nehnuteľností (${list.length})`} hint="oznámenia o dražbách — kúpa pod cenou aj signál problému vlastníka" />
+        <div className="flex items-center gap-2 text-xs">
+          <select value={okres} onChange={(e) => setOkres(e.target.value)} className="rounded-md border border-line bg-paper px-2 py-1 text-fg"><option value="">všetky okresy</option>{okresy.map((o) => <option key={o} value={o}>okres {o}</option>)}</select>
+          <label className="flex items-center gap-1 text-muted"><input type="checkbox" checked={upcoming} onChange={(e) => setUpcoming(e.target.checked)} />len nadchádzajúce</label>
+        </div>
+      </div>
+      {list.length === 0 ? <p className="mt-2 text-sm text-muted">Žiadne dražby pre tento výber (zber beží denne).</p> : (
+        <ul className="mt-2 divide-y divide-line/60 text-xs">
+          {list.slice(0, 80).map((a) => (
+            <li key={`${a.source}:${a.id}`} className="flex flex-wrap items-baseline justify-between gap-2 py-1.5">
+              <span className="min-w-0">
+                <b className="text-fg">{a.auctionDate ? a.auctionDate.slice(0, 10).split("-").reverse().join(". ") : "termín neuvedený"}</b> · {a.propertyType ?? "nehnuteľnosť"}
+                {a.kuName || a.obec ? <span className="text-muted"> · {a.kuName ? `k.ú. ${a.kuName}` : a.obec}{a.okres ? ` (okres ${a.okres})` : ""}</span> : null}
+                {a.parcels ? <span className="text-muted"> · parc. {a.parcels}</span> : null}{a.lv ? <span className="text-muted"> · LV {a.lv}</span> : null}
+                {a.auctioneer ? <span className="block text-muted">dražobník {a.auctioneer}{a.party ? ` · navrhovateľ/vlastník: ${a.party}` : ""}</span> : null}
+              </span>
+              <span className="shrink-0 tabular-nums text-muted">{eur(a.priceMin) ? `najnižšie podanie ${eur(a.priceMin)}` : ""}{a.priceEstimate ? ` · odhad ${eur(a.priceEstimate)}` : ""}
+                {a.url ? <a href={a.url} target="_blank" rel="noopener noreferrer" className="ml-1 text-brand hover:underline">oznámenie ↗</a> : null}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="mt-2 text-[11px] text-muted">Zdroj: verejné registre dražieb. Mená fyzických osôb sa neukladajú. Pred dražbou overte LV, ťarchy a stav.</p>
+    </Card>
   );
 }
 

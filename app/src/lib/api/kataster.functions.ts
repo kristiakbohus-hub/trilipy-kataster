@@ -7464,6 +7464,45 @@ export const ingestListingMatches = createServerFn({ method: "POST" })
     return { ok: true, inserted: data.rows.length };
   });
 
+// ——— (bod 26) dražby nehnuteľností — signál pod cenou; bez mien fyzických osôb ———
+export type Auction = { source: string; id: string; url: string | null; published: string | null; auctionDate: string | null; okres: string | null; obec: string | null; kuName: string | null; propertyType: string | null; parcels: string | null; lv: string | null; priceMin: number | null; priceEstimate: number | null; auctioneer: string | null; party: string | null; note: string | null };
+export const ingestAuctions = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), rows: z.array(z.object({
+    source: z.string().max(40), id: z.string().max(120), url: z.string().max(600).nullable().optional(), published: z.string().max(30).nullable().optional(),
+    auction_date: z.string().max(30).nullable().optional(), okres: z.string().max(60).nullable().optional(), obec: z.string().max(80).nullable().optional(),
+    ku_name: z.string().max(80).nullable().optional(), property_type: z.string().max(80).nullable().optional(), parcels: z.string().max(400).nullable().optional(),
+    lv: z.string().max(80).nullable().optional(), price_min_eur: z.number().nullable().optional(), price_estimate_eur: z.number().nullable().optional(),
+    auctioneer_company: z.string().max(160).nullable().optional(), party: z.string().max(160).nullable().optional(), note: z.string().max(400).nullable().optional(),
+  })).max(3000) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const ps = DB.prepare(`INSERT INTO auctions (source,id,url,published,auction_date,okres,obec,ku_name,property_type,parcels,lv,price_min_eur,price_estimate_eur,auctioneer_company,party,note,updated)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now')) ON CONFLICT(source,id) DO UPDATE SET url=excluded.url, published=excluded.published, auction_date=excluded.auction_date,
+      okres=excluded.okres, obec=excluded.obec, ku_name=excluded.ku_name, property_type=excluded.property_type, parcels=excluded.parcels, lv=excluded.lv,
+      price_min_eur=excluded.price_min_eur, price_estimate_eur=excluded.price_estimate_eur, auctioneer_company=excluded.auctioneer_company, party=excluded.party, note=excluded.note, updated=excluded.updated`);
+    // fyzická osoba nikdy menom — poistka aj na strane appky
+    const pty = (p?: string | null) => (p && /s\.?\s*r\.?\s*o|a\.?\s*s\.|spol|družstv|obec|mesto|n\.\s*o|š\.\s*p|banka|invest|group/i.test(p) ? p : p ? "fyzická osoba" : null);
+    const st = data.rows.map((r) => ps.bind(r.source, r.id, r.url ?? null, r.published ?? null, r.auction_date ?? null, r.okres ?? null, r.obec ?? null, r.ku_name ?? null, r.property_type ?? null,
+      r.parcels ?? null, r.lv ?? null, r.price_min_eur ?? null, r.price_estimate_eur ?? null, r.auctioneer_company ?? null, pty(r.party), r.note ?? null));
+    for (let i = 0; i < st.length; i += 50) await DB.batch(st.slice(i, i + 50));
+    return { ok: true, inserted: st.length };
+  });
+export const listAuctions = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), okres: z.string().max(60).optional(), upcoming: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: Auction[] }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [] };
+    const cond = ["1=1"]; const args: unknown[] = [];
+    if (data.okres) { cond.push("okres = ?"); args.push(data.okres); }
+    if (data.upcoming) cond.push("(auction_date IS NULL OR auction_date >= date('now'))");
+    const rows = await q<{ source: string; id: string; url: string | null; published: string | null; auction_date: string | null; okres: string | null; obec: string | null; ku_name: string | null; property_type: string | null; parcels: string | null; lv: string | null; price_min_eur: number | null; price_estimate_eur: number | null; auctioneer_company: string | null; party: string | null; note: string | null }>(
+      `SELECT * FROM auctions WHERE ${cond.join(" AND ")} ORDER BY COALESCE(auction_date, published) DESC LIMIT 300`, args).catch(() => []);
+    return { ok: true, rows: rows.map((r) => ({ source: r.source, id: r.id, url: r.url, published: r.published, auctionDate: r.auction_date, okres: r.okres, obec: r.obec, kuName: r.ku_name, propertyType: r.property_type, parcels: r.parcels, lv: r.lv, priceMin: r.price_min_eur, priceEstimate: r.price_estimate_eur, auctioneer: r.auctioneer_company, party: r.party, note: r.note })) };
+  });
+
 // ——— CENY ZO ZMLÚV z katastra (SPI CEN/CAS) — ingest z Macu, výpis pri LV a súhrny (2026-11-11) ———
 export const ingestLvPrices = createServerFn({ method: "POST" })
   .validator(z.object({

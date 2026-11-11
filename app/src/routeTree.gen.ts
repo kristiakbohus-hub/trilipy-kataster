@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiIngestAuctionsRouteImport } from './routes/api.ingest-auctions'
 import { Route as ApiBackupRouteImport } from './routes/api.backup'
 import { Route as ApiIngestListingMatchesRouteImport } from './routes/api.ingest-listing-matches'
 import { Route as ApiIngestMaplayersRouteImport } from './routes/api.ingest-maplayers'
@@ -188,6 +189,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestAuctionsRoute = ApiIngestAuctionsRouteImport.update({
+  id: '/api/ingest-auctions',
+  path: '/api/ingest-auctions',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiBackupRoute = ApiBackupRouteImport.update({
@@ -524,6 +530,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
   '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
@@ -606,6 +613,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
   '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
@@ -689,6 +697,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
   '/api/ingest-maplayers': typeof ApiIngestMaplayersRoute
@@ -773,6 +782,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-auctions'
     | '/api/backup'
     | '/api/ingest-listing-matches'
     | '/api/ingest-maplayers'
@@ -855,6 +865,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-auctions'
     | '/api/backup'
     | '/api/ingest-listing-matches'
     | '/api/ingest-maplayers'
@@ -937,6 +948,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-auctions'
     | '/api/backup'
     | '/api/ingest-listing-matches'
     | '/api/ingest-maplayers'
@@ -1016,6 +1028,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiIngestAuctionsRoute: typeof ApiIngestAuctionsRoute
   ApiBackupRoute: typeof ApiBackupRoute
   ApiIngestListingMatchesRoute: typeof ApiIngestListingMatchesRoute
   ApiIngestMaplayersRoute: typeof ApiIngestMaplayersRoute
@@ -1333,6 +1346,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-auctions': {
+      id: '/api/ingest-auctions'
+      path: '/api/ingest-auctions'
+      fullPath: '/api/ingest-auctions'
+      preLoaderRoute: typeof ApiIngestAuctionsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/backup': {
@@ -1667,6 +1687,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiIngestAuctionsRoute: ApiIngestAuctionsRoute,
   ApiBackupRoute: ApiBackupRoute,
   ApiIngestListingMatchesRoute: ApiIngestListingMatchesRoute,
   ApiIngestMaplayersRoute: ApiIngestMaplayersRoute,
