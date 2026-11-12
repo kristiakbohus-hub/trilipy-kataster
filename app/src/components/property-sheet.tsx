@@ -454,7 +454,10 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {c.legalYears.length ? <Grid rows={c.legalYears.flatMap((y) => [
           [`LV ${y.lvNo} — posledná kúpa`, y.sale_max ? String(y.sale_max) : "—"] as [string, string], [`LV ${y.lvNo} — posledné dedičstvo`, y.inh_max ? String(y.inh_max) : "—"] as [string, string]])} /> : null}
         {!isClient && c.firms.length ? (<><Sub>Firmy-vlastníci — finančná sila</Sub>
-          <Table head={["Firma", "Rok", "Tržby", "Majetok", "Vlastné imanie", "Výsledok"]} rows={c.firms.map((f) => [f.name ?? f.ico, f.year ?? "—", eur(f.revenue), eur(f.assets), eur(f.equity), eur(f.profit)])} /></>) : null}
+          <Table head={["Firma", "Rok", "Tržby", "Majetok", "Vlastné imanie", "Výsledok", "Insolvencia"]} rows={c.firms.map((f) => [f.name ?? f.ico, f.year ?? "—", eur(f.revenue), eur(f.assets), eur(f.equity), eur(f.profit),
+            f.insolvency == null ? "neoverené" : f.insolvency.konkurz + f.insolvency.restrukturalizacia + f.insolvency.likvidacia === 0 ? "bez konania"
+              : <a key="r" href={`https://replik.justice.sk/ru-verejnost-web/pages/searchKonanie.xhtml?query=${f.ico}`} target="_blank" rel="noopener noreferrer" style={{ color: "#9c4a40" }} className="underline">{[f.insolvency.konkurz ? `konkurz ${f.insolvency.konkurz}` : null, f.insolvency.restrukturalizacia ? `reštrukturalizácia ${f.insolvency.restrukturalizacia}` : null, f.insolvency.likvidacia ? `likvidácia ${f.insolvency.likvidacia}` : null].filter(Boolean).join(", ")}</a>])} />
+          <Muted>Insolvencia: insolvenčný register REPLIK (Ministerstvo spravodlivosti SR), len podľa IČO firmy.</Muted></>) : null}
       </Sec>
 
       <Sec id="pravo" title="Právny stav" source="Časť B a C LV, poznámky a plomby (SPI); dražby z verejných registrov dražieb; stavby bez zápisu porovnaním ZBGIS a katastra.">
@@ -562,6 +565,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           ["Automatický odhad (AVM)", d.avm?.estimate_eur != null ? `${eur(d.avm.estimate_eur)} (${eur(d.avm.low_eur)}–${eur(d.avm.high_eur)}) · spoľahlivosť ${d.avm.confidence}` : "—"],
           ["Medián ponúk pozemkov v okrese", d.medPoz ? `${nf(d.medPoz)} €/m²` : "—"],
           ["Úradná cena pôdy (VÚPOP)", d.limits?.landPrice ? `${nf(d.limits.landPrice.eurM2, 2)} €/m²` : "—"],
+          ["Dostupnosť (odhad ÷ ročná hrubá mzda v okrese)", (() => { const w = Number(fact(c, "obec", kuKey)?.mzda_okres_eur ?? 0); const e = c.compStats?.estimateEur ?? d.avm?.estimate_eur ?? null; return w > 0 && e ? `${nf(e / (w * 12), 1)} ročných miezd (mzda ${nf(w)} €/mes.)` : "—"; })()],
         ]} />
         {c.comparables.length ? (<><Sub>Porovnateľné predaje zo zmlúv ({c.compStats?.kind})</Sub>
           <Table head={["Dátum zmluvy", "K.ú.", "Položky", "Výmera", "Cena v zmluve", "€/m²", "Vzdialenosť"]}

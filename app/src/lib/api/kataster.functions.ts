@@ -8100,7 +8100,9 @@ export type PropertyCore = {
     cases: { id: number; title: string; status: string }[];
   };
   work: { contacts: number; lastContact: string | null; nextAt: string | null; comments: number; documents: number };
-  firms: { ico: string; name: string | null; year: number | null; revenue: number | null; assets: number | null; equity: number | null; profit: number | null }[];
+  firms: { ico: string; name: string | null; year: number | null; revenue: number | null; assets: number | null; equity: number | null; profit: number | null;
+    /** REPLIK (register úpadcov od 10/2025) podľa IČO — len právnické osoby; null = nepodarilo sa overiť */
+    insolvency?: { konkurz: number; restrukturalizacia: number; likvidacia: number } | null }[];
   obec: { changes: { title: string | null; url: string | null; change: string | null; relevance: string; detected_at: string | null }[]; upChanges: { title: string | null; url: string | null; change: string | null; detected_at: string | null }[] };
   stateContracts: { n: number; recent: { day: string; publisher: string; kind: string; amount: number | null }[] };
   /** byty a nebytové priestory v dome celku (podľa súpisného čísla) alebo zapísané na LV */
@@ -8115,6 +8117,27 @@ export type PropertyCore = {
     buildingMix: { druh: string; n: number }[];
   };
 };
+
+/** Insolvenčný register REPLIK (od 1. 10. 2025 nahradil Register úpadcov) — LEN IČO právnických osôb, cache 14 dní. */
+async function replikInsolvency(ico: string): Promise<{ konkurz: number; restrukturalizacia: number; likvidacia: number } | null> {
+  if (!/^\d{6,8}$/.test(ico)) return null;
+  // pri fyzických osobách importér ukladá do poľa IČO dátum narodenia → také hodnoty sa nikdy neodosielajú
+  if (/^(19|20)\d{2}(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(ico)) return null;
+  const key = `replik:${ico}`;
+  const c = await regCacheRead(key, false, 14 * 24 * 3600).catch(() => null);
+  if (c) return c.payload as { konkurz: number; restrukturalizacia: number; likvidacia: number };
+  const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 12000);
+  try {
+    const r = await fetch(`https://replik.justice.sk/ru-verejnost-web/pages/searchKonanie.xhtml?query=${ico}`, { headers: { "user-agent": "tri-lipy/1.0 (kataster)" }, signal: ctrl.signal });
+    if (!r.ok) return null;
+    const h = await r.text();
+    const n = (label: string) => Math.max(0, ...[...h.matchAll(new RegExp(`${label} \\((\\d+)\\)`, "g"))].map((m) => Number(m[1])));
+    if (!/Typ konania/.test(h)) return null;
+    const out = { konkurz: n("Konkurz"), restrukturalizacia: n("Reštrukturalizácia"), likvidacia: n("Likvidácia") };
+    await regCacheWrite(key, "replik", out).catch(() => {});
+    return out;
+  } catch { return null; } finally { clearTimeout(to); }
+}
 
 async function qIn<T>(sqlWithPh: (ph: string) => string, head: unknown[], list: unknown[], tail: unknown[] = []): Promise<T[]> {
   const out: T[] = [];
@@ -8406,6 +8429,11 @@ export const getPropertyCore = createServerFn({ method: "POST" })
     // ——— 9) firmy-vlastníci (len plný prístup), obec, štátne zmluvy ———
     const icos = access === "full" ? [...new Set(perLv.flatMap((l) => l.owners.filter((o) => o.is_company === 1 && o.ico).map((o) => String(o.ico))))] : [];
     const firms = await qIn<PropertyCore["firms"][number]>((ph) => `SELECT ico, name, year, revenue, assets, equity, profit FROM firm_finance WHERE ico IN (${ph})`, [], icos);
+    for (const ico of icos) if (!firms.some((f) => f.ico === ico)) {
+      const nm = perLv.flatMap((l) => l.owners).find((o) => String(o.ico) === ico)?.name ?? null;
+      firms.push({ ico, name: nm, year: null, revenue: null, assets: null, equity: null, profit: null });
+    }
+    await Promise.all(firms.slice(0, 10).map(async (f) => { f.insolvency = await replikInsolvency(f.ico); }));
     const changes = await q<PropertyCore["obec"]["changes"][number]>("SELECT title, url, change, relevance, detected_at FROM obec_changes WHERE ku_code=? OR obec=? ORDER BY detected_at DESC LIMIT 8", [kod, kuName]).catch(() => []);
     const upChanges = await q<PropertyCore["obec"]["upChanges"][number]>("SELECT title, url, change, detected_at FROM up_changes WHERE dataset_id=? ORDER BY detected_at DESC LIMIT 5", [ds.id]).catch(() => []);
     const scN = kuName ? (await q<{ n: number }>("SELECT COUNT(*) n FROM state_contracts WHERE ku_name=?", [kuName]).catch(() => []))[0]?.n ?? 0 : 0;
