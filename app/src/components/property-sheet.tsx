@@ -93,7 +93,7 @@ function fmtVal(v: unknown, f?: FactField): ReactNode {
   if (typeof v === "object") return Object.entries(v as Record<string, unknown>).filter(([, x]) => x != null).map(([k, x]) => `${human(k)}: ${typeof x === "object" ? JSON.stringify(x) : String(x)}`).join(" · ");
   return String(v);
 }
-export function FactsBlock({ grp, data, skip = [], only }: { grp: string; data: Record<string, unknown> | null; skip?: string[]; only?: string[] }) {
+export function FactsBlock({ grp, data, skip = [], only, depth = 0 }: { grp: string; data: Record<string, unknown> | null; skip?: string[]; only?: string[]; depth?: number }) {
   if (!data) return null;
   const schema = FACT_SCHEMA[grp] ?? {};
   const entries = (only ? only.filter((k) => k in data).map((k) => [k, data[k]] as [string, unknown]) : Object.entries(data))
@@ -105,7 +105,9 @@ export function FactsBlock({ grp, data, skip = [], only }: { grp: string; data: 
     <div className="space-y-1">
       <Grid rows={simple.map(([k, v]) => [<span key={k} title={schema[k]?.note}>{schema[k]?.label ?? human(k)}</span>, fmtVal(v, schema[k])] as [ReactNode, ReactNode])} />
       {complex.map(([k, v]) => (
-        <div key={k} className="text-xs"><span className="text-muted">{schema[k]?.label ?? human(k)}:</span> {fmtVal(v, schema[k])}</div>
+        v && typeof v === "object" && !Array.isArray(v) && depth < 2 ? (
+          <div key={k} className="pl-2"><div className="pt-1 text-[11px] font-medium text-muted" title={schema[k]?.note}>{schema[k]?.label ?? human(k)}</div><FactsBlock grp={grp} data={v as Record<string, unknown>} depth={depth + 1} /></div>
+        ) : <div key={k} className="text-xs"><span className="text-muted">{schema[k]?.label ?? human(k)}:</span> {fmtVal(v, schema[k])}</div>
       ))}
     </div>
   );
@@ -204,7 +206,25 @@ function elevOf(t: Record<string, unknown> | null): number | null {
   for (const [k, v] of Object.entries(t)) if (typeof v === "number" && /^(elev|vysk|nadm)[a-z_]*(mean|priem|avg)|^(elev|vyska|nadmorska_vyska)$/.test(k)) return v;
   return null;
 }
+function BandsBlock({ grp, data, elev, skip = [] }: { grp: string; data: Record<string, unknown>; elev: number | null; skip?: string[] }) {
+  const bands = data.bands as Record<string, Record<string, unknown>> | undefined;
+  let pick: [string, Record<string, unknown>] | null = null;
+  if (bands && Object.keys(bands).length) {
+    const ks = Object.keys(bands).map(Number).filter(Number.isFinite).sort((a, b) => a - b);
+    const target = elev ?? ks[Math.floor(ks.length / 2)];
+    const best = ks.reduce((b, k) => (Math.abs(k - target) < Math.abs(b - target) ? k : b), ks[0]);
+    pick = [String(best), bands[String(best)]];
+  }
+  const rest = Object.fromEntries(Object.entries(data).filter(([k]) => k !== "bands" && !skip.includes(k)));
+  return (
+    <div className="space-y-2">
+      {pick ? <><Sub>Pre nadmorskú výšku ~{pick[0]} m{elev != null ? ` (parcela ${Math.round(elev)} m)` : ""}</Sub><FactsBlock grp={grp} data={pick[1]} /></> : null}
+      <FactsBlock grp={grp} data={rest} />
+    </div>
+  );
+}
 function KlimaBlock({ data, elev }: { data: Record<string, unknown>; elev: number | null }) {
+  if (data.ref && data.bands) return <BandsBlock grp="klima" data={data} elev={elev} skip={["ref", "ref_t_m", "ref_lat", "ref_lon", "lapse_c_per_100m", "elev_range", "elev_median"]} />;
   const bands = (data.bands ?? data.pasma) as Record<string, Record<string, unknown>> | undefined;
   const rest = Object.fromEntries(Object.entries(data).filter(([k]) => k !== "bands" && k !== "pasma"));
   let pick: [string, Record<string, unknown>] | null = null;
@@ -353,7 +373,11 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {Object.entries(c.facts.stavby ?? {}).filter(([k]) => k.startsWith("building:")).slice(0, 10).map(([k, raw]) => [k, parseFact(raw)] as const).map(([k, v]) => (
           <div key={k}><Sub>Stavba {k.replace("building:", "").replace("sc:", "s.č. ").replace("p:", "na parcele ")}</Sub><FactsBlock grp="stavby" data={v} /></div>
         ))}
-        {flatsByLv.length ? (<><Sub>Byty a nebytové priestory</Sub>{flatsByLv.slice(0, 12).map(([k, raw]) => <FactsBlock key={k} grp="byty" data={parseFact(raw)} />)}</>) : null}
+        {flatsByLv.length ? (<><Sub>Byt / nebytový priestor</Sub>{flatsByLv.slice(0, 3).map(([k, raw]) => <FactsBlock key={k} grp="byty" data={parseFact(raw)} />)}</>) : null}
+        {c.kind !== "byt" && c.flats.length ? (<><Sub>Byty a nebytové priestory v dome ({c.flats.length})</Sub>
+          <Table head={["Vchod", "Číslo", "Podlažie", "Druh", "Výmera", ""]} rows={c.flats.slice(0, 120).map((f) => [f.vchod ?? "—", f.cislo ?? "—", f.poschodie ?? "—", f.druh ?? "—", m2(f.vymera_m2),
+            isClient ? "" : <a key="l" href={`/nehnutelnost?ds=${encodeURIComponent(c.dataset?.id ?? "")}&byt=${encodeURIComponent(f.ref)}`} className="text-brand underline">list bytu</a>])} />
+          {c.flats.length > 120 ? <Muted>… a ďalších {c.flats.length - 120}.</Muted> : null}</>) : null}
         {mk && fact(c, "mapa", mk) ? (<><Sub>Z katastrálnej mapy</Sub><FactsBlock grp="mapa" data={fact(c, "mapa", mk)} /></>) : null}
         {mk && fact(c, "bpej", mk) ? (<><Sub>Pôda (BPEJ)</Sub><FactsBlock grp="bpej" data={fact(c, "bpej", mk)} /></>)
           : mainParcel?.bpej ? <Grid rows={[["BPEJ", mainParcel.bpej], ["Skupina kvality", mainParcel.bpej_skupina != null ? String(mainParcel.bpej_skupina) : "—"], ["Odvod za vyňatie (odhad)", mainParcel.odnatie_eur != null ? eur(mainParcel.odnatie_eur) : "—"]]} /> : null}
@@ -447,7 +471,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
 
       <Sec id="klima" title="Klíma a stavebné normy" source={<>{c.factMeta.klima?.source ?? "NASA POWER, PVGIS (EÚ JRC)"}; normy STN EN (národné prílohy).</>}>
         {fact(c, "klima", kuKey) ? <KlimaBlock data={fact(c, "klima", kuKey) as Record<string, unknown>} elev={elev} /> : <Muted>Klimatické údaje pre lokalitu zatiaľ nie sú spočítané.</Muted>}
-        {fact(c, "normy", kuKey) ? (<><Sub>Stavebné normy lokality</Sub><FactsBlock grp="normy" data={fact(c, "normy", kuKey)} /></>) : null}
+        {fact(c, "normy", kuKey) ? (<><Sub>Stavebné normy lokality</Sub><BandsBlock grp="normy" data={fact(c, "normy", kuKey) as Record<string, unknown>} elev={elev} skip={["elev_range"]} /></>) : null}
       </Sec>
 
       <Sec id="siete" title="Siete a energie" source="OpenStreetMap (© prispievatelia OSM), údaje o obci (vodovody, kanalizácie, plyn); presné trasy sietí potvrdí len vyjadrenie správcu.">

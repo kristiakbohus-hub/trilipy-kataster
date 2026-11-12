@@ -98,14 +98,15 @@ export function semafor(d: SheetData): Light[] {
   const ob = fact(c, "obec", `ku:${c.dataset?.ku_code ?? ""}`);
   const mk = mainKey(c);
   const osm = mk ? fact(c, "osm", mk) : null;
-  const vod = ob ? (ob.vodovod ?? ob.vodovod_podiel ?? ob.vodovod_pct) : null;
-  const kan = ob ? (ob.kanalizacia ?? ob.kanalizacia_podiel ?? ob.kanalizacia_pct) : null;
+  const vod = ob ? (ob.vodovod_verejny_pct ?? ob.vodovod) : null;
+  const kan = ob ? (ob.kanal_pripojka_pct ?? ob.kanalizacia) : null;
   if (!ob && !osm) out.push({ key: "siete", label: "Siete", state: "unknown", text: "Údaje o sieťach zatiaľ nie sú spočítané — vyjadrenia správcov." });
   else {
     const parts: string[] = [];
     let st: LightState = "ok";
     if (vod != null) { const ok = vod === true || Number(vod) >= 50; parts.push(ok ? "vodovod v obci" : "vodovod v obci chýba / malé pokrytie"); if (!ok) st = "warn"; }
-    if (kan != null) { const ok = kan === true || Number(kan) >= 50; parts.push(ok ? "kanalizácia v obci" : "kanalizácia v obci chýba / malé pokrytie"); if (!ok) st = "warn"; }
+    if (kan != null) { const ok = kan === true || Number(kan) >= 50; parts.push(ok ? `kanalizácia v obci${typeof kan === "number" ? ` (${Math.round(kan)} % domov)` : ""}` : `kanalizácia v obci len ${typeof kan === "number" ? `${Math.round(kan)} % domov` : "čiastočne"}`); if (!ok) st = "warn"; }
+    if (ob && typeof ob.plyn_obec === "boolean") parts.push(ob.plyn_obec ? "plyn v obci" : "obec bez plynu");
     const tr = osm && typeof osm.trafo === "number" ? osm.trafo : null;
     if (tr != null) parts.push(`trafostanica ${tr < 1000 ? `${tr} m` : `${(tr / 1000).toFixed(1)} km`}`);
     if (vod == null && kan == null && tr == null) st = "unknown";

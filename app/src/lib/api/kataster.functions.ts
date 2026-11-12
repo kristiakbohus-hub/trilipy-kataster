@@ -8102,6 +8102,8 @@ export type PropertyCore = {
   firms: { ico: string; name: string | null; year: number | null; revenue: number | null; assets: number | null; equity: number | null; profit: number | null }[];
   obec: { changes: { title: string | null; url: string | null; change: string | null; relevance: string; detected_at: string | null }[]; upChanges: { title: string | null; url: string | null; change: string | null; detected_at: string | null }[] };
   stateContracts: { n: number; recent: { day: string; publisher: string; kind: string; amount: number | null }[] };
+  /** byty a nebytové priestory v dome celku (podľa súpisného čísla) alebo zapísané na LV */
+  flats: { ref: string; cislo: string | null; vchod: string | null; poschodie: number | null; druh: string | null; vymera_m2: number | null; sc: string | null }[];
   /** trh v okrese/k.ú.: trend zo zmlúv, likvidita, nájomný výnos, doba predaja, konkurencia, zloženie zástavby */
   market: {
     trend: { year: number; n: number; medPpm2: number | null; medCen: number | null }[];
@@ -8164,7 +8166,13 @@ export const getPropertyCore = createServerFn({ method: "POST" })
       lvNo = m ? Number(m[1]) : null;
       const fr = (await factsFor("flat", [data.ref], "byty"))[0];
       let house: string | null = null;
-      if (fr) { try { const d = JSON.parse(fr.data_json) as Record<string, unknown>; sc = d.dom != null ? String(d.dom) : (d.sc != null ? String(d.sc) : null); house = d.parcela != null ? String(d.parcela) : null; } catch { /* poškodené */ } }
+      if (fr) {
+        try {
+          const d = JSON.parse(fr.data_json) as Record<string, unknown>;
+          sc = d.sc != null ? String(d.sc) : d.dom != null ? String(d.dom).replace(/^sc:/, "") : null;
+          house = Array.isArray(d.parcely_domu) && d.parcely_domu.length ? String(d.parcely_domu[0]) : d.parcela != null ? String(d.parcela) : null;
+        } catch { /* poškodené */ }
+      }
       if (!house && sc) house = (await q<{ on_parcel: string | null }>("SELECT on_parcel FROM lv_buildings WHERE dataset_id=? AND supisne_cislo=? LIMIT 1", [ds.id, sc]))[0]?.on_parcel ?? null;
       if (house) {
         const r = (await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? AND (p.kn_type IS NULL OR p.kn_type NOT LIKE 'E%') LIMIT 1`, [ds.id, house]))[0];
@@ -8319,10 +8327,12 @@ export const getPropertyCore = createServerFn({ method: "POST" })
     const ppms = comparables.map((c) => c.ppm2).filter((x): x is number => x != null && x > 0);
     const cens = comparables.map((c) => c.cen).filter((x) => x > 0);
     const medPpm2 = pctl(ppms, 0.5);
-    const basisM2 = compKind === "pozemok" ? landArea || null : null;
+    let flatM2: number | null = null;
+    if (kind === "byt" && flat) { try { const fd0 = JSON.parse((await factsFor("flat", [flat], "byty"))[0]?.data_json ?? "{}") as Record<string, unknown>; flatM2 = typeof fd0.vymera_m2 === "number" ? fd0.vymera_m2 : null; } catch { /* bez výmery */ } }
+    const basisM2 = compKind === "pozemok" ? landArea || null : compKind === "byt" ? flatM2 : null;
     const compStats = comparables.length ? {
       kind: compKind, n: comparables.length, medPpm2, p25: pctl(ppms, 0.25), p75: pctl(ppms, 0.75), medCen: pctl(cens, 0.5),
-      estimateEur: compKind === "pozemok" && medPpm2 && basisM2 ? Math.round(medPpm2 * basisM2) : compKind !== "pozemok" ? pctl(cens, 0.5) : null, basisM2,
+      estimateEur: (compKind === "pozemok" || (compKind === "byt" && basisM2)) && medPpm2 && basisM2 ? Math.round(medPpm2 * basisM2) : compKind !== "pozemok" ? pctl(cens, 0.5) : null, basisM2,
     } : null;
 
     // ——— 6) inzercia: je to v predaji? + ponuky rovnakého typu v okolí ———
@@ -8400,6 +8410,26 @@ export const getPropertyCore = createServerFn({ method: "POST" })
     const scN = kuName ? (await q<{ n: number }>("SELECT COUNT(*) n FROM state_contracts WHERE ku_name=?", [kuName]).catch(() => []))[0]?.n ?? 0 : 0;
     const scRecent = kuName ? await q<{ day: string; publisher: string; kind: string; amount: number | null }>("SELECT day, publisher, kind, amount FROM state_contracts WHERE ku_name=? ORDER BY day DESC LIMIT 5", [kuName]).catch(() => []) : [];
 
+    // ——— 9a) byty v dome (s.č. stavieb celku) alebo na LV ———
+    const flatRows: { subject_ref: string; data_json: string }[] = [];
+    const scs = [...new Set(buildings.map((b) => b.sc).filter((x): x is string => !!x))].slice(0, 6);
+    for (const x of scs) flatRows.push(...await q<{ subject_ref: string; data_json: string }>(
+      "SELECT subject_ref, data_json FROM property_facts WHERE kod_ku=? AND grp='byty' AND subject_type='flat' AND data_json LIKE ? LIMIT 400", [kod, `%"dom":"sc:${x}"%`]).catch(() => []));
+    if (kind === "lv" && lvNo != null) flatRows.push(...await q<{ subject_ref: string; data_json: string }>(
+      "SELECT subject_ref, data_json FROM property_facts WHERE kod_ku=? AND grp='byty' AND subject_type='flat' AND subject_ref LIKE ? LIMIT 400", [kod, `lv:${lvNo}:%`]).catch(() => []));
+    const flatSeen = new Set<string>();
+    const flats: PropertyCore["flats"] = [];
+    for (const r of flatRows) {
+      if (flatSeen.has(r.subject_ref)) continue; flatSeen.add(r.subject_ref);
+      try {
+        const d = JSON.parse(r.data_json) as Record<string, unknown>;
+        flats.push({ ref: r.subject_ref, cislo: d.cislo != null ? String(d.cislo) : null, vchod: d.vchod != null ? String(d.vchod) : null,
+          poschodie: typeof d.poschodie === "number" ? d.poschodie : null, druh: d.druh != null ? String(d.druh) : null,
+          vymera_m2: typeof d.vymera_m2 === "number" ? d.vymera_m2 : null, sc: d.sc != null ? String(d.sc) : null });
+      } catch { /* poškodené */ }
+    }
+    flats.sort((a1, b1) => (a1.vchod ?? "").localeCompare(b1.vchod ?? "", "sk", { numeric: true }) || (a1.cislo ?? "").localeCompare(b1.cislo ?? "", "sk", { numeric: true }));
+
     // ——— 9b) trh: trend zo zmlúv v okrese, likvidita k.ú., nájomný výnos, doba predaja, konkurencia, zástavba ———
     const tr = await q<{ y: number; ppm2: number | null; cen: number; region: string | null; dataset_id: string }>(
       `SELECT CAST(strftime('%Y', lp.cas) AS INTEGER) y, lp.ppm2, lp.cen, d.region, lp.dataset_id FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id
@@ -8458,7 +8488,7 @@ export const getPropertyCore = createServerFn({ method: "POST" })
       signals: { settlement, landsearch, za, up, briefs, deal, cases },
       work: { contacts: ct?.n ?? 0, lastContact: ct?.last ?? null, nextAt: ct?.nxt ?? null, comments: cm, documents: dc },
       firms, obec: { changes, upChanges }, stateContracts: { n: scN, recent: scRecent },
-      market: { trend, kuSales, rent, domDays, freePlots: { landsearch: freeLs, up: freeUp }, buildingMix },
+      flats, market: { trend, kuSales, rent, domDays, freePlots: { landsearch: freeLs, up: freeUp }, buildingMix },
     };
   });
 
