@@ -8526,8 +8526,16 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       try { fd = JSON.parse(facts.byty?.[`flat:${flat}`] ?? '{}') as Record<string, unknown>; } catch { /* poškodené */ }
       title = `Byt${fd.cislo != null ? ` č. ${String(fd.cislo)}` : ""}${fd.vchod != null ? `, vchod ${String(fd.vchod)}` : ""}${sc ? `, dom s.č. ${sc}` : ""}`;
     } else if (kind === "lv") title = `List vlastníctva č. ${lvNo}`;
-    else if (house) title = `${house.descr.replace(/\s+/g, " ").trim()}${house.sc && !house.descr.includes(house.sc) ? ` s.č. ${house.sc}` : ""}${parcels.length > 1 ? " s pozemkami" : ""}`;
-    else title = parcels.length > 1 ? `Pozemky ${parcels.length} parciel` : `Pozemok parc. č. ${main?.register === "E" ? "E " : ""}${main?.parcel_no ?? data.ref}`;
+    else if (house) {
+      // popisy z katastra bývajú verzálkami („ADMIN.BUDOVA") → bežné písmo, číslo stavby ostáva
+      let dsc = house.descr.replace(/\s+/g, " ").trim();
+      const head = dsc.split(", súp.")[0];
+      if (head === head.toUpperCase() && /[A-ZÁ-Ž]/.test(head)) dsc = head.charAt(0) + head.slice(1).toLowerCase().replace(/\.(?=\S)/g, ". ") + dsc.slice(head.length);
+      title = `${dsc}${house.sc && !house.descr.includes(house.sc) ? ` s.č. ${house.sc}` : ""}${parcels.length > 1 ? " s pozemkami" : ""}`;
+    } else {
+      const n1 = parcels.length - 1, mainNo = `${main?.register === "E" ? "E " : ""}${main?.parcel_no ?? data.ref}`;
+      title = n1 > 0 ? `Pozemok parc. č. ${mainNo} s ${n1} ${n1 === 1 ? "priľahlou parcelou" : "priľahlými parcelami"}` : `Pozemok parc. č. ${mainNo}`;
+    }
     const subtitle = [ds.ku_name, okres ? `okres ${okres}` : null, `${parcels.length} ${parcels.length === 1 ? "parcela" : parcels.length < 5 ? "parcely" : "parciel"} · ${fmt(totalArea)} m²`,
       lvs.length ? `LV ${lvs.slice(0, 6).join(", ")}${lvs.length > 6 ? "…" : ""}` : null].filter(Boolean).join(" · ");
 
