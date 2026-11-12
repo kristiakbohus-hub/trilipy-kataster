@@ -8102,6 +8102,15 @@ export type PropertyCore = {
   firms: { ico: string; name: string | null; year: number | null; revenue: number | null; assets: number | null; equity: number | null; profit: number | null }[];
   obec: { changes: { title: string | null; url: string | null; change: string | null; relevance: string; detected_at: string | null }[]; upChanges: { title: string | null; url: string | null; change: string | null; detected_at: string | null }[] };
   stateContracts: { n: number; recent: { day: string; publisher: string; kind: string; amount: number | null }[] };
+  /** trh v okrese/k.ú.: trend zo zmlúv, likvidita, nájomný výnos, doba predaja, konkurencia, zloženie zástavby */
+  market: {
+    trend: { year: number; n: number; medPpm2: number | null; medCen: number | null }[];
+    kuSales: { year: number; n: number }[];
+    rent: { ptype: string; saleM2: number | null; rentM2: number | null; yieldPct: number | null; day: string | null } | null;
+    domDays: { median: number | null; n: number } | null;
+    freePlots: { landsearch: number; up: number };
+    buildingMix: { druh: string; n: number }[];
+  };
 };
 
 async function qIn<T>(sqlWithPh: (ph: string) => string, head: unknown[], list: unknown[], tail: unknown[] = []): Promise<T[]> {
@@ -8391,6 +8400,39 @@ export const getPropertyCore = createServerFn({ method: "POST" })
     const scN = kuName ? (await q<{ n: number }>("SELECT COUNT(*) n FROM state_contracts WHERE ku_name=?", [kuName]).catch(() => []))[0]?.n ?? 0 : 0;
     const scRecent = kuName ? await q<{ day: string; publisher: string; kind: string; amount: number | null }>("SELECT day, publisher, kind, amount FROM state_contracts WHERE ku_name=? ORDER BY day DESC LIMIT 5", [kuName]).catch(() => []) : [];
 
+    // ——— 9b) trh: trend zo zmlúv v okrese, likvidita k.ú., nájomný výnos, doba predaja, konkurencia, zástavba ———
+    const tr = await q<{ y: number; ppm2: number | null; cen: number; region: string | null; dataset_id: string }>(
+      `SELECT CAST(strftime('%Y', lp.cas) AS INTEGER) y, lp.ppm2, lp.cen, d.region, lp.dataset_id FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id
+        WHERE lp.kind = ? AND lp.flag IS NULL AND lp.cas >= date('now','-8 years') ${compKind === "pozemok" ? "AND lp.land_m2 BETWEEN 250 AND 3000" : ""} LIMIT 20000`, [compKind]).catch(() => []);
+    const byY = new Map<number, { p: number[]; c: number[] }>(); const kuY = new Map<number, number>();
+    for (const r of tr) {
+      if (r.dataset_id === ds.id) kuY.set(r.y, (kuY.get(r.y) ?? 0) + 1);
+      if (!(r.dataset_id === ds.id || (okres && okresFromRegion(r.region) === okres))) continue;
+      const g = byY.get(r.y) ?? { p: [], c: [] }; if (r.ppm2 && r.ppm2 > 0) g.p.push(r.ppm2); if (r.cen > 0) g.c.push(r.cen); byY.set(r.y, g);
+    }
+    const trend = [...byY].sort((a1, b1) => a1[0] - b1[0]).map(([year, g]) => ({ year, n: g.c.length, medPpm2: pctl(g.p, 0.5), medCen: pctl(g.c, 0.5) }));
+    const kuSales = [...kuY].sort((a1, b1) => a1[0] - b1[0]).map(([year, n]) => ({ year, n }));
+    const ptypeM = compKind === "dom" ? "dom" : compKind === "byt" ? "byt" : "pozemok";
+    const okresForms = okres ? [okres, `okres ${okres}`] : [];
+    let rent: PropertyCore["market"]["rent"] = null;
+    if (okresForms.length) {
+      const day = (await q<{ d: string | null }>("SELECT MAX(day) d FROM market_index").catch(() => []))[0]?.d ?? null;
+      const mi = day ? await q<{ deal: string; median_eur_m2: number | null }>(
+        "SELECT deal, median_eur_m2 FROM market_index WHERE day=? AND obec IS NULL AND ptype=? AND okres IN (?,?) AND deal IN ('predaj','najom')", [day, ptypeM, ...okresForms]).catch(() => []) : [];
+      const sale = mi.find((x) => x.deal === "predaj")?.median_eur_m2 ?? null, rm = mi.find((x) => x.deal === "najom")?.median_eur_m2 ?? null;
+      if (sale || rm) rent = { ptype: ptypeM, saleM2: sale, rentM2: rm, yieldPct: sale && rm ? Math.round(((rm * 12) / sale) * 1000) / 10 : null, day };
+    }
+    const dm = okresForms.length ? await q<{ d: number }>(
+      "SELECT julianday(removed_at) - julianday(first_seen) d FROM market_listings WHERE ptype=? AND deal='predaj' AND removed_at IS NOT NULL AND removed_at >= date('now','-365 days') AND okres IN (?,?) AND first_seen IS NOT NULL LIMIT 4000",
+      [ptypeM, ...okresForms]).catch(() => []) : [];
+    const days = dm.map((x) => x.d).filter((x) => x >= 1 && x < 1500);
+    const domDays = days.length >= 5 ? { median: pctl(days, 0.5), n: days.length } : null;
+    const freeLs = (await q<{ n: number }>("SELECT COUNT(*) n FROM landsearch_results WHERE kod_ku=?", [kod]).catch(() => []))[0]?.n ?? 0;
+    const freeUp = (await q<{ n: number }>("SELECT COUNT(*) n FROM up_cases WHERE kod_ku=? AND classification='MATCH'", [kod]).catch(() => []))[0]?.n ?? 0;
+    const buildingMix = await q<{ druh: string; n: number }>(
+      `SELECT CASE WHEN INSTR(descr, ', súp.') > 0 THEN SUBSTR(descr, 1, INSTR(descr, ', súp.') - 1) ELSE descr END AS druh, COUNT(*) n
+         FROM lv_buildings WHERE dataset_id=? GROUP BY druh ORDER BY n DESC LIMIT 10`, [ds.id]).catch(() => []);
+
     // ——— 10) názov ———
     const house = buildings.find((b) => /rodinn/i.test(b.descr)) ?? buildings[0];
     const totalArea = parcels.reduce((s, p) => s + (p.area_m2 ?? 0), 0);
@@ -8416,6 +8458,7 @@ export const getPropertyCore = createServerFn({ method: "POST" })
       signals: { settlement, landsearch, za, up, briefs, deal, cases },
       work: { contacts: ct?.n ?? 0, lastContact: ct?.last ?? null, nextAt: ct?.nxt ?? null, comments: cm, documents: dc },
       firms, obec: { changes, upChanges }, stateContracts: { n: scN, recent: scRecent },
+      market: { trend, kuSales, rent, domDays, freePlots: { landsearch: freeLs, up: freeUp }, buildingMix },
     };
   });
 

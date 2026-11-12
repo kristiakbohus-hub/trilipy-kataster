@@ -227,3 +227,132 @@ export function completeness(d: SheetData): { have: number; total: number; missi
   ];
   return { have: blocks.filter((b) => b[1]).length, total: blocks.length, missing: blocks.filter((b) => !b[1]).map((b) => b[0]) };
 }
+
+// ——— tvar pozemku z obrysu (v prehliadači; bez zápisu do DB) ———
+export type Shape = { dlzka: number; sirka: number; priemSirka: number; kompakt: number; tvar: string; osAz: number; obalkaM2: number; domOk: boolean | null; obvod: number; plocha: number };
+function hull(pts: [number, number][]): [number, number][] {
+  const p = [...pts].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (p.length < 3) return p;
+  const cr = (o: [number, number], a: [number, number], b: [number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo: [number, number][] = [], up: [number, number][] = [];
+  for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+  for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+/** Rozmery z najmenšieho opísaného obdĺžnika, kompaktnosť 4πA/O², orientácia dlhšej osi (0° = sever),
+ *  zastavateľná obálka ≈ plocha po odstupe 2 m od hraníc (vyhl. 532/2002 § 6), či sa zmestí dom 10 × 12 m. */
+export function shapeOf(geometryJson: string | null): Shape | null {
+  if (!geometryJson) return null;
+  let ring: [number, number][] = [];
+  try {
+    const j = JSON.parse(geometryJson) as { type: string; coordinates: unknown };
+    if (j.type === "Polygon") ring = (j.coordinates as [number, number][][])[0];
+    else if (j.type === "MultiPolygon") ring = (j.coordinates as [number, number][][][]).map((x) => x[0]).sort((a, b) => b.length - a.length)[0];
+  } catch { return null; }
+  if (!ring || ring.length < 4) return null;
+  const lat0 = ring.reduce((s, c) => s + c[1], 0) / ring.length, lng0 = ring.reduce((s, c) => s + c[0], 0) / ring.length;
+  const kx = Math.cos((lat0 * Math.PI) / 180) * 111320, ky = 110540;
+  const P = ring.map((c) => [(c[0] - lng0) * kx, (c[1] - lat0) * ky] as [number, number]);
+  let area = 0, per = 0;
+  for (let i = 0; i < P.length - 1; i++) { area += P[i][0] * P[i + 1][1] - P[i + 1][0] * P[i][1]; per += Math.hypot(P[i + 1][0] - P[i][0], P[i + 1][1] - P[i][1]); }
+  area = Math.abs(area) / 2;
+  if (area < 1) return null;
+  const H = hull(P);
+  let best = { a: Infinity, w: 0, h: 0, ang: 0 };
+  for (let i = 0; i < H.length; i++) {
+    const a = H[i], b = H[(i + 1) % H.length];
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]), c = Math.cos(-ang), s = Math.sin(-ang);
+    let minx = Infinity, maxx = -Infinity, miny = Infinity, maxy = -Infinity;
+    for (const q of H) { const x = q[0] * c - q[1] * s, y = q[0] * s + q[1] * c; minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
+    const w = maxx - minx, h = maxy - miny;
+    if (w * h < best.a) best = { a: w * h, w, h, ang };
+  }
+  const dlzka = Math.max(best.w, best.h), sirka = Math.min(best.w, best.h);
+  const longAng = best.w >= best.h ? best.ang : best.ang + Math.PI / 2;
+  const osAz = Math.round(((90 - (longAng * 180) / Math.PI) % 180 + 180) % 180);
+  const kompakt = (4 * Math.PI * area) / (per * per);
+  const priemSirka = area / Math.max(dlzka, 1);
+  const fill = area / Math.max(best.a, 1);
+  const obalkaM2 = Math.max(0, Math.round((dlzka - 4) * (priemSirka - 4) * Math.min(1, fill + 0.1)));
+  const domOk = priemSirka - 4 >= 10 && dlzka - 4 >= 12 ? true : sirka - 4 < 10 ? false : null;
+  const ratio = dlzka / Math.max(sirka, 0.1);
+  const tvar = priemSirka < 8 || ratio > 6 ? "úzky pás" : kompakt < 0.45 ? "členitý" : ratio > 2.2 ? "pretiahnutý" : "pravidelný";
+  return { dlzka: Math.round(dlzka), sirka: Math.round(sirka), priemSirka: Math.round(priemSirka), kompakt: Math.round(kompakt * 100) / 100, tvar, osAz, obalkaM2, domOk, obvod: Math.round(per), plocha: Math.round(area) };
+}
+
+// ——— pravdepodobnosť, že vlastníci predajú (z katastra; orientačné poradie pre oslovenie, nie predpoveď) ———
+export function sellPropensity(d: SheetData): { score: number; factors: string[] } {
+  const c = d.core;
+  if (c.listings.some((l) => !l.removed)) return { score: 100, factors: ["nehnuteľnosť je pravdepodobne v inzercii"] };
+  let s = 15; const f: string[] = [];
+  const owners = c.owners.perLv.reduce((t, l) => t + l.count, 0);
+  if (owners >= 6) { s += 20; f.push(`${owners} spoluvlastníkov`); } else if (owners >= 3) { s += 10; f.push(`${owners} spoluvlastníci`); }
+  const nowY = new Date().getFullYear();
+  const inh = Math.max(0, ...c.legalYears.map((y) => y.inh_max ?? 0), ...c.acquisitions.filter((a) => a.kind === "inheritance").map((a) => a.lastYear ?? 0));
+  if (inh && nowY - inh <= 3) { s += 20; f.push(`dedičstvo ${inh}`); }
+  const lastBuy = Math.max(0, ...c.legalYears.map((y) => Math.max(y.sale_max ?? 0, y.gift_max ?? 0, y.inh_max ?? 0)));
+  if (lastBuy && nowY - lastBuy >= 20) { s += 10; f.push(`bez zmeny vlastníka od ${lastBuy}`); }
+  if (c.flags.some((x) => x.kind === "exekucia" || x.kind === "konkurz")) { s += 25; f.push("exekúcia / konkurz"); }
+  if (c.auctions.length) { s += 30; f.push("dražba"); }
+  for (const lv of c.lvs) {
+    const v = fact(c, "vlastnici", `lv:${lv}`);
+    if (v && Number(v.pravdepodobne_zosnuli ?? 0) > 0) { s += 10; f.push("pravdepodobne zosnulý vlastník"); break; }
+  }
+  for (const lv of c.lvs) {
+    const v = fact(c, "vlastnici", `lv:${lv}`);
+    if (v && Number(v.zahranicie ?? 0) > 0) { s += 5; f.push("vlastník v zahraničí"); break; }
+  }
+  if (c.signals.za.some((z) => z.classification === "MATCH")) { s += 15; f.push("zdedený byt (scenár)"); }
+  return { score: Math.min(99, s), factors: f };
+}
+
+// ——— vhodnosť pre typ využitia (0–100, s dôvodmi; chýbajúci údaj = bez bodov, nie trest) ———
+export function suitability(d: SheetData): { key: string; label: string; score: number; plus: string[]; minus: string[] }[] {
+  const c = d.core; const mk = mainKey(c);
+  const t = mk ? fact(c, "teren", mk) : null, sl = mk ? fact(c, "slnko", mk) : null, osm = mk ? fact(c, "osm", mk) : null;
+  const z = zoneOf(d); const hits = (d.limits?.items ?? []).filter((h) => h.hit).map((h) => h.key);
+  const area = c.parcels.filter((p) => p.register === "C").reduce((s, p) => s + (p.area_m2 ?? 0), 0);
+  const pr = pristupState(c);
+  const num = (v: unknown) => (typeof v === "number" ? v : null);
+  const mk1 = (label: string, key: string) => ({ key, label, score: 50, plus: [] as string[], minus: [] as string[] });
+  const dom = mk1("Rodinný dom", "dom"), chata = mk1("Chata / rekreácia", "chata"), inv = mk1("Investícia (prenájom)", "invest"), dev = mk1("Developer (viac jednotiek)", "dev");
+  const adj = (o: typeof dom, v: number, why: string) => { o.score += v; (v >= 0 ? o.plus : o.minus).push(why); };
+  if (z.name) { if (RESIDENTIAL.test(z.name)) { adj(dom, 15, "ÚP na bývanie"); adj(dev, 15, "ÚP na bývanie"); } else if (NON_BUILD.test(z.name)) { adj(dom, -25, "ÚP nie je na bývanie"); adj(dev, -30, "ÚP nie je na bývanie"); } if (/rekrea/i.test(z.name)) adj(chata, 15, "ÚP rekreácia"); }
+  if (pr.state === "ok") { adj(dom, 10, "priamy prístup z cesty"); adj(dev, 5, "prístup z cesty"); } else if (pr.state === "bad") { adj(dom, -20, "bez prístupu"); adj(dev, -20, "bez prístupu"); adj(chata, -10, "bez prístupu"); }
+  const sk = num(t?.sklon_avg); if (sk != null) { if (sk < 8) { adj(dom, 5, "mierny sklon"); adj(dev, 10, "mierny sklon"); } else if (sk > 20) { adj(dom, -10, `sklon ${Math.round(sk)} %`); adj(dev, -15, `sklon ${Math.round(sk)} %`); } }
+  const winter = num(sl?.dec_slnko); if (winter != null) { if (winter >= 5) { adj(dom, 8, `${winter} h slnka v decembri`); adj(chata, 5, "slnko v zime"); } else if (winter < 2) { adj(dom, -8, `len ${winter} h slnka v decembri`); adj(chata, -5, "málo slnka v zime"); } }
+  const juh = num(t?.juh_podiel); if (juh != null && juh >= 50) { adj(dom, 5, "južná orientácia"); adj(chata, 5, "južná orientácia"); }
+  if (hits.includes("zaplava")) { adj(dom, -25, "záplavové územie"); adj(dev, -25, "záplavové územie"); adj(inv, -15, "záplavové územie"); }
+  if (hits.includes("zosuvy")) { adj(dom, -20, "zosuv"); adj(dev, -20, "zosuv"); }
+  if (osm?.el_op === true) { adj(dom, -10, "ochranné pásmo vedenia"); adj(dev, -10, "ochranné pásmo vedenia"); }
+  const skola = num(osm?.skola), obchod = num(osm?.potrav), bus = num(osm?.bus), lyze = num(osm?.lyze), tza = num(osm?.t_za);
+  if (skola != null && skola <= 1500) adj(dom, 5, "škola do 1,5 km");
+  if (obchod != null && obchod <= 1000) { adj(dom, 4, "obchod do 1 km"); adj(inv, 6, "obchod do 1 km"); }
+  if (bus != null && bus <= 500) { adj(inv, 6, "zastávka do 500 m"); adj(dev, 4, "zastávka blízko"); }
+  if (lyze != null && lyze <= 5000) adj(chata, 12, "lyžiarske stredisko do 5 km");
+  if (num(osm?.cesta) != null && (num(osm?.cesta) as number) > 300) adj(chata, 5, "ďalej od cesty (pokoj)");
+  if (tza != null) { if (tza <= 30) { adj(inv, 10, `Žilina ${tza} min`); adj(dev, 8, `Žilina ${tza} min`); } else if (tza > 60) { adj(inv, -8, `Žilina ${tza} min`); adj(dev, -6, "ďaleko od Žiliny"); } }
+  if (area) { if (area >= 600 && area <= 2000) adj(dom, 5, `${Math.round(area)} m²`); else if (area < 400) adj(dom, -10, "malý pozemok"); if (area >= 3000) adj(dev, 12, `${Math.round(area)} m² na viac jednotiek`); else if (area < 1500) adj(dev, -15, "malá výmera pre developera"); }
+  const r = d.core.market.rent; if (r?.yieldPct != null) adj(inv, r.yieldPct >= 5 ? 10 : r.yieldPct < 3.5 ? -8 : 0, `hrubý výnos v okrese ${r.yieldPct} %`);
+  return [dom, chata, inv, dev].map((o) => ({ ...o, score: Math.max(0, Math.min(100, Math.round(o.score))) }));
+}
+
+/** Orientačná dĺžka prípojok: siete vedú spravidla po ceste → vzdialenosť parcely od cesty + vstup na pozemok. */
+export function connectionLength(d: SheetData): number | null {
+  const mk = mainKey(d.core); const osm = mk ? fact(d.core, "osm", mk) : null;
+  const cesta = osm && typeof osm.cesta === "number" ? osm.cesta : null;
+  return cesta == null ? null : Math.round(cesta + 5);
+}
+
+/** Príslušné úrady podľa okresu a obce (overiť konkrétne pracovisko). */
+export function offices(d: SheetData): [string, string][] {
+  const ok = d.core.dataset?.okres; const obec = (d.core.dataset?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "");
+  if (!ok) return [];
+  return [
+    ["Kataster (výpis LV, vklad)", `Okresný úrad ${ok}, katastrálny odbor`],
+    ["Vyňatie z pôdneho fondu, lesy", `Okresný úrad ${ok}, pozemkový a lesný odbor (príslušnosť overiť)`],
+    ["Životné prostredie, vodné stavby", `Okresný úrad ${ok}, odbor starostlivosti o životné prostredie`],
+    ["Územný plán, daň z nehnuteľností", `Obec ${obec}`],
+    ["Stavebné konanie", "Stavebný úrad príslušný pre obec — overiť na obecnom úrade"],
+  ];
+}

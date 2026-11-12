@@ -4,7 +4,7 @@
 // NEZNÁMY stav; každá sekcia uvádza zdroj; formulácie podľa phrases.ts (Property-360 §4).
 import type { ReactNode } from "react";
 import { FACT_GROUP_LABEL, FACT_SCHEMA, type FactField } from "../lib/facts-schema";
-import { checklist, completeness, fact, mainKey, parseFact, semafor, zoneOf, type Light, type SheetData } from "../lib/property-eval";
+import { checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
 const nf = (n: number, d = 0) => n.toLocaleString("sk-SK", { maximumFractionDigits: d, minimumFractionDigits: 0 });
@@ -167,25 +167,33 @@ export function ParcelSketch({ d }: { d: SheetData }) {
   const P = (c: [number, number]) => `${(pad + (c[0] * kx - minX) * sc).toFixed(1)},${(H - pad - (c[1] * ky - minY) * sc).toFixed(1)}`;
   const barM = [5, 10, 20, 50, 100, 200, 500, 1000].find((b) => b * sc > 60) ?? 1000;
   const isMain = (no: string, reg: string) => no === d.core.main.parcelNo && reg === d.core.main.register;
+  // letecký snímok ÚGKK (WMS, EPSG:4326 = lineárne v dĺžke/šírke → sedí na náčrt v rovnakom rozsahu)
+  const lngL = -pad / (sc * kx) + minX / kx, lngR = (W - pad) / (sc * kx) + minX / kx;
+  const latT = (H - pad) / (sc * ky) + minY / ky, latB = -pad / (sc * ky) + minY / ky;
+  const orto = `https://zbgisws.skgeodesy.sk/zbgis_ortofoto_wms/service.svc/get?SERVICE=WMS&VERSION=1.1.1&REQUEST=GetMap&LAYERS=1&STYLES=&SRS=EPSG:4326&BBOX=${lngL.toFixed(6)},${latB.toFixed(6)},${lngR.toFixed(6)},${latT.toFixed(6)}&WIDTH=${W * 2}&HEIGHT=${H * 2}&FORMAT=image/jpeg`;
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full rounded-md border border-line bg-surface-2" role="img" aria-label="Náčrt parciel celku">
+    <figure className="space-y-1">
+    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full rounded-md border border-line bg-surface-2" role="img" aria-label="Náčrt parciel celku na leteckom snímku">
+      <image href={orto} x="0" y="0" width={W} height={H} preserveAspectRatio="none" opacity="0.92" />
       {ps.map((p) => ringsOf(p.geometry_json).map((r, i) => (
         <polygon key={`${p.register}${p.parcel_no}-${i}`} points={r.map(P).join(" ")}
-          fill={isMain(p.parcel_no, p.register) ? "rgba(164,85,58,.28)" : p.register === "E" ? "rgba(90,110,160,.14)" : "rgba(63,90,60,.16)"}
-          stroke={isMain(p.parcel_no, p.register) ? "#a4553a" : "#55604f"} strokeWidth={isMain(p.parcel_no, p.register) ? 2 : 1} />
+          fill={isMain(p.parcel_no, p.register) ? "rgba(255,190,90,.22)" : p.register === "E" ? "rgba(120,150,230,.18)" : "rgba(255,255,255,.12)"}
+          stroke={isMain(p.parcel_no, p.register) ? "#ffb347" : "#fff"} strokeWidth={isMain(p.parcel_no, p.register) ? 2.5 : 1.2} />
       )))}
       {ps.length <= 30 ? ps.map((p) => {
         const r = ringsOf(p.geometry_json)[0]; if (!r) return null;
         const cx = r.reduce((s, c) => s + c[0], 0) / r.length, cy = r.reduce((s, c) => s + c[1], 0) / r.length;
         const [x, y] = P([cx, cy]).split(",");
-        return <text key={`t${p.register}${p.parcel_no}`} x={x} y={y} fontSize="11" textAnchor="middle" fill="#2b2b2b">{p.register === "E" ? "E " : ""}{p.parcel_no}</text>;
+        return <text key={`t${p.register}${p.parcel_no}`} x={x} y={y} fontSize="11" textAnchor="middle" fill="#fff" stroke="#222" strokeWidth="0.35" fontWeight="600">{p.register === "E" ? "E " : ""}{p.parcel_no}</text>;
       }) : null}
       <g transform={`translate(${W - pad - barM * sc},${H - 10})`}>
         <line x1="0" y1="0" x2={barM * sc} y2="0" stroke="#333" strokeWidth="2" />
         <text x={(barM * sc) / 2} y="-4" fontSize="10" textAnchor="middle" fill="#333">{barM} m</text>
       </g>
-      <g transform={`translate(${pad},${pad + 4})`}><text fontSize="12" fill="#333" textAnchor="middle">S</text><line x1="0" y1="4" x2="0" y2="18" stroke="#333" /></g>
+      <g transform={`translate(${pad},${pad + 4})`}><text fontSize="12" fill="#fff" stroke="#333" strokeWidth="0.4" textAnchor="middle">S</text><line x1="0" y1="4" x2="0" y2="18" stroke="#fff" /></g>
     </svg>
+    <figcaption className="text-[10px] text-muted">Letecký snímok: Ortofotomozaika SR © ÚGKK SR (ZBGIS). Obrysy parciel z katastrálnej mapy.</figcaption>
+    </figure>
   );
 }
 
@@ -252,6 +260,33 @@ function HorizonChart({ hor, lat }: { hor: unknown; lat: number | null }) {
   );
 }
 
+// ——— hodnotenie: vhodnosť pre typ využitia (+ interne pravdepodobnosť predaja) ———
+function Bar({ n }: { n: number }) {
+  const col = n >= 65 ? "#4f7a4a" : n >= 45 ? "#c29434" : "#b5523f";
+  return <span className="inline-block h-1.5 w-20 overflow-hidden rounded bg-line/60 align-middle"><span className="block h-full" style={{ width: `${n}%`, background: col }} /></span>;
+}
+function Scores({ d, isClient }: { d: SheetData; isClient: boolean }) {
+  const s = suitability(d);
+  const p = isClient ? null : sellPropensity(d);
+  return (
+    <div className="grid gap-2 text-xs sm:grid-cols-2">
+      {s.map((x) => (
+        <div key={x.key} className="rounded-md border border-line/70 px-2.5 py-1.5">
+          <div className="flex items-center justify-between gap-2"><b>{x.label}</b><span className="flex items-center gap-1.5 tabular-nums"><Bar n={x.score} /> {x.score}</span></div>
+          <div className="mt-0.5 leading-snug text-muted">{[...x.plus.map((t) => `+ ${t}`), ...x.minus.map((t) => `− ${t}`)].slice(0, 6).join(" · ") || "málo údajov na hodnotenie"}</div>
+        </div>
+      ))}
+      {p ? (
+        <div className="rounded-md border border-line/70 px-2.5 py-1.5 sm:col-span-2">
+          <div className="flex items-center justify-between gap-2"><b>Pravdepodobnosť, že vlastníci predajú (interné, poradie na oslovenie)</b><span className="flex items-center gap-1.5 tabular-nums"><Bar n={p.score} /> {p.score}</span></div>
+          <div className="mt-0.5 text-muted">{p.factors.join(" · ") || "žiadny výrazný signál"}</div>
+        </div>
+      ) : null}
+      <p className="text-[10px] text-muted sm:col-span-2">Skóre je orientačné poradie z údajov v tomto liste (0–100); chýbajúci údaj nepridáva ani neuberá body.</p>
+    </div>
+  );
+}
+
 // ——— hlavný komponent ———
 export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode } }) {
   const c = d.core;
@@ -284,6 +319,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
       </header>
 
       <Lights lights={lights} />
+      <Scores d={d} isClient={isClient} />
 
       <nav className="no-print flex flex-wrap gap-1.5 text-xs">
         {nav.map(([id, label]) => <a key={id} href={`#${id}`} className="rounded border border-line px-2 py-0.5 text-muted hover:border-ink hover:text-fg">{label}</a>)}
@@ -298,6 +334,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           ["Súradnice (WGS84)", c.main.lat != null && c.main.lng != null ? `${c.main.lat.toFixed(5)}, ${c.main.lng.toFixed(5)}` : "—"],
           ["Miestny názov", String(fact(c, "mapa", mk ?? "")?.miestny_nazov ?? "—")],
         ]} />
+        {offices(d).length ? (<><Sub>Príslušné úrady</Sub><Grid rows={offices(d)} /></>) : null}
         {!isClient && c.main.lat != null ? <a className="no-print text-xs text-brand underline" href={`/mapa?ll=${c.main.lat},${c.main.lng}`}>Otvoriť na mape →</a> : null}
       </Sec>
 
@@ -305,6 +342,13 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         <Table head={["Parcela", "Výmera", "Druh pozemku", "Umiestnenie", "LV", "Úloha v celku", "Zóna ÚP"]}
           rows={c.parcels.slice(0, 60).map((p) => [`${p.register === "E" ? "E " : ""}${p.parcel_no}`, m2(p.area_m2), p.use_type ?? "—", p.placement ?? "—", p.lv_no ?? "—", p.role, p.zone ?? "—"])} />
         {c.parcels.length > 60 ? <Muted>… a ďalších {c.parcels.length - 60} parciel.</Muted> : null}
+        {(() => {
+          const rows = c.parcels.filter((p) => p.register === "C" && p.geometry_json).slice(0, 10).map((p) => [p, shapeOf(p.geometry_json)] as const).filter(([, sh]) => sh);
+          return rows.length ? (<><Sub>Tvar a rozmery (z obrysu v mape)</Sub>
+            <Table head={["Parcela", "Dĺžka × šírka", "Priem. šírka", "Tvar", "Os (°)", "Plocha po odstupe 2 m", "Dom 10 × 12 m"]}
+              rows={rows.map(([p, sh]) => [p.parcel_no, `${sh!.dlzka} × ${sh!.sirka} m`, `${sh!.priemSirka} m`, sh!.tvar, String(sh!.osAz), m2(sh!.obalkaM2), sh!.domOk === true ? "zmestí sa" : sh!.domOk === false ? "nezmestí sa" : "hraničné"])} />
+            <Muted>Orientačné z obrysu: odstup 2 m od hraníc podľa vyhl. 532/2002 § 6; ochranné pásma a regulatív ÚP môžu plochu ďalej zmenšiť. Os 0° = sever–juh, 90° = východ–západ.</Muted></>) : null;
+        })()}
         {c.buildings.length ? (<><Sub>Stavby</Sub><Table head={["Stavba", "Súpisné č.", "Na parcele", "LV"]} rows={c.buildings.map((b) => [b.descr, b.sc ?? "—", b.on_parcel ?? "—", b.lv_no])} /></>) : null}
         {Object.entries(c.facts.stavby ?? {}).filter(([k]) => k.startsWith("building:")).slice(0, 10).map(([k, raw]) => [k, parseFact(raw)] as const).map(([k, v]) => (
           <div key={k}><Sub>Stavba {k.replace("building:", "").replace("sc:", "s.č. ").replace("p:", "na parcele ")}</Sub><FactsBlock grp="stavby" data={v} /></div>
@@ -413,7 +457,8 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           <FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_ZONES} />
         </>) : <Muted>Siete z OpenStreetMap pre parcelu zatiaľ nie sú spočítané.</Muted>}
         {fact(c, "obec", kuKey) ? <FactsBlock grp="obec" data={Object.fromEntries(Object.entries(fact(c, "obec", kuKey) ?? {}).filter(([k]) => /vod|kanal|cov|plyn|distrib|elektr|stocn|voda/i.test(k)))} /> : null}
-        <Muted>Existenciu a polohu sietí potvrdí správca vo „vyjadrení k existencii sietí" (elektrina, plyn, voda, telekomunikácie).</Muted>
+        {connectionLength(d) != null ? <Grid rows={[["Orientačná dĺžka prípojok (od cesty, kde siete spravidla vedú)", `~${connectionLength(d)} m`]]} /> : null}
+        <Muted>Existenciu a polohu sietí potvrdí správca vo „vyjadrení k existencii sietí" (elektrina, plyn, voda, telekomunikácie); cenu prípojok určí projekt a cenník správcu.</Muted>
       </Sec>
 
       <Sec id="doprava" title="Doprava a vybavenosť" source="OpenStreetMap; časy jazdy odhadom po cestnej sieti.">
@@ -444,6 +489,9 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           <Table head={["Dátum zmluvy", "K.ú.", "Položky", "Výmera", "Cena v zmluve", "€/m²", "Vzdialenosť"]}
             rows={c.comparables.map((x) => [date(x.cas), x.ku ?? "—", (x.items ?? "").slice(0, 40), m2(x.land_m2 ?? x.flat_m2), eur(x.cen), x.ppm2 ? nf(x.ppm2) : "—", dist(x.distM)])} /></>)
           : <Muted>V okrese sme nenašli dosť porovnateľných zmlúv.</Muted>}
+        {c.market.trend.length ? (<><Sub>Vývoj cien zo zmlúv v okrese ({c.compStats?.kind ?? "rovnaký druh"})</Sub>
+          <Table head={["Rok", "Zmlúv", "Medián €/m²", "Medián ceny"]} rows={c.market.trend.map((t) => [t.year, t.n, t.medPpm2 != null ? nf(t.medPpm2) : "—", eur(t.medCen)])} /></>) : null}
+        {c.market.kuSales.length ? <Grid rows={[["Predaje rovnakého druhu v tomto k.ú. (zmluvy za rok)", c.market.kuSales.slice(-5).map((k) => `${k.year}: ${k.n}`).join(" · ")]]} /> : null}
         {c.prices.length ? (<><Sub>Zmluvy s cenou na tomto LV</Sub>
           <Table head={["Dátum", "LV", "Druh", "Položky", "Cena v zmluve", "€/m²"]} rows={c.prices.map((p) => [date(p.cas), p.lvNo, p.kind, (p.items ?? "").slice(0, 40), eur(p.cen), p.ppm2 ? nf(p.ppm2) : "—"])} /></>) : null}
       </Sec>
@@ -462,7 +510,11 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           ["Nová zástavba v k.ú. (satelit)", c.construction.ku?.new_ha != null ? `${nf(c.construction.ku.new_ha, 1)} ha za ${c.construction.ku.period ?? "2018–2024"}` : "—"],
           ["Ohniská novej zástavby do 1 km", c.construction.near.n ? `${c.construction.near.n} (${m2(c.construction.near.area_m2)})` : "—"],
           ["Zmluvy štátu o pozemkoch v k.ú. (CRZ)", c.stateContracts.n ? String(c.stateContracts.n) : "—"],
+          ["Bežná doba predaja v okrese (medián, posledný rok)", c.market.domDays?.median != null ? `${c.market.domDays.median} dní (${c.market.domDays.n} inzerátov)` : "—"],
+          ["Nájom vs. predaj v okrese", c.market.rent ? `${c.market.rent.rentM2 != null ? `${nf(c.market.rent.rentM2, 1)} €/m²/mes.` : "—"} · ${c.market.rent.saleM2 != null ? `${nf(c.market.rent.saleM2)} €/m²` : "—"}${c.market.rent.yieldPct != null ? ` · hrubý výnos ~${nf(c.market.rent.yieldPct, 1)} % ročne` : ""}` : "—"],
+          ["Konkurencia: voľné stavebné pozemky v k.ú. (naše scenáre)", c.market.freePlots.landsearch + c.market.freePlots.up ? `${c.market.freePlots.landsearch} príležitostí · ${c.market.freePlots.up} pôda na bývanie` : "—"],
         ]} />
+        {c.market.buildingMix.length ? (<><Sub>Zástavba v k.ú. (stavby v katastri)</Sub><div className="text-xs text-muted">{c.market.buildingMix.map((b) => `${b.druh} ${nf(b.n)}`).join(" · ")}</div></>) : null}
         {!isClient && internal?.buyers ? (<><Sub>Kto by mohol kúpiť</Sub>{internal.buyers}</>) : null}
       </Sec>
 
