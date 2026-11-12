@@ -106,7 +106,10 @@ export function semafor(d: SheetData): Light[] {
     let st: LightState = "ok";
     if (vod != null) { const ok = vod === true || Number(vod) >= 50; parts.push(ok ? "vodovod v obci" : "vodovod v obci chýba / malé pokrytie"); if (!ok) st = "warn"; }
     if (kan != null) { const ok = kan === true || Number(kan) >= 50; parts.push(ok ? "kanalizácia v obci" : "kanalizácia v obci chýba / malé pokrytie"); if (!ok) st = "warn"; }
-    if (vod == null && kan == null) st = "unknown";
+    const tr = osm && typeof osm.trafo === "number" ? osm.trafo : null;
+    if (tr != null) parts.push(`trafostanica ${tr < 1000 ? `${tr} m` : `${(tr / 1000).toFixed(1)} km`}`);
+    if (vod == null && kan == null && tr == null) st = "unknown";
+    else if (vod == null && kan == null && tr != null && tr > 500) st = "warn";
     out.push({ key: "siete", label: "Siete", state: st, text: parts.join(" · ") || "Napojenie obce neznáme — vyjadrenia správcov." });
   }
   // CENA
@@ -171,10 +174,11 @@ export function checklist(d: SheetData): { text: string; why: string }[] {
   const mk = mainKey(c);
   const osm = mk ? fact(c, "osm", mk) : null;
   if (osm) {
-    const vn = osm.vn_v_op ?? (osm.vn as Record<string, unknown> | undefined)?.v_op ?? osm.vn_ochranne_pasmo;
-    if (vn === true) add("Vedenie VN/VVN — stavba v ochrannom pásme len so súhlasom prevádzkovateľa siete", "ochranné pásmo vedenia");
-    if (osm.cintorin_v_op === true) add("Ochranné pásmo cintorína 50 m — stavba budov obmedzená", "pohrebisko");
-    if (osm.zeleznica_v_op === true) add("Ochranné pásmo dráhy — súhlas špeciálneho stavebného úradu", "železnica");
+    if (osm.el_op === true) add("Elektrické vedenie / stanica — stavba v ochrannom pásme len so súhlasom prevádzkovateľa siete (zákon 251/2012 § 43)", `ochranné pásmo${osm.el_op_kv ? ` ${String(osm.el_op_kv)} kV` : ""} podľa OSM (poloha ±5–10 m)`);
+    if (osm.plyn_op === true) add("Plynovod — bezpečnostné/ochranné pásmo, vyjadrenie SPP-distribúcia", "plynovod podľa OSM");
+    if (osm.cint_op === true) add("Ochranné pásmo pohrebiska 50 m — umiestnenie budov obmedzené", "cintorín podľa OSM");
+    if (osm.zel_op === true) add("Ochranné pásmo dráhy — súhlas špeciálneho stavebného úradu", "železnica podľa OSM");
+    if (typeof osm.cesta === "number" && osm.cesta > 50) add("Prístupová cesta je ďalej než 50 m — overiť vjazd a prípojky", `najbližšia cesta ${String(osm.cesta)} m`);
   }
   const z = zoneOf(d);
   if (!z.name) add("Vyžiadať záväznú časť ÚP / územnoplánovaciu informáciu od obce", "zónu ÚP nemáme");

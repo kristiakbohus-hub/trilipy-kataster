@@ -46,7 +46,7 @@ function Sec({ id, title, source, children }: { id: string; title: string; sourc
 }
 function Muted({ children }: { children: ReactNode }) { return <p className="text-xs text-muted">{children}</p>; }
 function Sub({ children }: { children: ReactNode }) { return <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</h3>; }
-function Grid({ rows }: { rows: [string, ReactNode][] }) {
+function Grid({ rows }: { rows: [ReactNode, ReactNode][] }) {
   const r = rows.filter(([, v]) => v != null && v !== "" && v !== "—");
   if (!r.length) return null;
   return (
@@ -93,22 +93,30 @@ function fmtVal(v: unknown, f?: FactField): ReactNode {
   if (typeof v === "object") return Object.entries(v as Record<string, unknown>).filter(([, x]) => x != null).map(([k, x]) => `${human(k)}: ${typeof x === "object" ? JSON.stringify(x) : String(x)}`).join(" · ");
   return String(v);
 }
-export function FactsBlock({ grp, data, skip = [] }: { grp: string; data: Record<string, unknown> | null; skip?: string[] }) {
+export function FactsBlock({ grp, data, skip = [], only }: { grp: string; data: Record<string, unknown> | null; skip?: string[]; only?: string[] }) {
   if (!data) return null;
   const schema = FACT_SCHEMA[grp] ?? {};
-  const entries = Object.entries(data).filter(([k, v]) => !skip.includes(k) && v != null && v !== "" && !(Array.isArray(v) && !v.length));
+  const entries = (only ? only.filter((k) => k in data).map((k) => [k, data[k]] as [string, unknown]) : Object.entries(data))
+    .filter(([k, v]) => !skip.includes(k) && v != null && v !== "" && !(Array.isArray(v) && !v.length));
   if (!entries.length) return null;
   const simple = entries.filter(([, v]) => typeof v !== "object" || (Array.isArray(v) && v.every((x) => typeof x !== "object")));
   const complex = entries.filter((e) => !simple.includes(e));
   return (
     <div className="space-y-1">
-      <Grid rows={simple.map(([k, v]) => [schema[k]?.label ?? human(k), fmtVal(v, schema[k])] as [string, ReactNode])} />
+      <Grid rows={simple.map(([k, v]) => [<span key={k} title={schema[k]?.note}>{schema[k]?.label ?? human(k)}</span>, fmtVal(v, schema[k])] as [ReactNode, ReactNode])} />
       {complex.map(([k, v]) => (
         <div key={k} className="text-xs"><span className="text-muted">{schema[k]?.label ?? human(k)}:</span> {fmtVal(v, schema[k])}</div>
       ))}
     </div>
   );
 }
+
+// skupiny kľúčov OSM modulu (schemas/osm.json) — siete vs. doprava a vybavenosť
+const OSM_NET = ["el_op", "el_op_kv", "vn", "vn_kv", "vvn", "vvn_kv", "trafo", "plyn", "plyn_op", "plyn_dn", "ropa", "lampa"];
+const OSM_ZONES = ["cint", "cint_op", "zel", "zel_op", "farma", "cov", "skladka", "bioplyn"];
+const OSM_TIME = ["t_za", "t_ca", "t_ba", "t_ova", "t_kat", "zjazd", "cesta1", "hr_cz", "hr_pl", "mesto", "mesto_n"];
+const OSM_ROAD = ["cesta", "cesta_tr", "cesta_pov", "cesta_lit", "cesta_chod", "spev"];
+const OSM_AMEN = ["skola", "ms", "lekar", "lekaren", "nemoc", "potrav", "super", "posta", "banka", "atm", "bus", "vlak", "sport", "ihrisko", "bazen", "gastro", "lyze", "nabij", "hasic", "policia", "pesi"];
 
 // ——— semafor ———
 const LIGHT_STYLE: Record<Light["state"], { bg: string; fg: string; dot: string; word: string }> = {
@@ -184,6 +192,7 @@ export function ParcelSketch({ d }: { d: SheetData }) {
 // ——— klíma podľa výšky parcely (pásma z Mac modulu) ———
 function elevOf(t: Record<string, unknown> | null): number | null {
   if (!t) return null;
+  if (typeof t.v_avg === "number") return t.v_avg;
   for (const [k, v] of Object.entries(t)) if (typeof v === "number" && /^(elev|vysk|nadm)[a-z_]*(mean|priem|avg)|^(elev|vyska|nadmorska_vyska)$/.test(k)) return v;
   return null;
 }
@@ -202,6 +211,44 @@ function KlimaBlock({ data, elev }: { data: Record<string, unknown>; elev: numbe
       {pick ? <><Sub>Pre nadmorskú výšku ~{pick[0]} m{elev != null ? ` (parcela ${Math.round(elev)} m)` : ""}</Sub><FactsBlock grp="klima" data={pick[1]} /></> : null}
       <FactsBlock grp="klima" data={rest} skip={["ref_elev"]} />
     </div>
+  );
+}
+
+// ——— horizont z terénu + dráha slnka 21. 12. / 21. 3. / 21. 6. (vlastný výpočet polohy slnka) ———
+function sunPath(lat: number, declDeg: number): [number, number][] {
+  const r = Math.PI / 180, f = lat * r, dl = declDeg * r, out: [number, number][] = [];
+  for (let h = -180; h <= 180; h += 2) {
+    const H = h * r;
+    const alt = Math.asin(Math.sin(f) * Math.sin(dl) + Math.cos(f) * Math.cos(dl) * Math.cos(H));
+    if (alt < -0.02) continue;
+    const az = (Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(f) - Math.tan(dl) * Math.cos(f)) / r + 180 + 360) % 360;
+    out.push([az, alt / r]);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
+}
+function HorizonChart({ hor, lat }: { hor: unknown; lat: number | null }) {
+  if (!Array.isArray(hor) || hor.length < 8 || lat == null) return null;
+  const n = hor.length, step = 360 / n;
+  const H = hor.map((v) => (typeof v === "number" ? v / 2 : 0));          // 0,5° jednotky → stupne
+  const W = 640, Ht = 220, x0 = 60, x1 = 300, top = 70;                      // azimut 60° (VSV) … 300° (ZSZ)
+  const X = (az: number) => 30 + ((az - x0) / (x1 - x0)) * (W - 60);
+  const Y = (alt: number) => Ht - 24 - (Math.max(alt, 0) / top) * (Ht - 40);
+  const horPts = H.map((a, i) => [i * step, a] as [number, number]).filter(([az]) => az >= x0 && az <= x1);
+  const paths: [string, number, string][] = [["21. 6.", 23.44, "#c29434"], ["21. 3.", 0, "#7a8a5a"], ["21. 12.", -23.44, "#5a6ea0"]];
+  return (
+    <svg viewBox={`0 0 ${W} ${Ht}`} className="h-auto w-full rounded-md border border-line bg-surface-2" role="img" aria-label="Horizont a dráha slnka">
+      {[0, 15, 30, 45, 60].map((a) => <g key={a}><line x1={30} x2={W - 30} y1={Y(a)} y2={Y(a)} stroke="#ddd" /><text x={4} y={Y(a) + 3} fontSize="9" fill="#777">{a}°</text></g>)}
+      {[[90, "V"], [135, "JV"], [180, "J"], [225, "JZ"], [270, "Z"]].map(([az, l]) => <text key={String(l)} x={X(Number(az))} y={Ht - 8} fontSize="10" textAnchor="middle" fill="#555">{l}</text>)}
+      {paths.map(([label, decl, col]) => {
+        const pts = sunPath(lat, decl).filter(([az]) => az >= x0 && az <= x1);
+        if (pts.length < 2) return null;
+        const mid = pts[Math.floor(pts.length / 2)];
+        return <g key={label}><polyline points={pts.map(([az, al]) => `${X(az).toFixed(1)},${Y(al).toFixed(1)}`).join(" ")} fill="none" stroke={col} strokeWidth="1.6" />
+          <text x={X(mid[0])} y={Y(mid[1]) - 4} fontSize="9" textAnchor="middle" fill={col}>{label}</text></g>;
+      })}
+      <polygon points={[`${X(x0)},${Y(0)}`, ...horPts.map(([az, al]) => `${X(az).toFixed(1)},${Y(al).toFixed(1)}`), `${X(x1)},${Y(0)}`].join(" ")} fill="rgba(85,96,79,.35)" stroke="#55604f" />
+      <text x={W - 32} y={14} fontSize="9" textAnchor="end" fill="#555">sivá = terén (horizont), čiary = dráha slnka</text>
+    </svg>
   );
 }
 
@@ -349,7 +396,9 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
 
       <Sec id="teren" title="Terén a slnko" source="Digitálny model reliéfu DMR 5.0 (ÚGKK SR, CC BY 4.0); poloha slnka (výpočet NOAA) s horizontom z terénu.">
         {teren ? <FactsBlock grp="teren" data={teren} /> : <Muted>Terén pre parcelu zatiaľ nie je spočítaný.</Muted>}
-        {mk && fact(c, "slnko", mk) ? (<><Sub>Slnko</Sub><FactsBlock grp="slnko" data={fact(c, "slnko", mk)} /></>) : null}
+        {mk && fact(c, "slnko", mk) ? (<><Sub>Slnko</Sub>
+          <HorizonChart hor={fact(c, "slnko", mk)?.hor} lat={c.main.lat} />
+          <FactsBlock grp="slnko" data={fact(c, "slnko", mk)} skip={["hor"]} /></>) : null}
       </Sec>
 
       <Sec id="klima" title="Klíma a stavebné normy" source={<>{c.factMeta.klima?.source ?? "NASA POWER, PVGIS (EÚ JRC)"}; normy STN EN (národné prílohy).</>}>
@@ -358,7 +407,11 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
       </Sec>
 
       <Sec id="siete" title="Siete a energie" source="OpenStreetMap (© prispievatelia OSM), údaje o obci (vodovody, kanalizácie, plyn); presné trasy sietí potvrdí len vyjadrenie správcu.">
-        {mk && fact(c, "osm", mk) ? <FactsBlock grp="osm" data={fact(c, "osm", mk)} /> : <Muted>Siete z OpenStreetMap pre parcelu zatiaľ nie sú spočítané.</Muted>}
+        {mk && fact(c, "osm", mk) ? (<>
+          <FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_NET} />
+          <Sub>Ochranné pásma a okolie</Sub>
+          <FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_ZONES} />
+        </>) : <Muted>Siete z OpenStreetMap pre parcelu zatiaľ nie sú spočítané.</Muted>}
         {fact(c, "obec", kuKey) ? <FactsBlock grp="obec" data={Object.fromEntries(Object.entries(fact(c, "obec", kuKey) ?? {}).filter(([k]) => /vod|kanal|cov|plyn|distrib|elektr|stocn|voda/i.test(k)))} /> : null}
         <Muted>Existenciu a polohu sietí potvrdí správca vo „vyjadrení k existencii sietí" (elektrina, plyn, voda, telekomunikácie).</Muted>
       </Sec>
@@ -371,6 +424,11 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
             ))}
           </div>
         ) : null}
+        {mk && fact(c, "osm", mk) ? (<>
+          <Sub>Čas autom</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_TIME} />
+          <Sub>Prístupová cesta</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_ROAD} />
+          <Sub>Vybavenosť (vzdušnou čiarou)</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_AMEN} />
+        </>) : null}
         {!d.access && !(mk && fact(c, "osm", mk)) ? <Muted>Dostupnosť sa nepodarilo načítať.</Muted> : null}
       </Sec>
 
