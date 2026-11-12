@@ -6777,8 +6777,15 @@ export const setSearchBriefState = createServerFn({ method: "POST" })
 export const briefQueue = createServerFn({ method: "POST" })
   .validator(z.object({
     secret: z.string(),
-    action: z.enum(["pending", "start", "progress", "finish", "fail"]),
+    action: z.enum(["pending", "start", "progress", "finish", "fail", "create"]),
     id: z.number().int().optional(),
+    // action=create (2026-11-12): zadanie vlastníka spracované priamo na Macu so špeciálnymi pravidlami — vznikne
+    // rovno ako 'running', aby ho brief_worker nespustil znova so štandardnými pravidlami.
+    brief: z.object({
+      title: z.string().min(3).max(200), client: z.string().max(120).nullable().optional(), purpose: z.string().max(40),
+      kus: z.array(z.string().regex(/^\d{6}$/)).min(1).max(64), areaMin: z.number().int(), areaMax: z.number().int(),
+      maxSlope: z.number().nullable().optional(), requireFrontage: z.boolean().optional(), otherReq: z.string().max(4000).nullable().optional(),
+    }).optional(),
     progress: z.string().max(300).optional(),
     error: z.string().max(1000).optional(),
     stats: z.string().max(200000).optional(),
@@ -6789,6 +6796,16 @@ export const briefQueue = createServerFn({ method: "POST" })
     if (data.action === "pending") {
       await q("UPDATE search_briefs SET status='pending', progress='obnovené po prerušení' WHERE status='running' AND started_at < datetime('now','-6 hours')");
       return { ok: true, briefs: await q<SearchBrief>("SELECT * FROM search_briefs WHERE status = 'pending' ORDER BY id LIMIT 5") };
+    }
+    if (data.action === "create") {
+      const bf = data.brief;
+      if (!bf) return { ok: false, message: "Chýba zadanie." };
+      const r = await q<{ id: number }>(
+        `INSERT INTO search_briefs (title,client,purpose,kus_json,area_min,area_max,max_slope,exclude_ppf,require_frontage,other_req,status,started_at,author)
+         VALUES (?,?,?,?,?,?,?,0,?,?,'running',datetime('now'),'Mac — zadanie vlastníka (špeciálne pravidlá)') RETURNING id`,
+        [bf.title, bf.client ?? null, bf.purpose, JSON.stringify(bf.kus), bf.areaMin, bf.areaMax, bf.maxSlope ?? null, bf.requireFrontage ? 1 : 0, bf.otherReq ?? null]);
+      await logAudit("brief.create", "system", `Zadanie hľadania #${r[0]?.id ?? "?"} z Macu (${bf.purpose}, ${bf.kus.length} k.ú.)`);
+      return { ok: true, started: true, briefs: r[0] ? [{ id: r[0].id } as SearchBrief] : [] };
     }
     if (!data.id) return { ok: false, message: "Chýba id zadania." };
     if (data.action === "start") {
