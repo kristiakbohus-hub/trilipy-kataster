@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiExtProbeRouteImport } from './routes/api.ext-probe'
 import { Route as NTokenRRouteImport } from './routes/n.$token'
 import { Route as ApiPropertyShareRouteImport } from './routes/api.property-share'
 import { Route as NehnutelnostRouteImport } from './routes/nehnutelnost'
@@ -193,6 +194,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiExtProbeRoute = ApiExtProbeRouteImport.update({
+  id: '/api/ext-probe',
+  path: '/api/ext-probe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NTokenRRoute = NTokenRRouteImport.update({
@@ -554,6 +560,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ext-probe': typeof ApiExtProbeRoute
   '/n/$token': typeof NTokenRRoute
   '/api/property-share': typeof ApiPropertyShareRoute
   '/nehnutelnost': typeof NehnutelnostRoute
@@ -641,6 +648,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ext-probe': typeof ApiExtProbeRoute
   '/n/$token': typeof NTokenRRoute
   '/api/property-share': typeof ApiPropertyShareRoute
   '/nehnutelnost': typeof NehnutelnostRoute
@@ -729,6 +737,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ext-probe': typeof ApiExtProbeRoute
   '/n/$token': typeof NTokenRRoute
   '/api/property-share': typeof ApiPropertyShareRoute
   '/nehnutelnost': typeof NehnutelnostRoute
@@ -818,6 +827,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ext-probe'
     | '/n/$token'
     | '/api/property-share'
     | '/nehnutelnost'
@@ -905,6 +915,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ext-probe'
     | '/n/$token'
     | '/api/property-share'
     | '/nehnutelnost'
@@ -992,6 +1003,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ext-probe'
     | '/n/$token'
     | '/api/property-share'
     | '/nehnutelnost'
@@ -1076,6 +1088,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiExtProbeRoute: typeof ApiExtProbeRoute
   NTokenRRoute: typeof NTokenRRoute
   ApiPropertyShareRoute: typeof ApiPropertyShareRoute
   NehnutelnostRoute: typeof NehnutelnostRoute
@@ -1398,6 +1411,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ext-probe': {
+      id: '/api/ext-probe'
+      path: '/api/ext-probe'
+      fullPath: '/api/ext-probe'
+      preLoaderRoute: typeof ApiExtProbeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/n/$token': {
@@ -1767,6 +1787,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiExtProbeRoute: ApiExtProbeRoute,
   NTokenRRoute: NTokenRRoute,
   ApiPropertyShareRoute: ApiPropertyShareRoute,
   NehnutelnostRoute: NehnutelnostRoute,

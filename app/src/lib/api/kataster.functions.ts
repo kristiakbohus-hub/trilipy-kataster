@@ -23,6 +23,7 @@ import type {
 import { phraseIssues, type PhraseIssue } from "../phrases";
 import { accessTimesLabel, plural, zoneLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode } from "../development";
+import { EXT_DEFS, type ExtDef } from "../ext-sources";
 
 const roleSchema = z.enum([
   "admin",
@@ -8493,44 +8494,146 @@ export const getPropertyCore = createServerFn({ method: "POST" })
   });
 
 // ——— LIST NEHNUTEĽNOSTI — úradné registre na požiadanie (geológia, voda, príroda…) ———
-// Register zdrojov overuje Mac modul 49_LIST_NEHNUTELNOSTI/zdroje (registry.json) — sem idú len zdroje, ktoré
-// pri teste naozaj odpovedali, sú bez účtu a bez poplatku. Výsledok sa cachuje 30 dní na bod (~10 m).
-type ExtSource = {
-  key: string; label: string; category: string; attribution: string;
-  url: string; layer: number | string; buffer: number;
-  fields: string[]; detailFields?: string[]; valueMap?: Record<string, string>;
-  hitText?: string; noneText?: string;
-};
-const EXT_SOURCES: ExtSource[] = [];
-export type ExtHitRow = { key: string; label: string; category: string; status: "ok" | "hit" | "none" | "error"; value: string | null; detail?: string | null; attribution: string; url?: string | null };
-async function extOne(s: ExtSource, lat: number, lng: number): Promise<ExtHitRow> {
-  const base: ExtHitRow = { key: s.key, label: s.label, category: s.category, status: "error", value: null, attribution: s.attribution };
-  const u = `${s.url}/${s.layer}/query?geometry=${lng},${lat}&geometryType=esriGeometryPoint&inSR=4326&distance=${s.buffer}&units=esriSRUnit_Meter`
-    + `&spatialRel=esriSpatialRelIntersects&outFields=${encodeURIComponent([...s.fields, ...(s.detailFields ?? [])].join(",") || "*")}&returnGeometry=false&resultRecordCount=5&f=json`;
+// Definície: src/lib/ext-sources.ts (generované z overeného registra 49_LIST_NEHNUTELNOSTI/zdroje). Len bezplatné
+// zdroje bez účtu. Výsledok sa cachuje 30 dní na bod (~10 m), uložia sa len spracované hodnoty (nie surové odpovede).
+export type ExtHitRow = { key: string; label: string; category: string; status: "ok" | "hit" | "none" | "error"; value: string | null; detail?: string | null; attribution: string; url?: string | null; risk?: boolean };
+const DREVINY: Record<string, string> = { sm: "smrek", jd: "jedľa", bk: "buk", db: "dub", bo: "borovica", sc: "smrekovec", hb: "hrab", js: "jaseň", ja: "javor", br: "breza", jl: "jelša", li: "lipa", ag: "agát", to: "topoľ", vr: "vŕba" };
+const nfx = (v: unknown, d = 1) => { const n = typeof v === "number" ? v : Number(String(v ?? "").replace(",", ".")); return Number.isFinite(n) ? n.toLocaleString("sk-SK", { maximumFractionDigits: d }) : null; };
+function extUrl(def: ExtDef, lat: number, lng: number, override?: string): string {
+  const half = 50, dLat = half / 110540, dLon = half / (111320 * Math.cos((lat * Math.PI) / 180));
+  const ctx: Record<string, string> = { lat: String(lat), lon: String(lng), lat_min: (lat - dLat).toFixed(6), lat_max: (lat + dLat).toFixed(6), lon_min: (lng - dLon).toFixed(6), lon_max: (lng + dLon).toFixed(6) };
+  const qs = Object.entries(def.params).map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v.replace(/\{(\w+)\}/g, (_m, n: string) => ctx[n] ?? `{${n}}`))}`).join("&");
+  return `${override ?? def.url}${(override ?? def.url).includes("?") ? "&" : "?"}${qs}`;
+}
+async function extFetch(url: string, text = false): Promise<unknown> {
+  const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 14000);
   try {
-    const j = asObj(await fetchJsonTimed(u, 12000)) ?? {};
-    if (j.error) return base;
-    const feats = Array.isArray(j.features) ? (j.features as { attributes?: Record<string, unknown> }[]) : null;
-    if (!feats) return base;
-    if (!feats.length) return { ...base, status: "none", value: s.noneText ?? null };
-    const a = feats[0].attributes ?? {};
-    const raw = s.fields.map((f) => a[f]).find((v) => v != null && String(v).trim() !== "");
-    const val = raw == null ? (s.hitText ?? "zásah") : (s.valueMap?.[String(raw)] ?? String(raw));
-    const det = (s.detailFields ?? []).map((f) => a[f]).filter((v) => v != null && String(v).trim() !== "").map(String).join(" · ");
-    return { ...base, status: "hit", value: val.slice(0, 160), detail: det ? det.slice(0, 200) : null };
+    const r = await fetch(url, { headers: { "user-agent": "tri-lipy/1.0 (kataster)", accept: text ? "text/plain,*/*" : "application/json,*/*" }, signal: ctrl.signal });
+    if (!r.ok) return null;
+    const t = await r.text();
+    if (text) return t;
+    try { return JSON.parse(t) as unknown; } catch { return null; }
+  } catch { return null; } finally { clearTimeout(to); }
+}
+const dig = (o: unknown, path: string): unknown => path.split(".").reduce<unknown>((a, k) => (a && typeof a === "object" ? (a as Record<string, unknown>)[k] : undefined), o);
+async function extRun(def: ExtDef, lat: number, lng: number): Promise<ExtHitRow> {
+  const base: ExtHitRow = { key: def.key, label: def.label, category: def.category, status: "error", value: null, attribution: def.provider, risk: def.risk };
+  const hit = (value: string | null, detail?: string | null, url?: string | null): ExtHitRow => ({ ...base, status: "hit", value: value?.slice(0, 180) ?? null, detail: detail ? detail.slice(0, 260) : null, url: url ?? null });
+  const none = (value: string | null = null): ExtHitRow => ({ ...base, status: "none", value });
+  const fieldsText = (a: Record<string, unknown>, skipFirst = true) => Object.entries(def.fields).slice(skipFirst ? 1 : 0)
+    .map(([k, label]) => { const v = a[k]; if (v == null || String(v).trim() === "" || String(v) === "Null") return null; return `${label}: ${def.valueMap[String(v)] ?? String(v)}`; }).filter(Boolean).join(" · ");
+  try {
+    // ——— osobitné prípady ———
+    if (def.special === "pvgis") {
+      const j = await extFetch(extUrl(def, lat, lng));
+      const ey = dig(j, "outputs.totals.fixed.E_y");
+      if (ey == null) return base;
+      return hit(`${nfx(ey, 0)} kWh za rok z 1 kWp`, `optimálny sklon ${nfx(dig(j, "inputs.mounting_system.fixed.slope.value"), 0)}°, azimut ${nfx(dig(j, "inputs.mounting_system.fixed.azimuth.value"), 0)}° od juhu · ožiarenie ${nfx(dig(j, "outputs.totals.fixed.H(i)_y"), 0)} kWh/m² · straty ${nfx(dig(j, "outputs.totals.fixed.l_total"), 0)} %`);
+    }
+    if (def.special === "dmp") {
+      const gfi = (u: string) => extFetch(extUrl(def, lat, lng, u)).then((j) => { const v = dig(j, "features.0.properties.GRAY_INDEX"); return typeof v === "number" ? v : null; });
+      const [dmp, dmr] = await Promise.all([gfi(def.url), gfi(def.url.replace("/el_dsm/", "/el/"))]);
+      if (dmp == null || dmr == null) return base;
+      const h = dmp - dmr;
+      return h < 1.5 ? none(`bez stromov či budovy v strede parcely (${nfx(h)} m)`) : hit(`${nfx(h)} m nad terénom`, "výška stromu alebo budovy v strede parcely (povrch DMP 1.0 − terén DMR 5.0)");
+    }
+    if (def.special === "eko") {
+      const t = await extFetch(extUrl(def, lat, lng), true);
+      if (typeof t !== "string") return base;
+      const a: Record<string, string> = {};
+      for (const ln of t.split("\n")) { const m = ln.match(/^\s*([A-Za-z0-9_.]+)\s*=\s*(.*)$/); if (m && !(m[1] in a)) a[m[1]] = m[2].trim().replace(/^'|'$/g, ""); }
+      if (!a.legenda_sk || a.legenda_sk === "null") return none();
+      const drev = Object.entries(DREVINY).map(([k, n]) => [n, Number(a[k])] as const).filter(([, v]) => v > 0).sort((x, y) => y[1] - x[1]).map(([n, v]) => `${n} ${v} %`).join(", ");
+      const vek = Number(a.vek_porastu_2017);
+      return hit(a.legenda_sk, [a.b1_kod && a.b1_kod !== "null" ? `Natura ${a.b1_kod}` : null, vek > 0 ? `vek porastu ${Math.round(vek)} r. (2017)` : null, drev ? `dreviny: ${drev}` : null].filter(Boolean).join(" · "));
+    }
+    if (def.method === "wms_getfeatureinfo") {
+      const j = await extFetch(extUrl(def, lat, lng));
+      const p = dig(j, "features.0.properties") as Record<string, unknown> | undefined;
+      if (!j) return base; if (!p) return none();
+      const v = Object.keys(def.fields).map((k) => p[k.replace(/^features\[0\]\.properties\./, "")]).find((x) => x != null);
+      return hit(v == null ? "zásah" : String(v), fieldsText(p));
+    }
+    if (def.method === "wfs") {
+      const j = await extFetch(extUrl(def, lat, lng));
+      if (!j) return base;
+      const f = (dig(j, "features") as { properties?: Record<string, unknown> }[] | undefined) ?? [];
+      if (!f.length) return none();
+      const p = f[0].properties ?? {};
+      const first = Object.keys(def.fields)[0];
+      return hit(`${def.fields[first]}: ${String(p[first] ?? "—")}`, fieldsText(p));
+    }
+    if (def.method === "arcgis_identify") {
+      const j = await extFetch(extUrl(def, lat, lng)) as Record<string, unknown> | null;
+      if (!j || j.error) return base;
+      if (def.special === "air") {
+        const v = Number(String(j.value ?? "").replace(",", "."));
+        return Number.isFinite(v) && j.value !== "NoData" ? hit(`${nfx(v)} µg/m³ (ročný priemer 2022)`, "limity WHO 2021: PM2,5 5 · PM10 15 · NO₂ 10 µg/m³") : none();
+      }
+      const res = (j.results as { layerId: number; attributes: Record<string, unknown> }[] | undefined) ?? [];
+      if (def.special === "flood") {
+        const qs = [...new Set(res.map((r) => def.valueMap[String(r.layerId)]).filter(Boolean))].sort((a1, b1) => Number(a1.slice(1)) - Number(b1.slice(1)));
+        return qs.length ? hit(`v záplavovom území pri ${qs[0]}`, `zasiahnuté scenáre: ${qs.join(", ")} (rozsah, nie hĺbka; mapované úseky tokov, 1. cyklus 2016)`) : none("mimo mapovaných záplavových území Q5–Q1000");
+      }
+      if (!res.length) return none();
+      if (def.special === "layers") {
+        const parts = res.filter((r) => def.fields[String(r.layerId)]).map((r) => `${def.fields[String(r.layerId)]}: ${nfx(r.attributes["Pixel Value"] ?? Object.values(r.attributes)[0], 2) ?? String(Object.values(r.attributes)[0])}`);
+        const rad = res.map((r) => r.attributes["Radónové riziko"]).find((x) => x != null);
+        return parts.length || rad ? hit(rad ? `radónové riziko: ${String(rad)}` : parts[0], parts.join(" · ")) : none();
+      }
+      const a = res[0].attributes ?? {};
+      if (def.special === "pixel_m") { const v = nfx(a["Pixel Value"]); return v ? hit(`${v} m pod terénom`, "regionálny odhad z vrtov — lokálne overiť vrtom") : none(); }
+      if (def.special === "pixel") { const v = a["UniqueValue.Pixel Value"] ?? a["Pixel Value"]; return v == null || v === "NoData" ? none() : hit(String(v), null); }
+      const firstK = Object.keys(def.fields)[0];
+      const v = a[firstK];
+      return hit(v == null ? "zásah" : def.valueMap[String(v)] ?? String(v), fieldsText(a));
+    }
+    // arcgis_query
+    const j = await extFetch(extUrl(def, lat, lng)) as Record<string, unknown> | null;
+    if (!j || j.error) return base;
+    const feats = ((j.features as { attributes?: Record<string, unknown> }[] | undefined) ?? []).map((f) => f.attributes ?? {});
+    if (def.special === "stupen") {
+      if (!feats.length) return none("1. stupeň ochrany (mimo veľkoplošného chráneného územia)");
+      const a = feats[0];
+      return hit(`${String(a.ZONA ?? "")}`.trim() || "chránené územie", `${String(a.NAM ?? "")} (${String(a.TYP_VCHU ?? "")})`);
+    }
+    if (!feats.length) return none();
+    if (def.special === "vrty") {
+      const top = feats.slice(0, 3).map((a) => [a.hlbkavrtu != null ? `hĺbka ${nfx(a.hlbkavrtu, 0)} m` : a.hlbkadiela != null ? `hĺbka ${nfx(a.hlbkadiela, 0)} m` : null,
+        a.typvrtupopis ?? a.ucelvrtuskupina, a.vodanarazena != null ? `voda narazená ${nfx(a.vodanarazena)} m` : null, a.vodaustalena != null ? `ustálená ${nfx(a.vodaustalena)} m` : null].filter(Boolean).join(", "));
+      const pdf = feats.find((a) => a.pdf)?.pdf;
+      return hit(`${feats.length} ${feats.length === 1 ? "vrt" : feats.length < 5 ? "vrty" : "vrtov"} do 500 m`, top.join(" | "), pdf ? `https://app.geology.sk/geofond/rastre/PDF/${String(pdf)}` : null);
+    }
+    const a = feats[0];
+    const firstK = Object.keys(def.fields)[0];
+    const v0 = firstK ? a[firstK] : null;
+    const val = v0 == null || String(v0).trim() === "" ? "zásah" : def.valueMap[String(v0)] ?? String(v0);
+    const more = feats.length > 1 ? `${feats.length} objektov v okolí · ` : "";
+    return hit(val, `${more}${fieldsText(a)}`);
   } catch { return base; }
+}
+async function extAll(lat: number, lng: number, refresh: boolean): Promise<{ items: ExtHitRow[]; cached: boolean }> {
+  const key = `ext2:${lat.toFixed(4)}:${lng.toFixed(4)}:${EXT_DEFS.length}`;
+  const c = await regCacheRead(key, refresh, 30 * 24 * 3600).catch(() => null);
+  if (c) return { items: c.payload as ExtHitRow[], cached: true };
+  const items = await Promise.all(EXT_DEFS.map((d) => extRun(d, lat, lng)));
+  if (items.filter((i) => i.status !== "error").length >= EXT_DEFS.length / 2) await regCacheWrite(key, "ext", items).catch(() => {});
+  return { items, cached: false };
 }
 export const getPropertyExt = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string(), lat: z.number(), lng: z.number(), datasetId: z.string().max(40).optional(), refresh: z.boolean().optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; items: ExtHitRow[]; cached?: boolean; message?: string }> => {
     if (!(await requireUser(data.token))) return { ok: false, items: [], message: "Neprihlásený." };
-    if (!EXT_SOURCES.length) return { ok: true, items: [] };
-    const key = `ext1:${data.lat.toFixed(4)}:${data.lng.toFixed(4)}:${EXT_SOURCES.length}`;
-    const c = await regCacheRead(key, !!data.refresh, 30 * 24 * 3600).catch(() => null);
-    if (c) return { ok: true, items: c.payload as ExtHitRow[], cached: true };
-    const items = await Promise.all(EXT_SOURCES.map((s) => extOne(s, data.lat, data.lng)));
-    if (items.some((i) => i.status !== "error")) await regCacheWrite(key, "ext", items).catch(() => {});
-    return { ok: true, items };
+    const r = await extAll(data.lat, data.lng, !!data.refresh);
+    return { ok: true, ...r };
+  });
+/** Diagnostika dosiahnuteľnosti registrov zo siete Cloudflare (Mac skript s alert_secret). Verejné dáta, bez cache. */
+export const probeExt = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), lat: z.number(), lng: z.number() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; items?: ExtHitRow[]; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    return { ok: true, items: await Promise.all(EXT_DEFS.map((d) => extRun(d, data.lat, data.lng))) };
   });
 
 // ——— LIST NEHNUTEĽNOSTI — klientska verzia cez odkaz (bez mien, bez internej práce) ———

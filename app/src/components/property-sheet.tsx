@@ -280,6 +280,31 @@ function HorizonChart({ hor, lat }: { hor: unknown; lat: number | null }) {
   );
 }
 
+// ——— úradné registre (geológia, voda, príroda, les, ovzdušie, internet…) zoskupené podľa oblasti ———
+function ExtBlock({ items }: { items: NonNullable<SheetData["ext"]> }) {
+  const cats = [...new Set(items.map((e) => e.category))];
+  const errs = items.filter((e) => e.status === "error").length;
+  return (
+    <div className="space-y-3">
+      {cats.map((cat) => {
+        const rows = items.filter((e) => e.category === cat && e.status !== "error");
+        if (!rows.length) return null;
+        return (
+          <div key={cat}>
+            <Sub>{cat}</Sub>
+            <Table head={["Údaj", "Výsledok", "Zdroj"]} rows={rows.map((e) => [
+              <span key="l">{e.label}{e.detail ? <span className="block text-[11px] text-muted">{e.detail}</span> : null}</span>,
+              <span key="v" style={{ color: e.status === "hit" && e.risk ? "#9c4a40" : undefined, fontWeight: e.status === "hit" && e.risk ? 600 : undefined }}>
+                {e.value ?? (e.status === "none" ? "bez prieniku v dostupnom pokrytí" : "—")}{e.url ? <> · <a href={e.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">dokument</a></> : null}
+              </span>, e.attribution])} />
+          </div>
+        );
+      })}
+      {errs ? <Muted>{errs} z {items.length} registrov práve neodpovedalo — stav pri nich je neznámy.</Muted> : null}
+    </div>
+  );
+}
+
 // ——— hodnotenie: vhodnosť pre typ využitia (+ interne pravdepodobnosť predaja) ———
 function Bar({ n }: { n: number }) {
   const col = n >= 65 ? "#4f7a4a" : n >= 45 ? "#c29434" : "#b5523f";
@@ -457,9 +482,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
             <span key="r" style={{ color: h.error ? "#888" : h.hit ? "#9c4a40" : "#3f5a3c" }}>{h.error ? "nedostupné" : h.hit ? `zásah${h.count > 1 ? ` (${h.count}×)` : ""}` : "bez prieniku"}</span>])} />
         ) : <Muted>Registre limitov sa nepodarilo načítať.</Muted>}
         {d.limits?.landPrice ? <Grid rows={[["Úradná cena poľnohospodárskej pôdy", `${nf(d.limits.landPrice.eurM2, 2)} €/m² (${d.limits.landPrice.attribution})`]]} /> : null}
-        {d.ext?.length ? (<><Sub>Geológia, voda, príroda a ďalšie registre</Sub>
-          <Table head={["Oblasť", "Údaj", "Výsledok"]} rows={d.ext.map((e) => [e.category, <span key="l">{e.label}{e.detail ? <span className="text-muted"> · {e.detail}</span> : null}</span>,
-            <span key="v" style={{ color: e.status === "error" ? "#888" : e.status === "hit" ? "#8a6418" : undefined }}>{e.status === "error" ? "nedostupné" : e.value ?? (e.status === "none" ? "bez prieniku" : "—")}</span>])} /></>) : null}
+        {d.ext?.length ? <ExtBlock items={d.ext} /> : null}
       </Sec>
 
       <Sec id="teren" title="Terén a slnko" source="Digitálny model reliéfu DMR 5.0 (ÚGKK SR, CC BY 4.0); poloha slnka (výpočet NOAA) s horizontom z terénu.">

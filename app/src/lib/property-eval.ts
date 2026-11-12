@@ -3,7 +3,7 @@
 // je NEZNÁMY stav, nikdy „v poriadku". Formulácie prechádzajú phrase-guardom v builde.
 import type { PropertyCore, LimitsResult, AvmResult } from "./api/kataster.functions";
 
-export type ExtHit = { key: string; label: string; category: string; status: "ok" | "hit" | "none" | "error"; value: string | null; detail?: string | null; attribution: string; url?: string | null };
+export type ExtHit = { key: string; label: string; category: string; status: "ok" | "hit" | "none" | "error"; value: string | null; detail?: string | null; attribution: string; url?: string | null; risk?: boolean };
 export type SheetData = {
   core: PropertyCore;
   limits: LimitsResult | null;
@@ -82,10 +82,13 @@ export function semafor(d: SheetData): Light[] {
   // LIMITY
   const items = d.limits?.items ?? [];
   const hits = items.filter((h) => h.hit);
-  const extBad = (d.ext ?? []).filter((e) => e.status === "hit" && /povod|záplav|zaplav|rad[oó]n.*vysok|zosuv/i.test(`${e.label} ${e.value ?? ""}`));
+  const ex = (k: string) => (d.ext ?? []).find((e) => e.key === k && e.status === "hit");
+  const extBad = [ex("voda_zaplava_q5_q1000"), ex("geo_dobyvaci_priestor"), ex("geo_chlu"), (ex("geo_radon")?.value ?? "").includes("vysok") ? ex("geo_radon") : undefined,
+    /vysok|veľmi/i.test(ex("geo_nachylnost_svahove_pohyby")?.value ?? "") ? ex("geo_nachylnost_svahove_pohyby") : undefined].filter((x): x is NonNullable<typeof x> => !!x);
+  const extWarn = (d.ext ?? []).filter((e) => e.status === "hit" && e.risk && !extBad.includes(e));
   if (!items.length) out.push({ key: "limity", label: "Limity a riziká", state: "unknown", text: "Registre limitov sa nepodarilo načítať." });
   else if (hits.some((h) => BAD_LIMITS.has(h.key)) || extBad.length) out.push({ key: "limity", label: "Limity a riziká", state: "bad", text: [...hits.filter((h) => BAD_LIMITS.has(h.key)).map((h) => h.label), ...extBad.map((e) => e.label)].slice(0, 3).join(", ") });
-  else if (hits.length) out.push({ key: "limity", label: "Limity a riziká", state: "warn", text: hits.map((h) => h.label).slice(0, 3).join(", ") });
+  else if (hits.length || extWarn.length) out.push({ key: "limity", label: "Limity a riziká", state: "warn", text: [...hits.map((h) => h.label), ...extWarn.map((e) => e.label)].slice(0, 3).join(", ") });
   else if (items.every((h) => h.error)) out.push({ key: "limity", label: "Limity a riziká", state: "unknown", text: "Registre neodpovedali." });
   else out.push({ key: "limity", label: "Limity a riziká", state: "ok", text: "V sledovaných registroch bez zásahu." });
   // ÚP
@@ -187,14 +190,27 @@ export function checklist(d: SheetData): { text: string; why: string }[] {
   const agri = c.parcels.some((p) => /orn|trval|záhrad|zahrad|vinic|chmel|ovocn/i.test(p.use_type ?? ""));
   if (agri) {
     add("Poľnohospodárska pôda: pred stavbou vyňatie z pôdneho fondu a odvod", c.parcels.find((p) => p.odnatie_eur)?.odnatie_eur ? "odvod podľa BPEJ" : "druh pozemku");
-    add("Predaj poľnohospodárskeho pozemku mimo zastavaného územia — zverejnenie ponuky podľa zákona 140/2014 Z. z.", "zákonný postup prevodu");
+    add("Prevod poľnohospodárskeho pozemku mimo zastavaného územia — overiť aktuálne podmienky podľa zákona 140/2014 Z. z. v platnom znení", "zákonný postup prevodu");
   }
   for (const e of d.ext ?? []) {
     if (e.status !== "hit") continue;
-    if (/rad[oó]n/i.test(e.label) && /stredn|vysok/i.test(e.value ?? "")) add("Radón: meranie a protiradónová izolácia", `${e.label}: ${e.value}`);
-    if (/lpis|poľnohospodársk.*diel|diel/i.test(e.label)) add("Pozemok obhospodaruje poľnohospodár — overiť nájomnú zmluvu a výpovednú lehotu", e.label);
-    if (/vodárensk|PHO|ochranné pásmo vodn/i.test(e.label)) add("Ochranné pásmo vodného zdroja — obmedzenia (vrt, žumpa, hnojenie)", e.label);
-    if (/ložisk|dobývac/i.test(e.label)) add("Chránené ložiskové územie / dobývací priestor — súhlas obvodného banského úradu", e.label);
+    const w = `${e.label}: ${e.value ?? ""}`;
+    switch (e.key) {
+      case "geo_radon": if (/stredn|vysok/i.test(e.value ?? "")) add("Radón: protiradónová izolácia a meranie objemovej aktivity radónu", w); break;
+      case "voda_zaplava_q5_q1000": add("Záplavové územie: poistenie, výška podlahy nad hladinou, vyjadrenie správcu toku", w); break;
+      case "geo_nachylnost_svahove_pohyby": if (/stredn|vysok|veľmi/i.test(e.value ?? "")) add("Náchylnosť na svahové pohyby — inžinierskogeologický prieskum pred stavbou", w); break;
+      case "geo_chlu": case "geo_dobyvaci_priestor": add("Chránené ložiskové územie / dobývací priestor — záväzné stanovisko obvodného banského úradu", w); break;
+      case "voda_ochranne_pasmo_vodneho_zdroja": add("Ochranné pásmo vodného zdroja — obmedzenia (vrt, žumpa, hnojenie), vyjadrenie orgánu štátnej vodnej správy", w); break;
+      case "voda_chvo": add("Chránená vodohospodárska oblasť — obmedzenia činností podľa vodného zákona", w); break;
+      case "voda_hydromelioracie_odvodnenie": case "voda_hydromelioracie_zavlaha": add("Hydromelioračné zariadenie v blízkosti — vyjadrenie Hydromeliorácie, š. p.", w); break;
+      case "prir_natura_uev": case "prir_natura_chvu": add("Územie Natura 2000 — posúdenie vplyvu zámeru, vyjadrenie orgánu ochrany prírody", w); break;
+      case "prir_mchu": add("Maloplošné chránené územie — súhlas orgánu ochrany prírody", w); break;
+      case "prir_vchu_zona_stupen": if (/III|IV|V\./.test(e.value ?? "")) add("Vyšší stupeň ochrany prírody — výstavba len so súhlasom orgánu ochrany prírody", w); break;
+      case "prir_lpis_diel": add("Pozemok je v poľnohospodárskom diele (LPIS) — overiť nájom s poľnohospodárom a výpovednú lehotu", w); break;
+      case "env_seveso": add("V okolí je prevádzka s rizikom závažnej priemyselnej havárie — zohľadniť bezpečnostné pásmo", w); break;
+      case "geo_kontaminacia_pod": add("Možná kontaminácia pôdy — overiť rozbor pôdy pri záhrade/pestovaní", w); break;
+      case "mapa_lps_vzdusny_priestor_uas": add("Vzdušný priestor letiska — obmedzenia výšky stavieb a dronov, vyjadrenie Dopravného úradu", w); break;
+    }
   }
   return out;
 }
