@@ -489,6 +489,8 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
 
       <Sec id="up" title="Územný plán a zastavateľnosť" source="Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.">
         <Grid rows={[["Funkčná zóna", z.name ?? "nemáme zónu ÚP pre parcelu"]]} />
+        {mk && fact(c, "up", mk) ? (<><Sub>Zóna z výkresu ÚP (georeferencovaný výkres, orientačné)</Sub><FactsBlock grp="up" data={fact(c, "up", mk)} /></>) : null}
+        {fact(c, "up", kuKey) ? <FactsBlock grp="up" data={Object.fromEntries(Object.entries(fact(c, "up", kuKey) ?? {}).filter(([k]) => ["zdroj", "dokumenty", "metoda", "presnost_m", "poznamka"].includes(k)))} /> : null}
         {d.dev ? (
           <Grid rows={[
             [d.dev.proxy ? "Regulatív (odvodený, nie z ÚP)" : "Regulatív (z ÚP)", `${d.dev.regName ?? "—"} (IZP ${d.dev.izp ?? "—"} · KZ ${d.dev.kz ?? "—"} · IPP ${d.dev.ipp ?? "—"})`],

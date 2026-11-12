@@ -2230,6 +2230,95 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "note": "menej ako 3 bunky 2 m so stredom v parcele; použité bunky dotknuté obrysom"
     }
   },
+  "up": {
+    "zona": {
+      "label": "Funkčné využitie podľa ÚP",
+      "kind": "text",
+      "note": "Kategória plochy z komplexného výkresu ÚP obce (odvodené z rastrového/PDF výkresu — orientačné)"
+    },
+    "kat": {
+      "label": "Kód kategórie",
+      "kind": "text",
+      "note": "byvanie_rd, byvanie_bd, zmiesane, ov, vyroba, polno_vyroba, tech, doprava, sport, rekreacia, zelen, zahrady, orna, ttp, pol_poda, les, voda"
+    },
+    "rodina": {
+      "label": "Rodina zóny (engine)",
+      "kind": "text",
+      "note": "Rovnaké rodiny ako gold_li_engine (bývanie/rekreácia, hromadné bývanie, OV/zmiešané, výroba/technická, šport, zeleň/orná/lesy, vodné, doprava)"
+    },
+    "podiel": {
+      "label": "Podiel dominantnej zóny na parcele",
+      "unit": "%",
+      "kind": "number",
+      "note": "0–1; podiel zo zaradených pixelov výkresu v obryse parcely"
+    },
+    "pokrytie": {
+      "label": "Čitateľnosť výkresu v parcele",
+      "unit": "%",
+      "kind": "number",
+      "note": "0–1; podiel plochy parcely, kde výkres má rozpoznateľnú farbu legendy (zvyšok čiary, text, biela)"
+    },
+    "jednoznacne": {
+      "label": "Zóna jednoznačná",
+      "kind": "bool",
+      "note": "podiel ≥ 50 % a pokrytie ≥ 25 %; inak len odhad"
+    },
+    "dalsie": {
+      "label": "Ďalšie zóny v parcele",
+      "kind": "list",
+      "note": "[[zóna, podiel], …] ak ≥ 10 %"
+    },
+    "legenda": {
+      "label": "Položka legendy výkresu",
+      "kind": "text",
+      "note": "text z legendy výkresu"
+    },
+    "presnost_m": {
+      "label": "Presnosť polohy výkresu",
+      "unit": "m",
+      "kind": "number",
+      "note": "RMSE vlícovacích bodov (min. 2 m / pol pixelu výkresu)"
+    },
+    "vzorka": {
+      "label": "Spôsob vzorky",
+      "kind": "text",
+      "note": "pri malých parcelách okno okolo centroidu"
+    },
+    "metoda": {
+      "label": "Metóda",
+      "kind": "text",
+      "note": "georef na VGI + legenda"
+    },
+    "zdroj": {
+      "label": "Zdroj ÚP (k.ú.)",
+      "kind": "text",
+      "note": "riadok subjectType=ku"
+    },
+    "dokumenty": {
+      "label": "Použité výkresy ÚP",
+      "kind": "list",
+      "note": "názov, URL, dátum, stránka"
+    },
+    "parciel_c_so_zonou": {
+      "label": "Parciel C so zónou",
+      "kind": "number",
+      "note": "jednoznačné"
+    },
+    "parciel_c_s_odhadom": {
+      "label": "Parciel C s odhadom zóny",
+      "kind": "number",
+      "note": "vrátane nejednoznačných"
+    },
+    "parciel_e_so_zonou": {
+      "label": "Parciel E so zónou",
+      "kind": "number",
+      "note": "jednoznačné"
+    },
+    "poznamka": {
+      "label": "Poznámka",
+      "kind": "text"
+    }
+  },
   "vlastnici": {
     "pocet": {
       "label": "Počet zápisov v časti B",
@@ -2318,5 +2407,5 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
 export const FACT_GROUP_LABEL: Record<string, string> = {
   teren: "Terén", slnko: "Slnko a svetlo", stavby: "Stavby", byty: "Byty a nebytové priestory", pristup: "Prístup z cesty",
   susedia: "Susedné parcely", mapa: "Z katastrálnej mapy", bpej: "Pôda (BPEJ)", vlastnici: "Vlastníci — súhrn",
-  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci",
+  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci", up: "Územný plán z výkresu",
 };
