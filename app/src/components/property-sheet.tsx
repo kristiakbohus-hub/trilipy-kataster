@@ -199,6 +199,31 @@ export function ParcelSketch({ d }: { d: SheetData }) {
   );
 }
 
+// ——— III. vojenské mapovanie (1869–1887), ÚGKK WMS v EPSG:3857, výrez ±650 m so stredom parcely ———
+function HistoricMap({ lat, lng }: { lat: number; lng: number }) {
+  const R = 20037508.34;
+  const mx = (lng * R) / 180, my = (Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180)) * (R / 180);
+  const h = 650;
+  const src = `https://zbgisws.skgeodesy.sk/hm_III_vm/service.svc/get?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=1&STYLES=&CRS=EPSG:3857&BBOX=${(mx - h).toFixed(1)},${(my - h).toFixed(1)},${(mx + h).toFixed(1)},${(my + h).toFixed(1)}&WIDTH=512&HEIGHT=512&FORMAT=image/jpeg`;
+  return (
+    <figure className="space-y-1">
+      <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded-md border border-line bg-surface-2">
+        <img src={src} alt="Historická mapa okolia (III. vojenské mapovanie)" className="block h-auto w-full" loading="lazy" />
+        <span aria-hidden className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2" style={{ borderColor: "#c0392b" }} />
+      </div>
+      <figcaption className="text-center text-[10px] text-muted">Okolie pred ~150 rokmi — III. vojenské mapovanie (1869–1887), © ÚGKK SR, CC BY 4.0. Krúžok = stred parcely.</figcaption>
+    </figure>
+  );
+}
+
+// ——— zámery EIA/SEA v obci (Enviroportál) ———
+function EiaBlock({ data }: { data: Record<string, unknown> | null }) {
+  const ps = Array.isArray(data?.projekty) ? (data?.projekty as { n?: string; stav?: string; typ?: string; d?: string; u?: string }[]) : [];
+  if (!data) return null;
+  if (!ps.length) return <Muted>V obci nie je od roku {String(data.od ?? "2018")} zaznamenaný zámer EIA/SEA.</Muted>;
+  return <Table head={["Dátum", "Zámer", "Typ", "Stav"]} rows={ps.slice(0, 12).map((p) => [date(p.d), p.u ? <a key="u" href={p.u} target="_blank" rel="noopener noreferrer" className="text-brand underline">{(p.n ?? "zámer").slice(0, 70)}</a> : p.n ?? "—", p.typ ?? "—", p.stav ?? "—"])} />;
+}
+
 // ——— klíma podľa výšky parcely (pásma z Mac modulu) ———
 function elevOf(t: Record<string, unknown> | null): number | null {
   if (!t) return null;
@@ -372,6 +397,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
 
       <Sec id="prehlad" title="Prehľad" source={<>Kataster ÚGKK SR (stav k {date(c.dataset?.updated_at)}); obrysy z katastrálnej mapy (VGI).</>}>
         <ParcelSketch d={d} />
+        {c.main.lat != null && c.main.lng != null ? <HistoricMap lat={c.main.lat} lng={c.main.lng} /> : null}
         <Grid rows={[
           ["Katastrálne územie", c.dataset?.ku_name ?? "—"], ["Okres", c.dataset?.okres ?? "—"],
           ["Počet parciel", String(c.parcels.length)], ["Výmera spolu", m2(totalArea)],
@@ -469,6 +495,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         ) : null}
         {d.dev?.proxy ? <Muted>Zónu z územného plánu pre túto parcelu nemáme; regulatív je odvodený z druhu pozemku a umiestnenia — orientačný odhad, nie výrok ÚP.</Muted> : null}
         {d.upDocs.length ? (<><Sub>Dokumenty ÚP obce</Sub><ul className="list-disc pl-5 text-xs">{d.upDocs.slice(0, 12).map((x) => <li key={String(x.id)}><a href={x.url ?? "#"} target="_blank" rel="noopener noreferrer" className="text-brand underline">{x.title ?? "dokument"}</a></li>)}</ul></>) : null}
+        {fact(c, "eia", kuKey) ? (<><Sub>Zámery EIA a plány SEA v obci (Enviroportál)</Sub><EiaBlock data={fact(c, "eia", kuKey)} /></>) : null}
         {c.obec.upChanges.length || c.obec.changes.length ? (<><Sub>Zmeny a oznámenia obce</Sub>
           <ul className="text-xs">{[...c.obec.upChanges.map((x) => ({ ...x, relevance: "up" })), ...c.obec.changes].slice(0, 8).map((x, i) => (
             <li key={i} className="border-b border-line/40 py-0.5">{date(x.detected_at)} · {x.url ? <a href={x.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{x.title ?? "oznámenie"}</a> : x.title ?? "oznámenie"}{x.change ? <span className="text-muted"> · {x.change}</span> : null}</li>
@@ -522,6 +549,10 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           <Sub>Vybavenosť (vzdušnou čiarou)</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_AMEN} />
         </>) : null}
         {!d.access && !(mk && fact(c, "osm", mk)) ? <Muted>Dostupnosť sa nepodarilo načítať.</Muted> : null}
+        {c.main.lat != null && c.main.lng != null ? (
+          <p className="text-xs text-muted">Hodnotenie škôl v okolí: <a href={`https://skoly.ineko.sk/prehlad?typ_id=ZS&max_vzdialenost=10&center_x=${c.main.lng}&center_y=${c.main.lat}`} target="_blank" rel="noopener noreferrer" className="text-brand underline">INEKO (ZŠ do 10 km)</a>
+            {" · "}Hluk z dopravy: <a href="https://www.hlukovamapa.sk/" target="_blank" rel="noopener noreferrer" className="text-brand underline">strategické hlukové mapy</a> (len obrázky, preto len odkaz)</p>
+        ) : null}
       </Sec>
 
       <Sec id="hodnota" title="Hodnota" source="Ceny zo zmlúv zapísaných v katastri (SPI, od 2019); automatický odhad z ponúk a predajov v okrese; ponuky z verejnej inzercie. Orientačné — nie znalecký posudok.">

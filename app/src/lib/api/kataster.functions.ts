@@ -8260,7 +8260,7 @@ export const getPropertyCore = createServerFn({ method: "POST" })
     // ——— 3) predpočítané údaje (property_facts) ———
     const facts: PropertyCore["facts"] = {}; const factMeta: PropertyCore["factMeta"] = {};
     const subj: [string, string[]][] = [["parcel_c", cNos.slice(0, 160)], ["parcel_e", eNos.slice(0, 160)], ["lv", lvs.map(String)],
-      ["building", buildings.map((b) => (b.sc ? `sc:${b.sc}` : `p:${b.on_parcel ?? ""}`))], ["ku", [kod]]];
+      ["building", [...new Set(buildings.flatMap((b) => [b.sc ? `sc:${b.sc}` : null, b.on_parcel ? `p:${b.on_parcel}` : null]).filter((x): x is string => !!x))].slice(0, 160)], ["ku", [kod]]];
     if (flat) subj.push(["flat", [flat]]);
     for (const [stype, refs] of subj) {
       const rows = await qIn<{ subject_ref: string; grp: string; data_json: string; source: string | null; as_of: string | null }>(
@@ -8670,6 +8670,11 @@ export const createPropertyShare = createServerFn({ method: "POST" })
       ...l, titles: Array.isArray(l.titles) ? (l.titles as unknown[]).filter((t) => typeof t === "string" && code.test(t.trim())) : [],
       tarchy: Array.isArray(l.tarchy) ? (l.tarchy as unknown[]).filter((t) => typeof t === "string" && code.test(t.trim())) : [],
     }));
+    const facts = asObj(core.facts);
+    const bp = facts ? asObj(facts.bpej) : null;
+    if (bp) for (const [k, v] of Object.entries(bp)) {
+      try { const o = JSON.parse(String(v)) as Record<string, unknown>; bp[k] = JSON.stringify({ kod: o.kod, skupina: o.skupina, odvod_eur_m2: o.odvod_eur_m2, podiel_pct: o.podiel_pct }); } catch { delete bp[k]; }
+    }
     let out = JSON.stringify(snap);
     if (out.length > 1_800_000 && Array.isArray(core.parcels)) {
       core.parcels = (core.parcels as Record<string, unknown>[]).map((p, i) => (i < 30 ? p : { ...p, geometry_json: null }));

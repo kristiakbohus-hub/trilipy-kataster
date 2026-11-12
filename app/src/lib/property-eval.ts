@@ -184,6 +184,10 @@ export function checklist(d: SheetData): { text: string; why: string }[] {
     if (osm.zel_op === true) add("Ochranné pásmo dráhy — súhlas špeciálneho stavebného úradu", "železnica podľa OSM");
     if (typeof osm.cesta === "number" && osm.cesta > 50) add("Prístupová cesta je ďalej než 50 m — overiť vjazd a prípojky", `najbližšia cesta ${String(osm.cesta)} m`);
   }
+  const eia = fact(c, "eia", `ku:${c.dataset?.ku_code ?? ""}`);
+  const projs = Array.isArray(eia?.projekty) ? (eia?.projekty as { n?: string; typ?: string; d?: string }[]) : [];
+  const upSea = projs.find((p) => /územn|ÚPN|zmeny a doplnky/i.test(p.n ?? "") && (p.typ ?? "").startsWith("SEA"));
+  if (upSea) add("Obec mení územný plán (proces SEA) — overiť návrh a pripomienky", `${upSea.n ?? ""} (${upSea.d ?? ""})`);
   const z = zoneOf(d);
   if (!z.name) add("Vyžiadať záväznú časť ÚP / územnoplánovaciu informáciu od obce", "zónu ÚP nemáme");
   else if (NON_BUILD.test(z.name)) add("Výstavba podľa ÚP nie je možná bez zmeny ÚP — overiť na obci", z.name);

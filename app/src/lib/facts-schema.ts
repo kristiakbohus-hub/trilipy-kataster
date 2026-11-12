@@ -2318,5 +2318,5 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
 export const FACT_GROUP_LABEL: Record<string, string> = {
   teren: "Terén", slnko: "Slnko a svetlo", stavby: "Stavby", byty: "Byty a nebytové priestory", pristup: "Prístup z cesty",
   susedia: "Susedné parcely", mapa: "Z katastrálnej mapy", bpej: "Pôda (BPEJ)", vlastnici: "Vlastníci — súhrn",
-  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality",
+  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci",
 };
