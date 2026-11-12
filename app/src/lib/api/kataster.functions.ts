@@ -8521,21 +8521,26 @@ async function extRun(def: ExtDef, lat: number, lng: number): Promise<ExtHitRow>
   const hit = (value: string | null, detail?: string | null, url?: string | null): ExtHitRow => ({ ...base, status: "hit", value: value?.slice(0, 180) ?? null, detail: detail ? detail.slice(0, 260) : null, url: url ?? null });
   const none = (value: string | null = null): ExtHitRow => ({ ...base, status: "none", value });
   const fieldsText = (a: Record<string, unknown>, skipFirst = true) => Object.entries(def.fields).slice(skipFirst ? 1 : 0)
-    .map(([k, label]) => { const v = a[k]; if (v == null || String(v).trim() === "" || String(v) === "Null") return null; return `${label}: ${def.valueMap[String(v)] ?? String(v)}`; }).filter(Boolean).join(" · ");
+    .map(([k, label]) => {
+      const v = a[k]; if (v == null || String(v).trim() === "" || String(v) === "Null") return null;
+      const txt = typeof v === "number" && v > 1e11 && /dat|date/i.test(k) ? new Date(v).toLocaleDateString("sk-SK")
+        : /\(0\/1\)/.test(label) ? (String(v) === "1" ? "áno" : "nie") : def.valueMap[String(v)] ?? String(v);
+      return `${label.replace(/\s*\(0\/1\)/, "")}: ${txt}`;
+    }).filter(Boolean).join(" · ");
   try {
     // ——— osobitné prípady ———
     if (def.special === "pvgis") {
       const j = await extFetch(extUrl(def, lat, lng));
       const ey = dig(j, "outputs.totals.fixed.E_y");
       if (ey == null) return base;
-      return hit(`${nfx(ey, 0)} kWh za rok z 1 kWp`, `optimálny sklon ${nfx(dig(j, "inputs.mounting_system.fixed.slope.value"), 0)}°, azimut ${nfx(dig(j, "inputs.mounting_system.fixed.azimuth.value"), 0)}° od juhu · ožiarenie ${nfx(dig(j, "outputs.totals.fixed.H(i)_y"), 0)} kWh/m² · straty ${nfx(dig(j, "outputs.totals.fixed.l_total"), 0)} %`);
+      return hit(`${nfx(ey, 0)} kWh za rok z 1 kWp`, `optimálny sklon ${nfx(dig(j, "inputs.mounting_system.fixed.slope.value"), 0)}°, azimut ${nfx(dig(j, "inputs.mounting_system.fixed.azimuth.value"), 0)}° od juhu · ožiarenie ${nfx(dig(j, "outputs.totals.fixed.H(i)_y"), 0)} kWh/m² · celkové straty ${nfx(Math.abs(Number(dig(j, "outputs.totals.fixed.l_total") ?? 0)), 0)} %`);
     }
     if (def.special === "dmp") {
       const gfi = (u: string) => extFetch(extUrl(def, lat, lng, u)).then((j) => { const v = dig(j, "features.0.properties.GRAY_INDEX"); return typeof v === "number" ? v : null; });
       const [dmp, dmr] = await Promise.all([gfi(def.url), gfi(def.url.replace("/el_dsm/", "/el/"))]);
       if (dmp == null || dmr == null) return base;
       const h = dmp - dmr;
-      return h < 1.5 ? none(`bez stromov či budovy v strede parcely (${nfx(h)} m)`) : hit(`${nfx(h)} m nad terénom`, "výška stromu alebo budovy v strede parcely (povrch DMP 1.0 − terén DMR 5.0)");
+      return h < 1.5 ? none("bez stromov či budovy v strede parcely") : hit(`${nfx(h)} m nad terénom`, "výška stromu alebo budovy v strede parcely (povrch DMP 1.0 − terén DMR 5.0)");
     }
     if (def.special === "eko") {
       const t = await extFetch(extUrl(def, lat, lng), true);
@@ -8560,6 +8565,10 @@ async function extRun(def: ExtDef, lat: number, lng: number): Promise<ExtHitRow>
       const f = (dig(j, "features") as { properties?: Record<string, unknown> }[] | undefined) ?? [];
       if (!f.length) return none();
       const p = f[0].properties ?? {};
+      if (def.key === "siete_mobil_obec_ru") {
+        const tech = [["t3g", "3G"], ["t4g", "4G"], ["non_standalone_5g", "5G"], ["standalone_5g", "5G SA"]].filter(([k]) => String(p[k]) === "1").map(([, n]) => n);
+        return hit(tech.length ? `v obci: ${[...new Set(tech)].join(", ")}` : "mobilné pokrytie neuvedené", `max. ${String(p.stahiovanie_max ?? "—")}/${String(p.odosilanie_max ?? "—")} Mbit/s (deklarované operátormi, údaje RÚ)`);
+      }
       const first = Object.keys(def.fields)[0];
       return hit(`${def.fields[first]}: ${String(p[first] ?? "—")}`, fieldsText(p));
     }
@@ -8607,13 +8616,14 @@ async function extRun(def: ExtDef, lat: number, lng: number): Promise<ExtHitRow>
     const a = feats[0];
     const firstK = Object.keys(def.fields)[0];
     const v0 = firstK ? a[firstK] : null;
-    const val = v0 == null || String(v0).trim() === "" ? "zásah" : def.valueMap[String(v0)] ?? String(v0);
+    const det = fieldsText(a);
+    const val = v0 == null || String(v0).trim() === "" ? (det ? det.split(" · ")[0] : "v území (bez podrobností)") : def.valueMap[String(v0)] ?? String(v0);
     const more = feats.length > 1 ? `${feats.length} objektov v okolí · ` : "";
-    return hit(val, `${more}${fieldsText(a)}`);
+    return hit(val.trim(), `${more}${det}`);
   } catch { return base; }
 }
 async function extAll(lat: number, lng: number, refresh: boolean): Promise<{ items: ExtHitRow[]; cached: boolean }> {
-  const key = `ext2:${lat.toFixed(4)}:${lng.toFixed(4)}:${EXT_DEFS.length}`;
+  const key = `ext3:${lat.toFixed(4)}:${lng.toFixed(4)}:${EXT_DEFS.length}`;
   const c = await regCacheRead(key, refresh, 30 * 24 * 3600).catch(() => null);
   if (c) return { items: c.payload as ExtHitRow[], cached: true };
   const items = await Promise.all(EXT_DEFS.map((d) => extRun(d, lat, lng)));
