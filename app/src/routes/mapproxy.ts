@@ -30,7 +30,7 @@ export const Route = createFileRoute("/mapproxy")({
         const to = setTimeout(() => ctrl.abort(), 20000);
         try {
           const res = await fetch(target.toString(), {
-            headers: { "user-agent": "tri-lipy/1.0 (kataster; +kristiak.bohus@gmail.com)", accept: "image/*,*/*" },
+            headers: { "user-agent": "tri-lipy/1.0 (kataster)", accept: "image/*,*/*" },
             signal: ctrl.signal,
           });
           const ct = res.headers.get("content-type") ?? "application/octet-stream";

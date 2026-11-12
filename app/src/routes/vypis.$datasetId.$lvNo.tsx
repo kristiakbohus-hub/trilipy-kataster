@@ -358,7 +358,10 @@ function VypisPage() {
         <div className="rounded-lg border border-line bg-surface/60 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <span className="text-[11px] uppercase tracking-wide text-muted">Tím — LV {lvNo}{cc.dataset?.ku_name ? ` · ${cc.dataset.ku_name}` : ""}</span>
-            <WatchButton subjectType="lv" subjectId={`${datasetId}:${lvNo}`} label={`LV ${lvNo}${cc.dataset?.ku_name ? " · " + cc.dataset.ku_name : ""}`} />
+            <span className="flex items-center gap-2">
+              <Link to="/nehnutelnost" search={{ ds: datasetId, lv: String(lvNo) }} className="text-xs text-brand underline">List nehnuteľnosti →</Link>
+              <WatchButton subjectType="lv" subjectId={`${datasetId}:${lvNo}`} label={`LV ${lvNo}${cc.dataset?.ku_name ? " · " + cc.dataset.ku_name : ""}`} />
+            </span>
           </div>
           <CommentsPanel subjectType="lv" subjectId={`${datasetId}:${lvNo}`} />
         </div>

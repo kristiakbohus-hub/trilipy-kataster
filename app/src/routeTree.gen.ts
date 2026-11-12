@@ -29,6 +29,9 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as NTokenRRouteImport } from './routes/n.$token'
+import { Route as ApiPropertyShareRouteImport } from './routes/api.property-share'
+import { Route as NehnutelnostRouteImport } from './routes/nehnutelnost'
 import { Route as ApiIngestFactsRouteImport } from './routes/api.ingest-facts'
 import { Route as ApiIngestAuctionsRouteImport } from './routes/api.ingest-auctions'
 import { Route as ApiBackupRouteImport } from './routes/api.backup'
@@ -190,6 +193,21 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NTokenRRoute = NTokenRRouteImport.update({
+  id: '/n/$token',
+  path: '/n/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiPropertyShareRoute = ApiPropertyShareRouteImport.update({
+  id: '/api/property-share',
+  path: '/api/property-share',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NehnutelnostRoute = NehnutelnostRouteImport.update({
+  id: '/nehnutelnost',
+  path: '/nehnutelnost',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIngestFactsRoute = ApiIngestFactsRouteImport.update({
@@ -536,6 +554,9 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/n/$token': typeof NTokenRRoute
+  '/api/property-share': typeof ApiPropertyShareRoute
+  '/nehnutelnost': typeof NehnutelnostRoute
   '/api/ingest-facts': typeof ApiIngestFactsRoute
   '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
@@ -620,6 +641,9 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/n/$token': typeof NTokenRRoute
+  '/api/property-share': typeof ApiPropertyShareRoute
+  '/nehnutelnost': typeof NehnutelnostRoute
   '/api/ingest-facts': typeof ApiIngestFactsRoute
   '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
@@ -705,6 +729,9 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/n/$token': typeof NTokenRRoute
+  '/api/property-share': typeof ApiPropertyShareRoute
+  '/nehnutelnost': typeof NehnutelnostRoute
   '/api/ingest-facts': typeof ApiIngestFactsRoute
   '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
@@ -791,6 +818,9 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/n/$token'
+    | '/api/property-share'
+    | '/nehnutelnost'
     | '/api/ingest-facts'
     | '/api/ingest-auctions'
     | '/api/backup'
@@ -875,6 +905,9 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/n/$token'
+    | '/api/property-share'
+    | '/nehnutelnost'
     | '/api/ingest-facts'
     | '/api/ingest-auctions'
     | '/api/backup'
@@ -959,6 +992,9 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/n/$token'
+    | '/api/property-share'
+    | '/nehnutelnost'
     | '/api/ingest-facts'
     | '/api/ingest-auctions'
     | '/api/backup'
@@ -1040,6 +1076,9 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  NTokenRRoute: typeof NTokenRRoute
+  ApiPropertyShareRoute: typeof ApiPropertyShareRoute
+  NehnutelnostRoute: typeof NehnutelnostRoute
   ApiIngestFactsRoute: typeof ApiIngestFactsRoute
   ApiIngestAuctionsRoute: typeof ApiIngestAuctionsRoute
   ApiBackupRoute: typeof ApiBackupRoute
@@ -1359,6 +1398,27 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/n/$token': {
+      id: '/n/$token'
+      path: '/n/$token'
+      fullPath: '/n/$token'
+      preLoaderRoute: typeof NTokenRRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/property-share': {
+      id: '/api/property-share'
+      path: '/api/property-share'
+      fullPath: '/api/property-share'
+      preLoaderRoute: typeof ApiPropertyShareRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nehnutelnost': {
+      id: '/nehnutelnost'
+      path: '/nehnutelnost'
+      fullPath: '/nehnutelnost'
+      preLoaderRoute: typeof NehnutelnostRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-facts': {
@@ -1707,6 +1767,9 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  NTokenRRoute: NTokenRRoute,
+  ApiPropertyShareRoute: ApiPropertyShareRoute,
+  NehnutelnostRoute: NehnutelnostRoute,
   ApiIngestFactsRoute: ApiIngestFactsRoute,
   ApiIngestAuctionsRoute: ApiIngestAuctionsRoute,
   ApiBackupRoute: ApiBackupRoute,

@@ -26,6 +26,7 @@ const NAV_GROUPS: NavGroup[] = [
     { to: "/cases", label: "Cases", icon: "folder" },
   ] },
   { title: "Kataster", items: [
+    { to: "/nehnutelnost", label: "List nehnuteľnosti", icon: "folder" },
     { to: "/mapa", label: "Mapa / GIS", icon: "map" },
     { to: "/browser", label: "Kataster browser", icon: "table" },
     { to: "/vlastnici", label: "Vlastníci", icon: "target" },

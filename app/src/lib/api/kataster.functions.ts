@@ -8051,3 +8051,467 @@ export const ingestFacts = createServerFn({ method: "POST" })
     }
     return { ok: true, inserted: data.rows.length - rejected, rejected, dbSizeMb: size };
   });
+
+// ——— LIST NEHNUTEĽNOSTI — jadro (rozhodnutie vlastníka 2026-11-12) ———
+// Jednotka = CELOK: stavba + pozemok pod ňou + priľahlé parcely tých istých vlastníkov (aj naprieč LV); byt =
+// vlastný list; samostatný pozemok sám za seba. Otvoriteľné z parcely, LV, súpisného čísla aj bytu. Jedno volanie
+// zo všetkých tabuliek D1 (predpočítané údaje z Mac modulov sú v property_facts). Mená vlastníkov len pre rolu
+// s plným prístupom a mimo suppression; ostatní dostanú len počty. Externé služby (limity, dostupnosť, AVM, ÚP
+// zóna) volá stránka zvlášť — tu je len to, čo je v databáze.
+export type PropertyKind = "parcela" | "lv" | "stavba" | "byt";
+export type PropParcel = {
+  parcel_no: string; register: "C" | "E"; area_m2: number | null; use_type: string | null; lv_no: number | null;
+  settled: number | null; ekn_ref: string | null; bpej: string | null; bpej_skupina: number | null; odnatie_eur: number | null;
+  lat: number | null; lng: number | null; geometry_json: string | null; geometry_quality: string | null; placement: string | null;
+  role: string; zone: string | null; zone_verdict: string | null;
+};
+export type PropBuilding = { descr: string; on_parcel: string | null; sc: string | null; lv_no: number };
+export type PropComparable = { cas: string; kind: string; cen: number; ppm2: number | null; land_m2: number | null; flat_m2: number | null; items: string | null; ku: string | null; distM: number | null; same_lv: boolean };
+export type PropListing = { source: string | null; url: string | null; title: string | null; ptype: string | null; price_eur: number | null; ppm2: number | null; area_m2: number | null; first_seen: string | null; last_seen: string | null; removed: boolean; confidence: string | null; distM: number | null; history: { day: string; price_eur: number | null }[] };
+export type PropertyCore = {
+  ok: boolean; message?: string;
+  kind: PropertyKind; title: string; subtitle: string; celokNote: string;
+  dataset: { id: string; ku_code: string | null; ku_name: string | null; region: string | null; okres: string | null; updated_at: string | null } | null;
+  main: { parcelNo: string | null; register: "C" | "E" | null; lvNo: number | null; lat: number | null; lng: number | null; sc: string | null; flat: string | null };
+  parcels: PropParcel[]; lvs: number[]; buildings: PropBuilding[];
+  facts: Record<string, Record<string, Record<string, unknown>>>;
+  factMeta: Record<string, { source: string | null; asOf: string | null; n: number }>;
+  owners: { access: OwnerAccess; perLv: { lvNo: number; count: number; companies: number; persons: number; owners: { name: string; share: string | null; is_company: number; ico: string | null }[] }[] };
+  legal: { lvNo: number; hasData: boolean; titlesCount: number; tarchyCount: number; titles: string[]; tarchy: string[] }[];
+  legalYears: { lvNo: number; inh_max: number | null; exek_max: number | null; lien_max: number | null; sale_max: number | null; gift_max: number | null }[];
+  flags: (LvFlag & { lvNo: number })[];
+  prices: (LvPrice & { lvNo: number })[];
+  comparables: PropComparable[];
+  compStats: { kind: string; n: number; medPpm2: number | null; p25: number | null; p75: number | null; medCen: number | null; estimateEur: number | null; basisM2: number | null } | null;
+  listings: PropListing[]; nearby: PropListing[];
+  auctions: { source: string; url: string | null; auction_date: string | null; property_type: string | null; price_min_eur: number | null; price_estimate_eur: number | null; match: string }[];
+  unregistered: { parcel_no: string; building_m2: number | null; n_budov: number | null; vyuzitie: string | null; kategoria: string | null }[];
+  acquisitions: { lvNo: number; kind: string; n: number; firstYear: number | null; lastYear: number | null }[];
+  construction: { ku: { new_ha: number | null; new_ha_2021_2024: number | null; intensity: number | null; hotspots: number | null; period: string | null } | null; near: { n: number; area_m2: number; nearestM: number | null } };
+  signals: {
+    settlement: { parcel_no: string; classification: string; buyout_eur: number | null; n_land_owners: number | null }[];
+    landsearch: { purpose: string | null; verdict: string | null; quality: number | null }[];
+    za: { flat_id: string | null; classification: string | null; score: number | null; reason: string | null }[];
+    up: { zone: string | null; classification: string | null; score: number | null; naklad_vynatie_eur: number | null }[];
+    briefs: { brief_id: number; verdict: string; quality: number | null }[];
+    deal: { id: string; status: string } | null;
+    cases: { id: number; title: string; status: string }[];
+  };
+  work: { contacts: number; lastContact: string | null; nextAt: string | null; comments: number; documents: number };
+  firms: { ico: string; name: string | null; year: number | null; revenue: number | null; assets: number | null; equity: number | null; profit: number | null }[];
+  obec: { changes: { title: string | null; url: string | null; change: string | null; relevance: string; detected_at: string | null }[]; upChanges: { title: string | null; url: string | null; change: string | null; detected_at: string | null }[] };
+  stateContracts: { n: number; recent: { day: string; publisher: string; kind: string; amount: number | null }[] };
+};
+
+async function qIn<T>(sqlWithPh: (ph: string) => string, head: unknown[], list: unknown[], tail: unknown[] = []): Promise<T[]> {
+  const out: T[] = [];
+  for (let i = 0; i < list.length; i += 80) {
+    const part = list.slice(i, i + 80);
+    if (!part.length) break;
+    out.push(...(await q<T>(sqlWithPh(part.map(() => "?").join(",")), [...head, ...part, ...tail]).catch(() => [] as T[])));
+  }
+  return out;
+}
+const kmenOf = (no: string) => no.split("/")[0];
+function pctl(xs: number[], p: number): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const i = (s.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i);
+  return Math.round(s[lo] + (s[hi] - s[lo]) * (i - lo));
+}
+
+export const getPropertyCore = createServerFn({ method: "POST" })
+  .validator(z.object({
+    token: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt"]),
+    ref: z.string().min(1).max(60), register: z.enum(["C", "E"]).optional(),
+  }))
+  .handler(async ({ data }): Promise<PropertyCore> => {
+    const u = await requireUser(data.token);
+    const fail = (message: string) => ({ ok: false, message } as unknown as PropertyCore);
+    if (!u) return fail("Neprihlásený.");
+    const access = ownerAccess((u.role ?? "viewer") as Role);
+    const ds = (await q<{ id: string; ku_code: string | null; ku_name: string | null; region: string | null; updated_at: string | null }>(
+      "SELECT id, ku_code, ku_name, region, updated_at FROM datasets WHERE id=?", [data.datasetId]))[0];
+    if (!ds) return fail("Dataset neexistuje.");
+    const kod = ds.ku_code ?? data.datasetId.replace(/^kn-/, "");
+    const PCOLS = `p.parcel_no, p.kn_type, p.area_m2, p.use_type, p.lv_no, p.settled, p.ekn_ref, p.bpej, p.bpej_skupina, p.odnatie_eur,
+      p.centroid_lat AS lat, p.centroid_lng AS lng, p.geometry_json, p.geometry_quality,
+      (SELECT lp.placement FROM lv_parcels lp WHERE lp.dataset_id = p.dataset_id AND lp.parcel_no = p.parcel_no AND lp.placement IS NOT NULL LIMIT 1) AS placement`;
+    type PRow = Omit<PropParcel, "register" | "role" | "zone" | "zone_verdict"> & { kn_type: string | null };
+    const toP = (r: PRow, role: string): PropParcel => ({ ...r, register: (r.kn_type ?? "").startsWith("E") ? "E" : "C", role, zone: null, zone_verdict: null });
+
+    // ——— 1) zostavenie celku ———
+    let kind = data.kind; let mainNo: string | null = null; let mainReg: "C" | "E" | null = null; let sc: string | null = null; let flat: string | null = null;
+    let lvNo: number | null = null; let celokNote = "";
+    const parcels: PropParcel[] = []; const seen = new Set<string>();
+    const addP = (p: PropParcel) => { const k = `${p.register}:${p.parcel_no}`; if (!seen.has(k)) { seen.add(k); parcels.push(p); } };
+    const factsFor = async (stype: string, refs: string[], grp: string) =>
+      qIn<{ subject_ref: string; data_json: string }>((ph) => `SELECT subject_ref, data_json FROM property_facts WHERE kod_ku=? AND grp=? AND subject_type=? AND subject_ref IN (${ph})`, [kod, grp, stype], refs);
+
+    if (kind === "byt") {
+      flat = data.ref;
+      const m = data.ref.match(/^lv:(\d+)/);
+      lvNo = m ? Number(m[1]) : null;
+      const fr = (await factsFor("flat", [data.ref], "byty"))[0];
+      let house: string | null = null;
+      if (fr) { try { const d = JSON.parse(fr.data_json) as Record<string, unknown>; sc = d.dom != null ? String(d.dom) : (d.sc != null ? String(d.sc) : null); house = d.parcela != null ? String(d.parcela) : null; } catch { /* poškodené */ } }
+      if (!house && sc) house = (await q<{ on_parcel: string | null }>("SELECT on_parcel FROM lv_buildings WHERE dataset_id=? AND supisne_cislo=? LIMIT 1", [ds.id, sc]))[0]?.on_parcel ?? null;
+      if (house) {
+        const r = (await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? AND (p.kn_type IS NULL OR p.kn_type NOT LIKE 'E%') LIMIT 1`, [ds.id, house]))[0];
+        if (r) { addP(toP(r, "pozemok pod domom")); mainNo = r.parcel_no; mainReg = "C"; }
+      }
+      celokNote = "Byt s podielom na spoločných častiach domu a na pozemku pod domom.";
+    } else if (kind === "lv") {
+      lvNo = Number(data.ref);
+      if (!Number.isFinite(lvNo)) return fail("Neplatné číslo LV.");
+      const rows = await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.lv_no=? ORDER BY (p.kn_type LIKE 'E%'), p.area_m2 DESC LIMIT 300`, [ds.id, lvNo]);
+      rows.forEach((r, i) => addP(toP(r, i === 0 ? "najväčšia parcela" : "parcela LV")));
+      if (parcels[0]) { mainNo = parcels[0].parcel_no; mainReg = parcels[0].register; }
+      celokNote = `Všetky nehnuteľnosti zapísané na LV č. ${lvNo}.`;
+    } else {
+      let start: PRow | undefined;
+      if (kind === "stavba") {
+        sc = data.ref;
+        const b = (await q<{ on_parcel: string | null; lv_no: number }>("SELECT on_parcel, lv_no FROM lv_buildings WHERE dataset_id=? AND supisne_cislo=? LIMIT 1", [ds.id, data.ref]))[0];
+        if (!b?.on_parcel) return fail(`Stavba so súpisným číslom ${data.ref} sa v k.ú. nenašla.`);
+        start = (await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? AND (p.kn_type IS NULL OR p.kn_type NOT LIKE 'E%') LIMIT 1`, [ds.id, b.on_parcel]))[0];
+      } else {
+        const wantE = data.register === "E";
+        start = (await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? ORDER BY ${wantE ? "(p.kn_type LIKE 'E%') DESC" : "(p.kn_type LIKE 'E%')"} LIMIT 1`, [ds.id, data.ref]))[0];
+      }
+      if (!start) return fail("Parcela sa v k.ú. nenašla.");
+      const sp = toP(start, kind === "stavba" ? "pozemok pod stavbou" : "zvolená parcela");
+      addP(sp); mainNo = sp.parcel_no; mainReg = sp.register; lvNo = sp.lv_no;
+      celokNote = "Samostatná parcela.";
+      if (sp.register === "C" && lvNo != null) {
+        // susedia z Mac modulu (zdieľaná hranica) → priľahlé parcely toho istého LV a LV s rovnakými vlastníkmi
+        const nb = (await factsFor("parcel_c", [sp.parcel_no], "susedia"))[0];
+        const nbList: { p: string; lv: number | null }[] = [];
+        if (nb) {
+          try {
+            const d = JSON.parse(nb.data_json) as Record<string, unknown>;
+            for (const v of Object.values(d)) if (Array.isArray(v)) for (const x of v as Record<string, unknown>[]) {
+              if (x && typeof x === "object" && x.p != null && (x.reg == null || x.reg === "C")) nbList.push({ p: String(x.p), lv: x.lv != null ? Number(x.lv) : null });
+            }
+          } catch { /* poškodené */ }
+        }
+        const sameLv = await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.lv_no=? AND (p.kn_type IS NULL OR p.kn_type NOT LIKE 'E%') LIMIT 400`, [ds.id, lvNo]);
+        const nbSet = new Set(nbList.filter((x) => x.lv === lvNo).map((x) => x.p));
+        const km = kmenOf(sp.parcel_no);
+        for (const r of sameLv) {
+          if (r.parcel_no === sp.parcel_no) continue;
+          const close = sp.lat != null && sp.lng != null && r.lat != null && r.lng != null && haversine(sp.lat, sp.lng, r.lat, r.lng) <= 45;
+          if (nbSet.has(r.parcel_no) || kmenOf(r.parcel_no) === km || (!nb && close)) addP(toP(r, "priľahlá parcela (rovnaký LV)"));
+          if (parcels.length >= 25) break;
+        }
+        // naprieč LV: sused s IDENTICKOU množinou vlastníkov (porovnáva sa len na serveri, mená nevychádzajú von)
+        const otherLvs = [...new Set(nbList.filter((x) => x.lv != null && x.lv !== lvNo).map((x) => x.lv as number))].slice(0, 12);
+        if (otherLvs.length) {
+          const sig = async (lv: number) => (await q<{ name: string; share: string | null }>("SELECT name, share FROM lv_owners WHERE dataset_id=? AND lv_no=?", [ds.id, lv]))
+            .map((o) => `${normName(o.name)}|${o.share ?? ""}`).sort().join(";");
+          const mine = await sig(lvNo);
+          for (const lv of otherLvs) {
+            if (!mine || (await sig(lv)) !== mine) continue;
+            for (const x of nbList.filter((y) => y.lv === lv)) {
+              const r = (await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? AND (p.kn_type IS NULL OR p.kn_type NOT LIKE 'E%') LIMIT 1`, [ds.id, x.p]))[0];
+              if (r) addP(toP(r, `priľahlá parcela (LV ${lv}, rovnakí vlastníci)`));
+            }
+          }
+        }
+        if (parcels.length > 1) celokNote = nb
+          ? "Celok: zvolená parcela + priľahlé parcely tých istých vlastníkov (podľa spoločnej hranice z katastrálnej mapy)."
+          : "Celok: zvolená parcela + parcely toho istého LV s rovnakým kmeňovým číslom alebo tesne pri nej (susedstvo z mapy zatiaľ nie je spočítané).";
+      }
+    }
+    const lvs = [...new Set(parcels.map((p) => p.lv_no).filter((x): x is number => x != null).concat(lvNo != null ? [lvNo] : []))];
+    const main = parcels.find((p) => p.parcel_no === mainNo && p.register === mainReg) ?? parcels[0] ?? null;
+
+    // ——— 2) stavby, ÚP zóna parciel ———
+    const cNos = parcels.filter((p) => p.register === "C").map((p) => p.parcel_no);
+    const eNos = parcels.filter((p) => p.register === "E").map((p) => p.parcel_no);
+    const buildings = kind === "lv"
+      ? await q<PropBuilding>("SELECT descr, on_parcel, supisne_cislo AS sc, lv_no FROM lv_buildings WHERE dataset_id=? AND lv_no=? LIMIT 200", [ds.id, lvNo])
+      : await qIn<PropBuilding>((ph) => `SELECT descr, on_parcel, supisne_cislo AS sc, lv_no FROM lv_buildings WHERE dataset_id=? AND on_parcel IN (${ph}) LIMIT 200`, [ds.id], cNos);
+    if (sc && !buildings.some((b) => b.sc === sc)) buildings.push(...await q<PropBuilding>("SELECT descr, on_parcel, supisne_cislo AS sc, lv_no FROM lv_buildings WHERE dataset_id=? AND supisne_cislo=? LIMIT 5", [ds.id, sc]));
+    const zones = await qIn<{ parcel_no: string; register: string; zone: string | null; verdict: string | null }>(
+      (ph) => `SELECT parcel_no, register, zone, verdict FROM parcel_zoning WHERE kod_ku=? AND parcel_no IN (${ph})`, [kod], parcels.map((p) => p.parcel_no));
+    for (const p of parcels) { const z0 = zones.find((z1) => z1.parcel_no === p.parcel_no && (z1.register ?? "C").startsWith(p.register)); if (z0) { p.zone = z0.zone; p.zone_verdict = z0.verdict; } }
+    if (parcels.length > 120) for (const p of parcels.slice(120)) p.geometry_json = null;
+
+    // ——— 3) predpočítané údaje (property_facts) ———
+    const facts: PropertyCore["facts"] = {}; const factMeta: PropertyCore["factMeta"] = {};
+    const subj: [string, string[]][] = [["parcel_c", cNos.slice(0, 160)], ["parcel_e", eNos.slice(0, 160)], ["lv", lvs.map(String)],
+      ["building", buildings.map((b) => (b.sc ? `sc:${b.sc}` : `p:${b.on_parcel ?? ""}`))], ["ku", [kod]]];
+    if (flat) subj.push(["flat", [flat]]);
+    for (const [stype, refs] of subj) {
+      const rows = await qIn<{ subject_ref: string; grp: string; data_json: string; source: string | null; as_of: string | null }>(
+        (ph) => `SELECT subject_ref, grp, data_json, source, as_of FROM property_facts WHERE kod_ku=? AND subject_type=? AND subject_ref IN (${ph})`, [kod, stype], refs);
+      for (const r of rows) {
+        try { ((facts[r.grp] ??= {})[`${stype}:${r.subject_ref}`] = JSON.parse(r.data_json) as Record<string, unknown>); } catch { continue; }
+        const m = (factMeta[r.grp] ??= { source: r.source, asOf: r.as_of, n: 0 }); m.n += 1;
+      }
+    }
+
+    // ——— 4) vlastníci, právny stav, problémy, ceny ———
+    const suppressed = access === "full" ? await suppressedNameSet() : new Set<string>();
+    const perLv: PropertyCore["owners"]["perLv"] = [];
+    const legal: PropertyCore["legal"] = [];
+    const flags: PropertyCore["flags"] = []; const prices: PropertyCore["prices"] = [];
+    for (const lv of lvs.slice(0, 20)) {
+      const os = await q<{ name: string; share: string | null; is_company: number; ico: string | null }>("SELECT name, share, is_company, ico FROM lv_owners WHERE dataset_id=? AND lv_no=? ORDER BY is_company DESC, name", [ds.id, lv]).catch(() => []);
+      const companies = os.filter((o) => o.is_company === 1).length;
+      perLv.push({ lvNo: lv, count: os.length, companies, persons: os.length - companies,
+        owners: access === "full" ? os.map((o) => (suppressed.has(normName(o.name)) ? { ...o, name: "— (námietka, nezobrazuje sa)", ico: null } : o)) : [] });
+      const lt = await q<{ kind: string; txt: string }>("SELECT kind, txt FROM lv_titles WHERE dataset_id=? AND lv_no=? ORDER BY kind DESC, id", [ds.id, lv]).catch(() => []);
+      const tit = lt.filter((r) => r.kind === "titul"), tar = lt.filter((r) => r.kind === "tarcha");
+      legal.push({ lvNo: lv, hasData: lt.length > 0, titlesCount: tit.length, tarchyCount: tar.length,
+        titles: access === "full" ? tit.map((r) => r.txt) : [], tarchy: access === "full" ? tar.map((r) => r.txt) : [] });
+      for (const f of await q<{ kind: string; label: string; year: number | null; parcel_no: string | null }>("SELECT kind, label, year, parcel_no FROM lv_flags WHERE dataset_id=? AND lv_no=? ORDER BY kind, year DESC LIMIT 60", [ds.id, lv]).catch(() => []))
+        flags.push({ kind: f.kind, label: f.label, year: f.year, parcelNo: f.parcel_no, lvNo: lv });
+      for (const r of await q<{ cas: string; cen: number; kind: string; n_items: number; land_m2: number | null; flat_m2: number | null; ppm2: number | null; flag: string | null; items: string | null }>(
+        "SELECT cas, cen, kind, n_items, land_m2, flat_m2, ppm2, flag, items FROM lv_prices WHERE dataset_id=? AND lv_no=? ORDER BY cas DESC LIMIT 20", [ds.id, lv]).catch(() => []))
+        prices.push({ cas: r.cas, cen: r.cen, kind: r.kind, nItems: r.n_items, landM2: r.land_m2, flatM2: r.flat_m2, ppm2: r.ppm2, flag: r.flag, items: r.items, lvNo: lv });
+    }
+    const legalYears = await qIn<PropertyCore["legalYears"][number] & { lv_no: number }>(
+      (ph) => `SELECT lv_no, inh_max, exek_max, lien_max, sale_max, gift_max FROM lv_legal WHERE dataset_id=? AND lv_no IN (${ph})`, [ds.id], lvs)
+      .then((rs) => rs.map((r) => ({ lvNo: r.lv_no, inh_max: r.inh_max, exek_max: r.exek_max, lien_max: r.lien_max, sale_max: r.sale_max, gift_max: r.gift_max })));
+
+    // ——— 5) ceny zo zmlúv v okolí (SPI CEN) — porovnateľné predaje ———
+    const isHouse = buildings.some((b) => /rodinn/i.test(b.descr));
+    const compKind = kind === "byt" ? "byt" : isHouse ? "dom" : "pozemok";
+    const landArea = parcels.filter((p) => p.register === "C").reduce((s, p) => s + (p.area_m2 ?? 0), 0) || (main?.area_m2 ?? 0);
+    const okres = okresFromRegion(ds.region);
+    const cands = await q<{ dataset_id: string; lv_no: number; cas: string; cen: number; kind: string; land_m2: number | null; flat_m2: number | null; ppm2: number | null; items: string | null; ku_name: string | null; region: string | null }>(
+      `SELECT lp.dataset_id, lp.lv_no, lp.cas, lp.cen, lp.kind, lp.land_m2, lp.flat_m2, lp.ppm2, lp.items, d.ku_name, d.region
+         FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id
+        WHERE lp.kind = ? AND lp.flag IS NULL AND lp.cas >= date('now','-6 years') ${compKind === "pozemok" && landArea ? "AND lp.land_m2 BETWEEN ? AND ?" : ""}
+        ORDER BY lp.cas DESC LIMIT 1500`,
+      compKind === "pozemok" && landArea ? [compKind, landArea * 0.4, landArea * 2.5] : [compKind]).catch(() => []);
+    const inOkres = cands.filter((c) => c.dataset_id === ds.id || (okres && okresFromRegion(c.region) === okres));
+    // poloha zmluvy = stred prvej parcely z položiek („C 1500/2, …")
+    const firstNo = (items: string | null) => (items ?? "").match(/[CE]\s*(\d+(?:\/\d+)?)/)?.[1] ?? null;
+    const byDs = new Map<string, string[]>();
+    for (const c of inOkres) { const n0 = firstNo(c.items); if (n0) { const a = byDs.get(c.dataset_id) ?? []; a.push(n0); byDs.set(c.dataset_id, a); } }
+    const cent = new Map<string, { lat: number; lng: number }>();
+    for (const [dsid, nos] of byDs) {
+      for (const r of await qIn<{ parcel_no: string; lat: number | null; lng: number | null }>((ph) => `SELECT parcel_no, centroid_lat AS lat, centroid_lng AS lng FROM parcels WHERE dataset_id=? AND parcel_no IN (${ph}) AND centroid_lat IS NOT NULL`, [dsid], [...new Set(nos)].slice(0, 400)))
+        if (r.lat != null && r.lng != null) cent.set(`${dsid}:${r.parcel_no}`, { lat: r.lat, lng: r.lng });
+    }
+    const scored = inOkres.map((c) => {
+      const pt = cent.get(`${c.dataset_id}:${firstNo(c.items) ?? ""}`);
+      const distM = pt && main?.lat != null && main?.lng != null ? haversine(main.lat, main.lng, pt.lat, pt.lng) : null;
+      const ageY = (Date.now() - Date.parse(c.cas)) / 3.15e10;
+      const areaPen = compKind === "pozemok" && landArea && c.land_m2 ? Math.abs(Math.log(c.land_m2 / landArea)) * 3 : 0;
+      const same = c.dataset_id === ds.id && lvs.includes(c.lv_no);
+      return { c, distM, same, score: (distM == null ? 25 : distM / 1000) + ageY * 1.5 + areaPen };
+    }).filter((x) => !x.same).sort((a, b) => a.score - b.score).slice(0, 12);
+    const comparables: PropComparable[] = scored.map(({ c, distM }) => ({ cas: c.cas, kind: c.kind, cen: c.cen, ppm2: c.ppm2, land_m2: c.land_m2, flat_m2: c.flat_m2, items: c.items, ku: c.ku_name, distM, same_lv: false }));
+    const ppms = comparables.map((c) => c.ppm2).filter((x): x is number => x != null && x > 0);
+    const cens = comparables.map((c) => c.cen).filter((x) => x > 0);
+    const medPpm2 = pctl(ppms, 0.5);
+    const basisM2 = compKind === "pozemok" ? landArea || null : null;
+    const compStats = comparables.length ? {
+      kind: compKind, n: comparables.length, medPpm2, p25: pctl(ppms, 0.25), p75: pctl(ppms, 0.75), medCen: pctl(cens, 0.5),
+      estimateEur: compKind === "pozemok" && medPpm2 && basisM2 ? Math.round(medPpm2 * basisM2) : compKind !== "pozemok" ? pctl(cens, 0.5) : null, basisM2,
+    } : null;
+
+    // ——— 6) inzercia: je to v predaji? + ponuky rovnakého typu v okolí ———
+    const lm = await q<{ source: string; ext_id: string; url: string | null; confidence: string }>(
+      `SELECT source, ext_id, url, confidence FROM listing_matches WHERE dataset_id=? AND ((kind='parcela' AND parcel_no IN (${cNos.slice(0, 60).map(() => "?").join(",") || "''"})) OR (kind='LV' AND lv_no IN (${lvs.slice(0, 20).map(() => "?").join(",") || "-1"}))) LIMIT 10`,
+      [ds.id, ...cNos.slice(0, 60), ...lvs.slice(0, 20)]).catch(() => []);
+    const listings: PropListing[] = [];
+    for (const m of lm) {
+      const l = (await q<MarketListing & { removed_at: string | null }>(`SELECT ${ML_COLS}, removed_at FROM market_listings WHERE source=? AND ext_id=?`, [m.source, m.ext_id]).catch(() => []))[0];
+      const hist = await q<{ day: string; price_eur: number | null }>("SELECT day, price_eur FROM market_price_history WHERE source=? AND ext_id=? ORDER BY day LIMIT 60", [m.source, m.ext_id]).catch(() => []);
+      listings.push({ source: m.source, url: l?.url ?? m.url, title: l?.title ?? null, ptype: l?.ptype ?? null, price_eur: l?.price_eur ?? null, ppm2: l?.ppm2 ?? null, area_m2: l?.area_m2 ?? null,
+        first_seen: l?.first_seen ?? null, last_seen: l?.last_seen ?? null, removed: !!l?.removed_at, confidence: m.confidence, distM: null, history: hist });
+    }
+    let nearby: PropListing[] = [];
+    if (main?.lat != null && main?.lng != null) {
+      const ptype = compKind === "dom" ? "dom" : compKind === "byt" ? "byt" : "pozemok";
+      const d = 0.09;
+      const rows = await q<MarketListing & { removed_at: string | null }>(
+        `SELECT ${ML_COLS}, removed_at FROM market_listings WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? AND ptype=? AND deal='predaj' AND removed_at IS NULL AND price_eur > 0 ORDER BY last_seen DESC LIMIT 120`,
+        [main.lat - d, main.lat + d, main.lng - d * 1.5, main.lng + d * 1.5, ptype]).catch(() => []);
+      nearby = rows.map((l) => ({ source: l.source, url: l.url, title: l.title, ptype: l.ptype, price_eur: l.price_eur, ppm2: l.ppm2, area_m2: l.area_m2, first_seen: l.first_seen, last_seen: l.last_seen, removed: false, confidence: null,
+        distM: l.lat != null && l.lng != null ? haversine(main.lat as number, main.lng as number, l.lat, l.lng) : null, history: [] }))
+        .sort((a, b) => (a.distM ?? 1e9) - (b.distM ?? 1e9)).slice(0, 10);
+    }
+
+    // ——— 7) dražby, stavby bez zápisu, nadobudnutia, nová zástavba ———
+    const kuName = (ds.ku_name ?? "").replace(/^k\.ú\.\s*/i, "").trim();
+    const auc = kuName ? await q<{ source: string; url: string | null; auction_date: string | null; property_type: string | null; price_min_eur: number | null; price_estimate_eur: number | null; parcels: string | null; lv: string | null }>(
+      "SELECT source, url, auction_date, property_type, price_min_eur, price_estimate_eur, parcels, lv FROM auctions WHERE ku_name LIKE ? LIMIT 50", [`%${kuName}%`]).catch(() => []) : [];
+    const tok = (s: string | null) => new Set((s ?? "").split(/[^0-9/]+/).filter(Boolean));
+    const auctions = auc.flatMap((a) => {
+      const ps = tok(a.parcels), ls = tok(a.lv);
+      const hitP = cNos.find((n) => ps.has(n)); const hitL = lvs.find((l) => ls.has(String(l)));
+      return hitP || hitL ? [{ source: a.source, url: a.url, auction_date: a.auction_date, property_type: a.property_type, price_min_eur: a.price_min_eur, price_estimate_eur: a.price_estimate_eur, match: hitP ? `parcela ${hitP}` : `LV ${hitL}` }] : [];
+    });
+    const unregistered = await qIn<PropertyCore["unregistered"][number]>((ph) => `SELECT parcel_no, building_m2, n_budov, vyuzitie, kategoria FROM unregistered_buildings WHERE dataset_id=? AND parcel_no IN (${ph})`, [ds.id], cNos);
+    const acqRows = await qIn<{ lv_number: string; acquisition_kind: string | null; n: number; y0: number | null; y1: number | null }>(
+      (ph) => `SELECT lv_number, acquisition_kind, COUNT(*) n, MIN(registration_year) y0, MAX(registration_year) y1 FROM asset_acquisitions WHERE kod_ku=? AND lv_number IN (${ph}) GROUP BY lv_number, acquisition_kind`, [kod], lvs.map(String));
+    const acquisitions = acqRows.map((r) => ({ lvNo: Number(r.lv_number), kind: r.acquisition_kind ?? "iné", n: r.n, firstYear: r.y0, lastYear: r.y1 }));
+    const cku = (await q<{ new_ha: number | null; new_ha_2021_2024: number | null; intensity: number | null; hotspots: number | null; period: string | null }>(
+      "SELECT new_ha, new_ha_2021_2024, intensity, hotspots, period FROM construction_ku WHERE kod_ku=?", [kod]).catch(() => []))[0] ?? null;
+    let near = { n: 0, area_m2: 0, nearestM: null as number | null };
+    if (main?.lat != null && main?.lng != null) {
+      const hs = await q<{ lat: number; lon: number; area_m2: number | null }>("SELECT lat, lon, area_m2 FROM construction_hotspots WHERE kod_ku=?", [kod]).catch(() => []);
+      for (const h of hs) { const dm = haversine(main.lat, main.lng, h.lat, h.lon); if (dm <= 1000) { near.n += 1; near.area_m2 += h.area_m2 ?? 0; } if (near.nearestM == null || dm < near.nearestM) near.nearestM = dm; }
+      near = { ...near, area_m2: Math.round(near.area_m2) };
+    }
+
+    // ——— 8) signály a práca ———
+    const likeAny = (col: string, nos: string[]) => nos.slice(0, 10).map(() => `(', '||${col}||', ') LIKE ?`).join(" OR ") || "0";
+    const likeArgs = (nos: string[]) => nos.slice(0, 10).map((n) => `%, ${n}, %`);
+    const settlement = await q<PropertyCore["signals"]["settlement"][number]>(
+      `SELECT parcel_no, classification, buyout_eur, n_land_owners FROM settlement_cases WHERE kod_ku=? AND (parcel_no IN (${cNos.slice(0, 60).map(() => "?").join(",") || "''"}) OR land_lv_no IN (${lvs.slice(0, 20).map(() => "?").join(",") || "-1"})) LIMIT 10`,
+      [kod, ...cNos.slice(0, 60), ...lvs.slice(0, 20)]).catch(() => []);
+    const landsearch = await q<PropertyCore["signals"]["landsearch"][number]>(`SELECT purpose, verdict, quality FROM landsearch_results WHERE kod_ku=? AND (${likeAny("parcels", cNos)}) ORDER BY quality DESC LIMIT 5`, [kod, ...likeArgs(cNos)]).catch(() => []);
+    const za = await qIn<PropertyCore["signals"]["za"][number]>((ph) => `SELECT flat_id, classification, score, reason FROM za_cases WHERE kod_ku=? AND lv_no IN (${ph}) LIMIT 10`, [kod], lvs);
+    const up = await q<PropertyCore["signals"]["up"][number]>(`SELECT zone, classification, score, naklad_vynatie_eur FROM up_cases WHERE kod_ku=? AND (${likeAny("parcels", cNos)}) LIMIT 5`, [kod, ...likeArgs(cNos)]).catch(() => []);
+    const briefs = await q<PropertyCore["signals"]["briefs"][number]>(`SELECT brief_id, verdict, quality FROM brief_results WHERE kod_ku=? AND (${likeAny("parcels", cNos)}) ORDER BY quality DESC LIMIT 5`, [kod, ...likeArgs(cNos)]).catch(() => []);
+    const deal = (await qIn<{ id: string; status: string }>((ph) => `SELECT id, status FROM deals WHERE dataset_id=? AND lv_no IN (${ph}) ORDER BY updated_at DESC LIMIT 1`, [ds.id], lvs))[0] ?? null;
+    const caseIds = await q<{ case_id: number }>(
+      `SELECT DISTINCT case_id FROM case_links WHERE dataset_id=? AND ((link_type='lv' AND ref IN (${lvs.slice(0, 20).map(() => "?").join(",") || "''"})) OR (link_type='parcel' AND ref IN (${cNos.slice(0, 40).map(() => "?").join(",") || "''"}))) LIMIT 10`,
+      [ds.id, ...lvs.slice(0, 20).map(String), ...cNos.slice(0, 40)]).catch(() => []);
+    const cases = await qIn<{ id: number; title: string; status: string }>((ph) => `SELECT id, title, status FROM cases WHERE id IN (${ph})`, [], caseIds.map((c) => c.case_id));
+    const ct = (await qIn<{ n: number; last: string | null; nxt: string | null }>((ph) => `SELECT COUNT(*) n, MAX(created_at) last, MIN(CASE WHEN next_at >= date('now') THEN next_at END) nxt FROM contact_log WHERE dataset_id=? AND lv_no IN (${ph})`, [ds.id], lvs))[0];
+    const cm = (await qIn<{ n: number }>((ph) => `SELECT COUNT(*) n FROM comments WHERE subject_type='lv' AND subject_id IN (${ph})`, [], lvs.map((l) => `${ds.id}:${l}`))).reduce((s, r) => s + r.n, 0);
+    const dc = (await q<{ n: number }>(
+      `SELECT COUNT(*) n FROM documents WHERE dataset_id=? AND ((subject_type='lv' AND subject_ref IN (${lvs.slice(0, 20).map(() => "?").join(",") || "''"})) OR (subject_type='parcel' AND subject_ref IN (${cNos.slice(0, 40).map(() => "?").join(",") || "''"})))`,
+      [ds.id, ...lvs.slice(0, 20).map(String), ...cNos.slice(0, 40)]).catch(() => []))[0]?.n ?? 0;
+
+    // ——— 9) firmy-vlastníci (len plný prístup), obec, štátne zmluvy ———
+    const icos = access === "full" ? [...new Set(perLv.flatMap((l) => l.owners.filter((o) => o.is_company === 1 && o.ico).map((o) => String(o.ico))))] : [];
+    const firms = await qIn<PropertyCore["firms"][number]>((ph) => `SELECT ico, name, year, revenue, assets, equity, profit FROM firm_finance WHERE ico IN (${ph})`, [], icos);
+    const changes = await q<PropertyCore["obec"]["changes"][number]>("SELECT title, url, change, relevance, detected_at FROM obec_changes WHERE ku_code=? OR obec=? ORDER BY detected_at DESC LIMIT 8", [kod, kuName]).catch(() => []);
+    const upChanges = await q<PropertyCore["obec"]["upChanges"][number]>("SELECT title, url, change, detected_at FROM up_changes WHERE dataset_id=? ORDER BY detected_at DESC LIMIT 5", [ds.id]).catch(() => []);
+    const scN = kuName ? (await q<{ n: number }>("SELECT COUNT(*) n FROM state_contracts WHERE ku_name=?", [kuName]).catch(() => []))[0]?.n ?? 0 : 0;
+    const scRecent = kuName ? await q<{ day: string; publisher: string; kind: string; amount: number | null }>("SELECT day, publisher, kind, amount FROM state_contracts WHERE ku_name=? ORDER BY day DESC LIMIT 5", [kuName]).catch(() => []) : [];
+
+    // ——— 10) názov ———
+    const house = buildings.find((b) => /rodinn/i.test(b.descr)) ?? buildings[0];
+    const totalArea = parcels.reduce((s, p) => s + (p.area_m2 ?? 0), 0);
+    const fmt = (n: number) => Math.round(n).toLocaleString("sk-SK");
+    let title: string;
+    if (kind === "byt") {
+      const fd = facts.byty?.[`flat:${flat}`] ?? {};
+      title = `Byt${fd.cislo != null ? ` č. ${String(fd.cislo)}` : ""}${fd.vchod != null ? `, vchod ${String(fd.vchod)}` : ""}${sc ? `, dom s.č. ${sc}` : ""}`;
+    } else if (kind === "lv") title = `List vlastníctva č. ${lvNo}`;
+    else if (house) title = `${house.descr.replace(/\s+/g, " ").trim()}${house.sc && !house.descr.includes(house.sc) ? ` s.č. ${house.sc}` : ""}${parcels.length > 1 ? " s pozemkami" : ""}`;
+    else title = parcels.length > 1 ? `Pozemky ${parcels.length} parciel` : `Pozemok parc. č. ${main?.register === "E" ? "E " : ""}${main?.parcel_no ?? data.ref}`;
+    const subtitle = [ds.ku_name, okres ? `okres ${okres}` : null, `${parcels.length} ${parcels.length === 1 ? "parcela" : parcels.length < 5 ? "parcely" : "parciel"} · ${fmt(totalArea)} m²`,
+      lvs.length ? `LV ${lvs.slice(0, 6).join(", ")}${lvs.length > 6 ? "…" : ""}` : null].filter(Boolean).join(" · ");
+
+    return {
+      ok: true, kind, title, subtitle, celokNote,
+      dataset: { id: ds.id, ku_code: ds.ku_code, ku_name: ds.ku_name, region: ds.region, okres, updated_at: ds.updated_at },
+      main: { parcelNo: main?.parcel_no ?? null, register: main?.register ?? null, lvNo: main?.lv_no ?? lvNo, lat: main?.lat ?? null, lng: main?.lng ?? null, sc, flat },
+      parcels, lvs, buildings, facts, factMeta,
+      owners: { access, perLv }, legal, legalYears, flags, prices, comparables, compStats, listings, nearby, auctions, unregistered, acquisitions,
+      construction: { ku: cku, near },
+      signals: { settlement, landsearch, za, up, briefs, deal, cases },
+      work: { contacts: ct?.n ?? 0, lastContact: ct?.last ?? null, nextAt: ct?.nxt ?? null, comments: cm, documents: dc },
+      firms, obec: { changes, upChanges }, stateContracts: { n: scN, recent: scRecent },
+    };
+  });
+
+// ——— LIST NEHNUTEĽNOSTI — úradné registre na požiadanie (geológia, voda, príroda…) ———
+// Register zdrojov overuje Mac modul 49_LIST_NEHNUTELNOSTI/zdroje (registry.json) — sem idú len zdroje, ktoré
+// pri teste naozaj odpovedali, sú bez účtu a bez poplatku. Výsledok sa cachuje 30 dní na bod (~10 m).
+type ExtSource = {
+  key: string; label: string; category: string; attribution: string;
+  url: string; layer: number | string; buffer: number;
+  fields: string[]; detailFields?: string[]; valueMap?: Record<string, string>;
+  hitText?: string; noneText?: string;
+};
+const EXT_SOURCES: ExtSource[] = [];
+export type ExtHitRow = { key: string; label: string; category: string; status: "ok" | "hit" | "none" | "error"; value: string | null; detail?: string | null; attribution: string; url?: string | null };
+async function extOne(s: ExtSource, lat: number, lng: number): Promise<ExtHitRow> {
+  const base: ExtHitRow = { key: s.key, label: s.label, category: s.category, status: "error", value: null, attribution: s.attribution };
+  const u = `${s.url}/${s.layer}/query?geometry=${lng},${lat}&geometryType=esriGeometryPoint&inSR=4326&distance=${s.buffer}&units=esriSRUnit_Meter`
+    + `&spatialRel=esriSpatialRelIntersects&outFields=${encodeURIComponent([...s.fields, ...(s.detailFields ?? [])].join(",") || "*")}&returnGeometry=false&resultRecordCount=5&f=json`;
+  try {
+    const j = asObj(await fetchJsonTimed(u, 12000)) ?? {};
+    if (j.error) return base;
+    const feats = Array.isArray(j.features) ? (j.features as { attributes?: Record<string, unknown> }[]) : null;
+    if (!feats) return base;
+    if (!feats.length) return { ...base, status: "none", value: s.noneText ?? null };
+    const a = feats[0].attributes ?? {};
+    const raw = s.fields.map((f) => a[f]).find((v) => v != null && String(v).trim() !== "");
+    const val = raw == null ? (s.hitText ?? "zásah") : (s.valueMap?.[String(raw)] ?? String(raw));
+    const det = (s.detailFields ?? []).map((f) => a[f]).filter((v) => v != null && String(v).trim() !== "").map(String).join(" · ");
+    return { ...base, status: "hit", value: val.slice(0, 160), detail: det ? det.slice(0, 200) : null };
+  } catch { return base; }
+}
+export const getPropertyExt = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), lat: z.number(), lng: z.number(), datasetId: z.string().max(40).optional(), refresh: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; items: ExtHitRow[]; cached?: boolean; message?: string }> => {
+    if (!(await requireUser(data.token))) return { ok: false, items: [], message: "Neprihlásený." };
+    if (!EXT_SOURCES.length) return { ok: true, items: [] };
+    const key = `ext1:${data.lat.toFixed(4)}:${data.lng.toFixed(4)}:${EXT_SOURCES.length}`;
+    const c = await regCacheRead(key, !!data.refresh, 30 * 24 * 3600).catch(() => null);
+    if (c) return { ok: true, items: c.payload as ExtHitRow[], cached: true };
+    const items = await Promise.all(EXT_SOURCES.map((s) => extOne(s, data.lat, data.lng)));
+    if (items.some((i) => i.status !== "error")) await regCacheWrite(key, "ext", items).catch(() => {});
+    return { ok: true, items };
+  });
+
+// ——— LIST NEHNUTEĽNOSTI — klientska verzia cez odkaz (bez mien, bez internej práce) ———
+// Snapshot pripraví stránka (rovnaké dáta, aké vidí používateľ); server ho ešte raz očistí podľa pevného zoznamu
+// ciest: mená vlastníkov, firmy-vlastníci, signály scenárov a pracovné záznamy sa NIKDY neuložia. Tituly a ťarchy
+// len ako kódy typu („zalozne_pravo 2019") — iný text sa zahodí.
+export const createPropertyShare = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), kind: z.string().max(10), ref: z.string().max(60), title: z.string().max(200), snapshot: z.string().max(3_000_000), days: z.number().int().min(1).max(60).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; path?: string; expiresAt?: string; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u || !canExport(u.role as Role)) return { ok: false, message: "Bez oprávnenia na export." };
+    let snap: Record<string, unknown>;
+    try { snap = JSON.parse(data.snapshot) as Record<string, unknown>; } catch { return { ok: false, message: "Neplatný obsah listu." }; }
+    const core = asObj(snap.core);
+    if (!core) return { ok: false, message: "Neplatný obsah listu." };
+    const owners = asObj(core.owners);
+    if (owners && Array.isArray(owners.perLv)) owners.perLv = (owners.perLv as Record<string, unknown>[]).map((l) => ({ ...l, owners: [] }));
+    if (owners) owners.access = "summary";
+    core.firms = [];
+    core.signals = { settlement: [], landsearch: [], za: [], up: [], briefs: [], deal: null, cases: [] };
+    core.work = { contacts: 0, lastContact: null, nextAt: null, comments: 0, documents: 0 };
+    const code = /^[a-z_]+(\s+(1[89]\d{2}|20\d{2}))?$/;
+    if (Array.isArray(core.legal)) core.legal = (core.legal as Record<string, unknown>[]).map((l) => ({
+      ...l, titles: Array.isArray(l.titles) ? (l.titles as unknown[]).filter((t) => typeof t === "string" && code.test(t.trim())) : [],
+      tarchy: Array.isArray(l.tarchy) ? (l.tarchy as unknown[]).filter((t) => typeof t === "string" && code.test(t.trim())) : [],
+    }));
+    let out = JSON.stringify(snap);
+    if (out.length > 1_800_000 && Array.isArray(core.parcels)) {
+      core.parcels = (core.parcels as Record<string, unknown>[]).map((p, i) => (i < 30 ? p : { ...p, geometry_json: null }));
+      out = JSON.stringify(snap);
+    }
+    if (out.length > 1_800_000) return { ok: false, message: "List je príliš veľký na zdieľanie (príliš veľa parciel)." };
+    const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
+    const tok = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const days = data.days ?? 14;
+    const exp = (await q<{ e: string }>("SELECT datetime('now', ?) e", [`+${days} days`]))[0]?.e ?? "";
+    await q("INSERT INTO property_shares (token, dataset_id, kind, ref, title, snapshot, created_by, expires_at) VALUES (?,?,?,?,?,?,?,?)",
+      [tok, data.datasetId, data.kind, data.ref, data.title, out, u.name || u.email, exp]);
+    await logAudit("property.share", u.role, `Klientsky list ${data.title} (${data.datasetId} ${data.kind} ${data.ref}), platný ${days} dní`, data.datasetId);
+    return { ok: true, path: `/n/${tok}`, expiresAt: exp };
+  });
+export const listPropertyShares = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), kind: z.string().max(10), ref: z.string().max(60) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: { token: string; expiresAt: string; views: number; lastView: string | null; revoked: boolean; createdAt: string }[] }> => {
+    if (!(await requireUser(data.token))) return { ok: false, rows: [] };
+    const rows = await q<{ token: string; expires_at: string; views: number; last_view: string | null; revoked: number; created_at: string }>(
+      "SELECT token, expires_at, views, last_view, revoked, created_at FROM property_shares WHERE dataset_id=? AND kind=? AND ref=? ORDER BY created_at DESC LIMIT 20",
+      [data.datasetId, data.kind, data.ref]).catch(() => []);
+    return { ok: true, rows: rows.map((r) => ({ token: r.token, expiresAt: r.expires_at, views: r.views, lastView: r.last_view, revoked: !!r.revoked, createdAt: r.created_at })) };
+  });
+export const revokePropertyShare = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), share: z.string().regex(/^[0-9a-f]{32}$/) }))
+  .handler(async ({ data }): Promise<{ ok: boolean }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false };
+    await q("UPDATE property_shares SET revoked=1 WHERE token=?", [data.share]);
+    await logAudit("property.share.revoke", u.role, `Zrušený odkaz na list ${data.share.slice(0, 8)}…`);
+    return { ok: true };
+  });
