@@ -108,9 +108,12 @@ export function semafor(d: SheetData): Light[] {
   // ÚP
   const z = zoneOf(d);
   if (!z.name) out.push({ key: "up", label: "Územný plán", state: "unknown", text: "Zónu ÚP pre parcelu nemáme." });
-  else if (RESIDENTIAL.test(z.name)) out.push({ key: "up", label: "Územný plán", state: "ok", text: z.name });
-  else if (NON_BUILD.test(z.name)) out.push({ key: "up", label: "Územný plán", state: "warn", text: `${z.name} — výstavba len po zmene ÚP` });
-  else out.push({ key: "up", label: "Územný plán", state: "warn", text: z.name });
+  else {
+    const zn = z.name.replace(/\s*\/\s*/g, " / ").replace(/^./, (x) => x.toUpperCase());
+    if (RESIDENTIAL.test(z.name)) out.push({ key: "up", label: "Územný plán", state: "ok", text: zn });
+    else if (NON_BUILD.test(z.name)) out.push({ key: "up", label: "Územný plán", state: "warn", text: `${zn} — výstavba len po zmene ÚP` });
+    else out.push({ key: "up", label: "Územný plán", state: "warn", text: zn });
+  }
   // SIETE (obec + OSM)
   const ob = fact(c, "obec", `ku:${c.dataset?.ku_code ?? ""}`);
   const mk = mainKey(c);

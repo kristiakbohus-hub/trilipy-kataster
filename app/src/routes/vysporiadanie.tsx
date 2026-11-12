@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getSettlementCases, type SettlementRow } from "../lib/api/kataster.functions";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
-import { kuLabel, eur, parcelLabel } from "../lib/domain";
+import { kuLabel, eur, m2, parcelLabel } from "../lib/domain";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
 
@@ -12,6 +12,11 @@ export const Route = createFileRoute("/vysporiadanie")({
   head: () => ({ meta: [{ title: "Vysporiadanie pozemkov — TRI LIPY KATASTER CORE" }] }),
   component: SettlementPage,
 });
+
+// výmera: do 1 ha v m², nad v ha (parcely pozemkovej knihy majú aj desiatky ha)
+function plocha(n: number): string {
+  return n >= 10000 ? `${(n / 10000).toLocaleString("sk-SK", { maximumFractionDigits: 1 })} ha` : m2(n);
+}
 
 type OItem = { share: string; pct: number; kind: string; absent: boolean };
 function OutreachList({ json }: { json: string | null }) {
@@ -89,6 +94,8 @@ function SettlementPage() {
     () => shownAll.reduce((a, r) => a + (r.buyout_eur ?? 0), 0),
     [shownAll],
   );
+  // riadky pushnuté pred 2026-11-12 nemajú buyout_area_m2 → ich odhad je ešte z celej parcely
+  const sumUnderBuilding = shownAll.every((r) => r.buyout_eur == null || r.buyout_area_m2 != null);
 
   return (
     <div className="space-y-6">
@@ -153,8 +160,13 @@ function SettlementPage() {
 
       {cls === "MATCH" && buyoutSum > 0 ? (
         <p className="-mt-3 text-xs text-muted">
-          Orientačný odhad hodnoty pozemkov vo výbere: <b className="text-fg">{eur(buyoutSum)}</b> (horná hranica odkupu,
-          výmera × €/m² podľa druhu — hrubý screening, nie znalecký posudok).
+          {sumUnderBuilding ? (
+            <>Orientačný odhad hodnoty pozemkov pod stavbami vo výbere: <b className="text-fg">{eur(buyoutSum)}</b> (plocha
+            pod stavbou × €/m² podľa druhu — hrubý screening, nie znalecký posudok).</>
+          ) : (
+            <>Orientačný odhad hodnoty pozemkov vo výbere: <b className="text-fg">{eur(buyoutSum)}</b> (horná hranica odkupu,
+            výmera × €/m² podľa druhu — hrubý screening, nie znalecký posudok).</>
+          )}
         </p>
       ) : null}
 
@@ -204,11 +216,20 @@ function SettlementPage() {
               {r.buyout_eur != null ? (
                 <div className="mt-3 rounded-md border border-line bg-surface-2/30 px-3 py-2 text-xs">
                   <div className="flex items-center justify-between">
-                    <span className="text-muted">Orientačný odhad pozemku</span>
+                    <span className="text-muted">{r.buyout_area_m2 != null ? "Orientačný odhad pozemku pod stavbou" : "Orientačný odhad pozemku"}</span>
                     <span className="font-semibold tabular-nums text-fg">{eur(r.buyout_eur)}</span>
                   </div>
                   <div className="mt-0.5 text-[11px] text-muted">
-                    {r.land_area_m2 != null ? `${r.land_area_m2} m²` : ""}{r.land_druh ? ` · ${r.land_druh}` : ""} · horná hranica odkupu
+                    {r.buyout_area_m2 != null ? (
+                      <>
+                        {plocha(r.buyout_area_m2)}{r.buyout_druh ? ` · ${r.buyout_druh}` : ""}
+                        {r.land_area_m2 != null && r.land_area_m2 > r.buyout_area_m2
+                          ? ` · celá parcela ${parcelLabel(r.parcel_no)} má ${plocha(r.land_area_m2)}${r.land_druh ? ` (${r.land_druh})` : ""}`
+                          : ""}
+                      </>
+                    ) : (
+                      <>{r.land_area_m2 != null ? plocha(r.land_area_m2) : ""}{r.land_druh ? ` · ${r.land_druh}` : ""} · horná hranica odkupu</>
+                    )}
                   </div>
                 </div>
               ) : null}

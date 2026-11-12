@@ -74,6 +74,9 @@ function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
 }
 
 // ——— predpočítané údaje (property_facts) — popisy zo schém Mac modulov ———
+const AMEN_SK: Record<string, string> = { skola: "škola", ms: "materská škola", lekar: "lekár", lekaren: "lekáreň", super: "supermarket", potrav: "potraviny",
+  posta: "pošta", banka: "banka", atm: "bankomat", sport: "športovisko", ihrisko: "ihrisko", gastro: "reštaurácia", nabij: "nabíjačka", hasic: "hasiči",
+  policia: "polícia", bus: "autobus", vlak: "vlak", bazen: "plaváreň", nemoc: "nemocnica", lyze: "lyžovanie" };
 const human = (k: string) => k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 function fmtVal(v: unknown, f?: FactField): ReactNode {
   if (v == null || v === "") return "—";
@@ -81,13 +84,14 @@ function fmtVal(v: unknown, f?: FactField): ReactNode {
   if (typeof v === "boolean") return v ? "áno" : "nie";
   if (typeof v === "number") {
     if (Number.isInteger(v) && /\brok|year|\bLV\b|list vlastníctva|súpisn|číslo|kód/i.test(f?.label ?? "")) return `${v}${unit}`;
+    if (f?.unit === "m" && Math.abs(v) >= 1000) return `${nf(v / 1000, 1)}\u00a0km`;
     return `${nf(v, Math.abs(v) < 10 ? 2 : Math.abs(v) < 100 ? 1 : 0)}${unit}`;
   }
   if (typeof v === "string" && /^\d{2}-\d{2}$/.test(v)) return `${Number(v.slice(3))}. ${Number(v.slice(0, 2))}.`;
   if (typeof v === "string") return `${v}${unit && !/[a-zA-Z€%°]$/.test(v) ? unit : ""}`;
   if (Array.isArray(v)) {
     if (!v.length) return "—";
-    if (v.every((x) => x == null || typeof x !== "object")) return v.map((x) => String(x)).join(", ");
+    if (v.every((x) => x == null || typeof x !== "object")) return v.map((x) => AMEN_SK[String(x)] ?? String(x)).join(", ");
     const keys = [...new Set(v.flatMap((x) => (x && typeof x === "object" ? Object.keys(x as object) : [])))].slice(0, 8);
     return (
       <table className="mt-1 w-full text-[11px]">
@@ -552,7 +556,7 @@ function printCss(title: string): string {
   .ps-table td { padding: 1.1mm 2.2mm 1.1mm 0 !important; border-bottom: .3pt solid #e6e6e6; vertical-align: top; }
   .ps-table tbody tr { border-bottom: none !important; break-inside: avoid; }
   .ps-muted { color: #7a7a7a !important; font-size: 7.6pt !important; }
-  .ps-source { font-size: 6.3pt !important; color: #a0a0a0 !important; font-style: italic; margin-top: 2.5mm !important; }
+  .ps-source { break-before: avoid-page; font-size: 6.3pt !important; color: #a0a0a0 !important; font-style: italic; margin-top: 2.5mm !important; }
   .property-sheet svg { max-width: 100%; }
   .property-sheet figure { break-inside: avoid; }
   .property-sheet .rounded-md, .property-sheet .rounded-lg { border-radius: 0 !important; }
@@ -620,7 +624,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
 
       <Sec id="skladba" n={num("skladba")} title="Skladba nehnuteľnosti" source="SPI a VGI (ÚGKK SR); zóna ÚP z našich územnoplánovacích podkladov.">
         <Table head={["Parcela", "Výmera", "Druh pozemku", "Umiestnenie", "LV", "Úloha v celku", "Zóna ÚP"]}
-          rows={c.parcels.slice(0, 60).map((p) => [`${p.register === "E" ? "E " : ""}${p.parcel_no}`, m2(p.area_m2), p.use_type ?? "—", p.placement ?? "—", p.lv_no ?? "—", p.role, p.zone ?? "—"])} />
+          rows={c.parcels.slice(0, 60).map((p) => [`${p.register === "E" ? "E " : ""}${p.parcel_no}`, m2(p.area_m2), p.use_type ?? "—", p.placement ?? "—", p.lv_no ?? "—", p.role, prettyZone(p.zone) ?? "—"])} />
         {c.parcels.length > 60 ? <Muted>… a ďalších {c.parcels.length - 60} parciel.</Muted> : null}
         {(() => {
           const rows = c.parcels.filter((p) => p.register === "C" && p.geometry_json).slice(0, 10).map((p) => [p, shapeOf(p.geometry_json)] as const).filter(([, sh]) => sh);
