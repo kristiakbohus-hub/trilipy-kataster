@@ -16,6 +16,8 @@ export type SheetData = {
   /** development výpočet (regulatív z ÚP alebo odvodený) — počíta stránka, v klientskej verzii uložený v snapshote */
   dev: { regName: string | null; proxy: boolean; izp: number | null; kz: number | null; ipp: number | null; izpArea: number; hpp: number; cpp: number; byty: number | null; gdv: number | null } | null;
   generatedAt: string;
+  /** pre koho je dokument (klientska verzia zostavená na serveri) */
+  client?: string | null;
 };
 
 export type LightState = "ok" | "warn" | "bad" | "unknown";

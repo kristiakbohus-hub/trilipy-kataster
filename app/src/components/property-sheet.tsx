@@ -35,22 +35,22 @@ export function groupLegal(items: string[]): { label: string; n: number; span: s
 }
 
 // ——— stavebné bloky ———
-function Sec({ id, title, source, children }: { id: string; title: string; source?: ReactNode; children: ReactNode }) {
+function Sec({ id, n, title, source, children }: { id: string; n?: string; title: string; source?: ReactNode; children: ReactNode }) {
   return (
-    <section id={id} className="break-inside-avoid-page scroll-mt-16 border-t border-line pt-4">
-      <h2 className="mb-2 text-base font-semibold text-fg">{title}</h2>
-      <div className="space-y-3 text-sm">{children}</div>
-      {source ? <div className="mt-2 text-[10px] leading-snug text-muted">Zdroj: {source}</div> : null}
+    <section id={id} className="ps-sec scroll-mt-16 border-t border-line pt-4">
+      <h2 className="ps-h2 mb-2 flex items-baseline gap-2 text-base font-semibold text-fg">{n ? <span className="ps-num font-light text-muted">{n}</span> : null}<span>{title}</span></h2>
+      <div className="ps-body space-y-3 text-sm">{children}</div>
+      {source ? <div className="ps-source mt-2 text-[10px] leading-snug text-muted">Zdroj: {source}</div> : null}
     </section>
   );
 }
-function Muted({ children }: { children: ReactNode }) { return <p className="text-xs text-muted">{children}</p>; }
-function Sub({ children }: { children: ReactNode }) { return <h3 className="text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</h3>; }
+function Muted({ children }: { children: ReactNode }) { return <p className="ps-muted text-xs text-muted">{children}</p>; }
+function Sub({ children }: { children: ReactNode }) { return <h3 className="ps-sub text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</h3>; }
 function Grid({ rows }: { rows: [ReactNode, ReactNode][] }) {
   const r = rows.filter(([, v]) => v != null && v !== "" && v !== "—");
   if (!r.length) return null;
   return (
-    <dl className="grid grid-cols-1 gap-x-6 sm:grid-cols-2">
+    <dl className="ps-grid grid grid-cols-1 gap-x-6 sm:grid-cols-2">
       {r.map(([k, v], i) => (
         <div key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
           <dt className="text-muted">{k}</dt><dd className="text-right tabular-nums">{v}</dd>
@@ -62,8 +62,8 @@ function Grid({ rows }: { rows: [ReactNode, ReactNode][] }) {
 function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
   if (!rows.length) return null;
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-xs">
+    <div className="ps-tablewrap overflow-x-auto">
+      <table className="ps-table w-full text-xs">
         <thead><tr className="border-b border-line text-left text-muted">{head.map((h, i) => <th key={i} className="py-1 pr-2 font-medium">{h}</th>)}</tr></thead>
         <tbody>{rows.map((r, i) => <tr key={i} className="border-b border-line/40 align-top">{r.map((c, j) => <td key={j} className="py-1 pr-2 tabular-nums">{c}</td>)}</tr>)}</tbody>
       </table>
@@ -357,6 +357,199 @@ function Scores({ d, isClient }: { d: SheetData; isClient: boolean }) {
   );
 }
 
+// ——— TLAČ / PDF v značke TRI LIPY (brandbook: charcoal #333 na bielej, Josefin Sans verzálky s prestrkom, Montserrat) ———
+const LIGHT_WORD: Record<Light["state"], string> = { ok: "v poriadku", warn: "pozor", bad: "riziko", unknown: "neznáme" };
+const LIGHT_DOT: Record<Light["state"], string> = { ok: "#5b7a58", warn: "#b08a3e", bad: "#9c4a40", unknown: "#b5b5b5" };
+const short = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1).trim()}…` : t);
+const dateLong = (iso: string) => new Date(iso).toLocaleDateString("sk-SK", { day: "numeric", month: "long", year: "numeric" });
+const esc = (t: string) => t.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ");
+
+function docRef(d: SheetData): string {
+  const c = d.core;
+  const ref = c.main.parcelNo ?? (c.main.lvNo != null ? `LV${c.main.lvNo}` : "");
+  return `TL-${c.dataset?.ku_code ?? "000000"}-${String(ref).replace(/[^0-9A-Za-z]+/g, "-")}-${d.generatedAt.slice(0, 10).replace(/-/g, "")}`;
+}
+
+/** Kľúčové zistenia pre zhrnutie — len z údajov listu, bez tvrdení nad rámec dôkazu (phrases.ts). */
+function keyFindings(d: SheetData): string[] {
+  const c = d.core; const mk = mainKey(c); const out: string[] = [];
+  const est = c.compStats?.estimateEur ?? d.avm?.estimate_eur ?? null;
+  if (c.compStats?.estimateEur) out.push(`Orientačná hodnota ${eur(c.compStats.estimateEur)} podľa ${c.compStats.n} porovnateľných predajov zo zmlúv v okrese${c.compStats.medPpm2 ? ` (medián ${nf(c.compStats.medPpm2)} €/m²)` : ""}.`);
+  else if (est) out.push(`Orientačná hodnota ${eur(est)} (automatický odhad z ponúk a predajov v okrese).`);
+  const z = zoneOf(d); out.push(z.name ? `Územný plán: ${z.name}.` : "Zónu územného plánu pre parcelu nemáme — overiť na obci.");
+  const pr = mk ? fact(c, "pristup", mk) : null;
+  if (pr?.trieda) out.push(`Prístup: ${String(pr.trieda)}${pr.front_m ? `, front ${nf(Number(pr.front_m))} m` : ""}.`);
+  const t = mk ? fact(c, "teren", mk) : null, sl = mk ? fact(c, "slnko", mk) : null;
+  if (t) out.push(`Terén: priemerný sklon ${nf(Number(t.sklon_avg ?? 0), 1)} %, orientácia ${String(t.orient ?? "—")}, ${String(t.poloha ?? "").toLowerCase() || "poloha neurčená"}${sl?.dec_slnko != null ? `; 21. 12. priame slnko ${nf(Number(sl.dec_slnko), 1)} h` : ""}.`);
+  const hits = [...(d.limits?.items ?? []).filter((h) => h.hit).map((h) => h.label), ...(d.ext ?? []).filter((e) => e.status === "hit" && e.risk).map((e) => `${e.label}${e.value ? ` (${short(e.value, 40)})` : ""}`)];
+  out.push(hits.length ? `Zásahy v úradných registroch: ${hits.slice(0, 5).join("; ")}${hits.length > 5 ? " …" : ""}.` : "V sledovaných registroch limitov a rizík bez prieniku v dostupnom pokrytí.");
+  const ob = fact(c, "obec", `ku:${c.dataset?.ku_code ?? ""}`); const osm = mk ? fact(c, "osm", mk) : null;
+  const net = [ob?.vodovod_verejny_pct != null ? `vodovod ${nf(Number(ob.vodovod_verejny_pct))} % domov obce` : null, ob?.kanal_pripojka_pct != null ? `kanalizácia ${nf(Number(ob.kanal_pripojka_pct))} %` : null,
+    ob?.plyn_obec != null ? (ob.plyn_obec ? "plyn v obci" : "obec bez plynu") : null, typeof osm?.trafo === "number" ? `trafostanica ${dist(osm.trafo as number)}` : null].filter(Boolean);
+  if (net.length) out.push(`Siete: ${net.join(", ")}.`);
+  const tar = c.legal.reduce((x, l) => x + l.tarchyCount, 0), own = c.owners.perLv.reduce((x, l) => x + l.count, 0);
+  out.push(`Vlastníctvo: ${own} ${own === 1 ? "vlastník" : own < 5 ? "vlastníci" : "vlastníkov"} na ${c.lvs.length} LV; ${tar ? `${tar}× ťarcha alebo poznámka` : "ťarcha v našom zázname nie je zapísaná (overiť na výpise)"}.`);
+  return out;
+}
+
+function PrintCover({ d, lights, isClient }: { d: SheetData; lights: Light[]; isClient: boolean }) {
+  const c = d.core;
+  const total = c.parcels.reduce((x, p) => x + (p.area_m2 ?? 0), 0);
+  const est = c.compStats?.estimateEur ?? d.avm?.estimate_eur ?? null;
+  const z = zoneOf(d);
+  const kpis: [string, string][] = [
+    ["Výmera", m2(total)], ["Parcely", String(c.parcels.length)],
+    ["List vlastníctva", c.lvs.length ? `${c.lvs.slice(0, 3).join(", ")}${c.lvs.length > 3 ? " …" : ""}` : "—"],
+    ["Územný plán", z.name ? short(z.name.replace(/ — ÚP z výkresu, orientačné$/, " (výkres)"), 30) : "bez zóny"],
+    ["Orientačná hodnota", est ? eur(est) : "—"], ["Katastrálne územie", (c.dataset?.ku_name ?? "—").replace(/^k\.ú\.\s*/i, "")],
+  ];
+  return (
+    <section className="ps-cover">
+      <div className="ps-cover-head">
+        <img src="/tl-logo.png" alt="TRI LIPY" className="ps-cover-logo" />
+        <div className="ps-cover-doc">
+          <div className="ps-eyebrow">List nehnuteľnosti</div>
+          <div>{isClient ? "Pre klienta" : "Interná verzia"}</div>
+          <div>{dateLong(d.generatedAt)}</div>
+        </div>
+      </div>
+      <div className="ps-cover-titles">
+        <div className="ps-eyebrow">{(c.dataset?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "k. ú. ")}{c.dataset?.okres ? ` · okres ${c.dataset.okres}` : ""}</div>
+        <h1 className="ps-cover-title">{c.title}</h1>
+        {c.celokNote ? <p className="ps-cover-note">{c.celokNote}</p> : null}
+      </div>
+      <div className="ps-cover-map"><ParcelSketch d={d} /></div>
+      <div className="ps-kpis">{kpis.map(([k, v]) => <div key={k} className="ps-kpi"><div className="ps-kpi-v">{v}</div><div className="ps-kpi-k">{k}</div></div>)}</div>
+      <div className="ps-cover-lights">
+        {lights.map((l) => (
+          <div key={l.key} className="ps-light">
+            <div className="ps-light-h"><span className="ps-dot" style={{ background: LIGHT_DOT[l.state] }} />{l.label}<span className="ps-light-w">{LIGHT_WORD[l.state]}</span></div>
+            <div className="ps-light-t">{short(l.text, 90)}</div>
+          </div>
+        ))}
+      </div>
+      <div className="ps-cover-foot">
+        <div>{d.client ? <>Pripravené pre <b>{d.client}</b></> : <>TRI LIPY · kataster a pozemky</>}</div>
+        <div>Dokument {docRef(d)} · údaje katastra k {date(c.dataset?.updated_at)}</div>
+      </div>
+    </section>
+  );
+}
+
+function PrintSummary({ d, lights, isClient, toc }: { d: SheetData; lights: Light[]; isClient: boolean; toc: [string, string][] }) {
+  const checks = checklist(d).slice(0, 9);
+  const suit = suitability(d);
+  return (
+    <section className="ps-summary">
+      <h2 className="ps-h2"><span className="ps-num">00</span><span>Zhrnutie</span></h2>
+      <div className="ps-sum-cols">
+        <div>
+          <h3 className="ps-sub">Kľúčové zistenia</h3>
+          <ul className="ps-findings">{keyFindings(d).map((t, i) => <li key={i}>{t}</li>)}</ul>
+          <h3 className="ps-sub">Vhodnosť podľa využitia</h3>
+          <div className="ps-suit">{suit.map((x) => (
+            <div key={x.key} className="ps-suit-row"><span>{x.label}</span><span className="ps-bar"><span style={{ width: `${x.score}%` }} /></span><span className="ps-suit-n">{x.score}</span></div>
+          ))}</div>
+        </div>
+        <div>
+          <h3 className="ps-sub">Semafor</h3>
+          <div className="ps-sum-lights">{lights.map((l) => (
+            <div key={l.key} className="ps-sum-light"><span className="ps-dot" style={{ background: LIGHT_DOT[l.state] }} /><b>{l.label}</b> — {LIGHT_WORD[l.state]}<div>{l.text}</div></div>
+          ))}</div>
+        </div>
+      </div>
+      <h3 className="ps-sub">Čo overiť pred kúpou — výber</h3>
+      <ol className="ps-checks">{checks.map((x, i) => <li key={i}><b>{x.text}</b><span> — {x.why}</span></li>)}</ol>
+      <h3 className="ps-sub">Obsah dokumentu</h3>
+      <ol className="ps-toc">{toc.map(([n, t]) => <li key={n}><span className="ps-num">{n}</span>{t}</li>)}</ol>
+      <p className="ps-disclaimer">Orientačný podklad zostavený z verejných a katastrálnych údajov ku dňu vygenerovania — nie znalecký posudok, právne ani geodetické stanovisko.
+        Údaje označené ako odvodené sú výpočty TRI LIPY; „neznáme" znamená, že zdroj chýba, nie že je všetko v poriadku.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}</p>
+    </section>
+  );
+}
+
+function printCss(title: string): string {
+  return `
+@page { size: A4; margin: 19mm 16mm 18mm 16mm;
+  @top-left { content: "TRI LIPY  ·  LIST NEHNUTEĽNOSTI"; font: 600 6.6pt "Josefin Sans", sans-serif; letter-spacing: .24em; color: #8a8a8a; vertical-align: bottom; padding-bottom: 3mm; }
+  @top-right { content: "${esc(title)}"; font: 500 6.8pt "Montserrat", sans-serif; color: #8a8a8a; vertical-align: bottom; padding-bottom: 3mm; }
+  @bottom-left { content: "Orientačný podklad — nie znalecký posudok ani právne stanovisko"; font: 400 6.2pt "Montserrat", sans-serif; color: #a0a0a0; vertical-align: top; padding-top: 3mm; }
+  @bottom-right { content: "Strana " counter(page) " / " counter(pages); font: 500 6.8pt "Montserrat", sans-serif; color: #6f6f6f; vertical-align: top; padding-top: 3mm; }
+}
+@page :first { margin: 0; @top-left { content: none } @top-right { content: none } @bottom-left { content: none } @bottom-right { content: none } }
+.ps-cover, .ps-summary { display: none; }
+@media print {
+  html, body { background: #fff !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .no-print, .ps-screen-only, nav, aside, header.app, footer { display: none !important; }
+  .property-sheet { max-width: none !important; margin: 0 !important; padding: 0 !important; color: #333 !important; font-family: "Montserrat", ui-sans-serif, sans-serif !important; font-size: 8.4pt !important; line-height: 1.5 !important; }
+  .property-sheet > * + * { margin-top: 0 !important; }
+  .property-sheet *:not(svg):not(svg *) { font-size: inherit; }
+  .property-sheet a { color: inherit !important; text-decoration: none !important; }
+  /* titulná strana */
+  .ps-cover { display: flex !important; flex-direction: column; box-sizing: border-box; width: 210mm; height: 296.5mm; padding: 17mm 18mm 14mm; break-after: page; overflow: hidden; }
+  .ps-cover-head { display: flex; justify-content: space-between; align-items: flex-start; }
+  .ps-cover-logo { width: 34mm; height: auto; }
+  .ps-cover-doc { text-align: right; font-size: 7.6pt !important; color: #6f6f6f; line-height: 1.6; }
+  .ps-eyebrow { font-family: "Josefin Sans", sans-serif; text-transform: uppercase; letter-spacing: .28em; font-size: 7.4pt !important; color: #8a8a8a; font-weight: 600; }
+  .ps-cover-doc .ps-eyebrow { color: #333; margin-bottom: 1mm; }
+  .ps-cover-titles { margin-top: 15mm; padding-top: 6mm; border-top: .7pt solid #333; }
+  .ps-cover-title { font-family: "Josefin Sans", sans-serif !important; text-transform: uppercase; letter-spacing: .07em; font-weight: 600; font-size: 25pt !important; line-height: 1.12; margin: 3mm 0 0; color: #2b2b2b; text-wrap: balance; }
+  .ps-cover-note { margin-top: 2.5mm; color: #6f6f6f; font-size: 8pt !important; max-width: 150mm; }
+  .ps-cover-map { margin-top: 7mm; }
+  .ps-cover-map svg { border: none !important; border-radius: 0 !important; width: 100%; height: auto; }
+  .ps-cover-map figcaption { font-size: 6.2pt !important; color: #9a9a9a; margin-top: 1.2mm; }
+  .ps-kpis { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 7mm; border-top: .5pt solid #d6d6d6; }
+  .ps-kpi { padding: 3.2mm 3mm 3.2mm 0; border-bottom: .5pt solid #d6d6d6; }
+  .ps-kpi:nth-child(3n+2), .ps-kpi:nth-child(3n) { padding-left: 4mm; border-left: .5pt solid #d6d6d6; }
+  .ps-kpi-v { font-family: "Josefin Sans", sans-serif; font-weight: 600; font-size: 13pt !important; letter-spacing: .02em; color: #2b2b2b; line-height: 1.2; font-variant-numeric: tabular-nums; }
+  .ps-kpi-k { font-family: "Josefin Sans", sans-serif; text-transform: uppercase; letter-spacing: .2em; font-size: 6.2pt !important; color: #8a8a8a; margin-top: .8mm; }
+  .ps-cover-lights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm 5mm; margin-top: 7mm; }
+  .ps-light-h { font-family: "Josefin Sans", sans-serif; text-transform: uppercase; letter-spacing: .14em; font-size: 7pt !important; font-weight: 600; color: #333; display: flex; align-items: center; gap: 1.6mm; }
+  .ps-light-w { margin-left: auto; font-weight: 400; color: #8a8a8a; letter-spacing: .1em; }
+  .ps-light-t { font-size: 6.9pt !important; color: #5a5a5a; margin-top: .8mm; line-height: 1.35; }
+  .ps-dot { display: inline-block; width: 2.2mm; height: 2.2mm; border-radius: 50%; flex: none; }
+  .ps-cover-foot { margin-top: auto; padding-top: 4mm; border-top: .5pt solid #d6d6d6; display: flex; justify-content: space-between; font-size: 6.8pt !important; color: #7a7a7a; }
+  /* zhrnutie */
+  .ps-summary { display: block !important; break-after: page; }
+  .ps-sum-cols { display: grid; grid-template-columns: 1.25fr 1fr; gap: 8mm; }
+  .ps-findings { margin: 0; padding-left: 4mm; } .ps-findings li { margin: 0 0 1.6mm; }
+  .ps-suit-row { display: grid; grid-template-columns: 38mm 1fr 8mm; align-items: center; gap: 2mm; padding: .9mm 0; border-bottom: .3pt solid #e6e6e6; }
+  .ps-bar { height: 1.6mm; background: #ececec; display: block; } .ps-bar > span { display: block; height: 100%; background: #333; }
+  .ps-suit-n { text-align: right; font-variant-numeric: tabular-nums; }
+  .ps-sum-light { padding: 1.4mm 0 1.6mm; border-bottom: .3pt solid #e6e6e6; } .ps-sum-light div { color: #5a5a5a; margin-left: 3.8mm; }
+  .ps-sum-light .ps-dot { margin-right: 1.6mm; vertical-align: middle; }
+  .ps-checks { margin: 0; padding-left: 5mm; } .ps-checks li { margin-bottom: 1.3mm; } .ps-checks span { color: #6a6a6a; }
+  .ps-checks b { font-weight: 600; }
+  .ps-toc { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 10mm; } .ps-toc li { padding: .7mm 0; border-bottom: .3pt dotted #d0d0d0; break-inside: avoid; }
+  .ps-toc .ps-num { display: inline-block; width: 8mm; }
+  .ps-disclaimer { margin-top: 6mm; font-size: 6.6pt !important; color: #8a8a8a; max-width: 160mm; }
+  /* kapitoly */
+  .ps-sec { border-top: none !important; padding-top: 0 !important; margin-top: 8mm !important; break-inside: auto; }
+  .ps-summary + * .ps-sec:first-child { margin-top: 0 !important; }
+  .ps-h2 { font-family: "Josefin Sans", sans-serif !important; text-transform: uppercase; letter-spacing: .15em; font-weight: 600; font-size: 11.5pt !important; color: #2b2b2b !important; display: flex !important; align-items: baseline; gap: 3mm !important;
+    border-bottom: .7pt solid #333; padding-bottom: 2mm; margin: 0 0 3.5mm !important; break-after: avoid; }
+  .ps-num { font-weight: 300 !important; color: #a0a0a0 !important; letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+  .ps-body > * + * { margin-top: 3mm !important; }
+  .ps-sub { font-family: "Josefin Sans", sans-serif !important; text-transform: uppercase; letter-spacing: .2em; font-size: 6.8pt !important; font-weight: 600; color: #6f6f6f !important; margin: 4.5mm 0 1.6mm !important; break-after: avoid; }
+  .ps-grid { display: grid !important; grid-template-columns: 1fr 1fr !important; column-gap: 8mm !important; }
+  .ps-grid > div { border-bottom: .3pt solid #e3e3e3 !important; padding: 1mm 0 !important; break-inside: avoid; }
+  .ps-grid dt { color: #7a7a7a !important; } .ps-grid dd { color: #2b2b2b; font-weight: 500; }
+  .ps-tablewrap { overflow: visible !important; }
+  .ps-table { border-collapse: collapse; width: 100%; font-size: 7.4pt !important; }
+  .ps-table thead { display: table-header-group; }
+  .ps-table thead tr { border-bottom: .7pt solid #333 !important; }
+  .ps-table th { font-family: "Josefin Sans", sans-serif; text-transform: uppercase; letter-spacing: .12em; font-size: 6.1pt !important; font-weight: 600; color: #7a7a7a !important; padding: 1.2mm 2.2mm 1.2mm 0 !important; text-align: left; }
+  .ps-table td { padding: 1.1mm 2.2mm 1.1mm 0 !important; border-bottom: .3pt solid #e6e6e6; vertical-align: top; }
+  .ps-table tbody tr { border-bottom: none !important; break-inside: avoid; }
+  .ps-muted { color: #7a7a7a !important; font-size: 7.6pt !important; }
+  .ps-source { font-size: 6.3pt !important; color: #a0a0a0 !important; font-style: italic; margin-top: 2.5mm !important; }
+  .property-sheet svg { max-width: 100%; }
+  .property-sheet figure { break-inside: avoid; }
+  .property-sheet .rounded-md, .property-sheet .rounded-lg { border-radius: 0 !important; }
+}`;
+}
+
 // ——— hlavný komponent ———
 export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode } }) {
   const c = d.core;
@@ -376,27 +569,34 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
     ["up", "ÚP"], ["limity", "Limity"], ["teren", "Terén a slnko"], ["klima", "Klíma"], ["siete", "Siete"], ["doprava", "Doprava"], ["hodnota", "Hodnota"],
     ["trh", "Trh"], ["obec", "Obec"], ...(isClient ? [] : [["praca", "Práca"] as [string, string]]), ["overit", "Čo overiť"], ["zdroje", "Zdroje"]];
 
+  const navIds = nav.map(([id]) => id);
+  const num = (id: string) => String(navIds.indexOf(id) + 1).padStart(2, "0");
+  const toc = nav.map(([id, label]) => [num(id), ({ prehlad: "Prehľad", skladba: "Skladba nehnuteľnosti", vlastnictvo: "Vlastníctvo", pravo: "Právny stav", pristup: "Prístup a susedia",
+    up: "Územný plán a zastavateľnosť", limity: "Limity a riziká", teren: "Terén a slnko", klima: "Klíma a stavebné normy", siete: "Siete a energie", doprava: "Doprava a vybavenosť",
+    hodnota: "Hodnota", trh: "Trh a dopyt", obec: "Obec a ľudia", praca: "Signály a práca (interné)", overit: "Čo overiť pred kúpou", zdroje: "Zdroje a úplnosť" } as Record<string, string>)[id] ?? label] as [string, string]);
+
   return (
     <div className="property-sheet mx-auto max-w-4xl space-y-5 text-fg">
-      <style>{`@media print { .no-print { display:none !important } header, nav, aside, footer { display:none !important } .property-sheet { max-width:none } a { color:inherit; text-decoration:none } section { page-break-inside: auto } }`}</style>
+      <style>{printCss(c.title)}</style>
+      <PrintCover d={d} lights={lights} isClient={isClient} />
+      <PrintSummary d={d} lights={lights} isClient={isClient} toc={toc} />
 
-      <header className="space-y-2 border-b-2 pb-3" style={{ borderColor: "#333" }}>
-        <div className="text-[10px] uppercase tracking-[0.22em] text-muted">TRI LIPY · list nehnuteľnosti{isClient ? "" : " · interná verzia"}</div>
+      <header className="ps-screen-only space-y-2 border-b-2 pb-3" style={{ borderColor: "#333" }}>
+        <div className="flex items-center gap-3"><img src="/tl-logo.png" alt="TRI LIPY" className="h-9 w-auto" /><div className="text-[10px] uppercase tracking-[0.22em] text-muted">list nehnuteľnosti{isClient ? "" : " · interná verzia"}</div></div>
         <h1 className="text-2xl font-semibold leading-tight">{c.title}</h1>
         <div className="text-sm text-muted">{c.subtitle}</div>
         {c.celokNote ? <div className="text-xs text-muted">{c.celokNote}</div> : null}
         {internal?.actions ? <div className="no-print pt-1">{internal.actions}</div> : null}
       </header>
 
-      <Lights lights={lights} />
-      <Scores d={d} isClient={isClient} />
+      <div className="ps-screen-only space-y-5"><Lights lights={lights} /><Scores d={d} isClient={isClient} /></div>
 
       <nav className="no-print flex flex-wrap gap-1.5 text-xs">
         {nav.map(([id, label]) => <a key={id} href={`#${id}`} className="rounded border border-line px-2 py-0.5 text-muted hover:border-ink hover:text-fg">{label}</a>)}
       </nav>
 
-      <Sec id="prehlad" title="Prehľad" source={<>Kataster ÚGKK SR (stav k {date(c.dataset?.updated_at)}); obrysy z katastrálnej mapy (VGI).</>}>
-        <ParcelSketch d={d} />
+      <Sec id="prehlad" n={num("prehlad")} title="Prehľad" source={<>Kataster ÚGKK SR (stav k {date(c.dataset?.updated_at)}); obrysy z katastrálnej mapy (VGI).</>}>
+        <div className="ps-screen-only"><ParcelSketch d={d} /></div>
         {c.main.lat != null && c.main.lng != null ? <HistoricMap lat={c.main.lat} lng={c.main.lng} /> : null}
         <Grid rows={[
           ["Katastrálne územie", c.dataset?.ku_name ?? "—"], ["Okres", c.dataset?.okres ?? "—"],
@@ -409,7 +609,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {!isClient && c.main.lat != null ? <a className="no-print text-xs text-brand underline" href={`/mapa?ll=${c.main.lat},${c.main.lng}`}>Otvoriť na mape →</a> : null}
       </Sec>
 
-      <Sec id="skladba" title="Skladba nehnuteľnosti" source="SPI a VGI (ÚGKK SR); zóna ÚP z našich územnoplánovacích podkladov.">
+      <Sec id="skladba" n={num("skladba")} title="Skladba nehnuteľnosti" source="SPI a VGI (ÚGKK SR); zóna ÚP z našich územnoplánovacích podkladov.">
         <Table head={["Parcela", "Výmera", "Druh pozemku", "Umiestnenie", "LV", "Úloha v celku", "Zóna ÚP"]}
           rows={c.parcels.slice(0, 60).map((p) => [`${p.register === "E" ? "E " : ""}${p.parcel_no}`, m2(p.area_m2), p.use_type ?? "—", p.placement ?? "—", p.lv_no ?? "—", p.role, p.zone ?? "—"])} />
         {c.parcels.length > 60 ? <Muted>… a ďalších {c.parcels.length - 60} parciel.</Muted> : null}
@@ -434,7 +634,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           : mainParcel?.bpej ? <Grid rows={[["BPEJ", mainParcel.bpej], ["Skupina kvality", mainParcel.bpej_skupina != null ? String(mainParcel.bpej_skupina) : "—"], ["Odvod za vyňatie (odhad)", mainParcel.odnatie_eur != null ? eur(mainParcel.odnatie_eur) : "—"]]} /> : null}
       </Sec>
 
-      <Sec id="vlastnictvo" title="Vlastníctvo" source={<>Časť B LV (ÚGKK SR); nadobudnutia z titulov; finančné údaje firiem z RÚZ.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}</>}>
+      <Sec id="vlastnictvo" n={num("vlastnictvo")} title="Vlastníctvo" source={<>Časť B LV (ÚGKK SR); nadobudnutia z titulov; finančné údaje firiem z RÚZ.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}</>}>
         {c.owners.perLv.map((l) => {
           const agg = fact(c, "vlastnici", `lv:${l.lvNo}`);
           return (
@@ -460,7 +660,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           <Muted>Insolvencia: insolvenčný register REPLIK (Ministerstvo spravodlivosti SR), len podľa IČO firmy.</Muted></>) : null}
       </Sec>
 
-      <Sec id="pravo" title="Právny stav" source="Časť B a C LV, poznámky a plomby (SPI); dražby z verejných registrov dražieb; stavby bez zápisu porovnaním ZBGIS a katastra.">
+      <Sec id="pravo" n={num("pravo")} title="Právny stav" source="Časť B a C LV, poznámky a plomby (SPI); dražby z verejných registrov dražieb; stavby bez zápisu porovnaním ZBGIS a katastra.">
         {c.legal.map((l) => (
           <div key={l.lvNo} className="space-y-1">
             <Sub>LV {l.lvNo}</Sub>
@@ -481,13 +681,13 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {c.parcels.some((p) => p.register === "C" && p.settled === 0) ? <Muted>Pod parcelou je pozemok registra E (iní vlastníci podľa pôvodného stavu) — vysporiadanie: {c.parcels.filter((p) => p.ekn_ref).map((p) => `${p.parcel_no} → E ${p.ekn_ref}`).join(", ")}.</Muted> : null}
       </Sec>
 
-      <Sec id="pristup" title="Prístup a susedia" source="Spôsob využívania pozemkov (SPI) a spoločné hranice z katastrálnej mapy; cesty z OpenStreetMap a SSC.">
+      <Sec id="pristup" n={num("pristup")} title="Prístup a susedia" source="Spôsob využívania pozemkov (SPI) a spoločné hranice z katastrálnej mapy; cesty z OpenStreetMap a SSC.">
         {mk && fact(c, "pristup", mk) ? <FactsBlock grp="pristup" data={fact(c, "pristup", mk)} /> : <Muted>Prístup z verejnej cesty zatiaľ nie je spočítaný — overiť na mape a v teréne.</Muted>}
         {d.limits?.road ? <Grid rows={[["Najbližšia cesta (SSC)", `${d.limits.road.trieda}${d.limits.road.cislo ? ` ${d.limits.road.cislo}` : ""} · ${dist(d.limits.road.distM)}`]]} /> : null}
         {mk && fact(c, "susedia", mk) ? (<><Sub>Susedné parcely</Sub><FactsBlock grp="susedia" data={fact(c, "susedia", mk)} /></>) : null}
       </Sec>
 
-      <Sec id="up" title="Územný plán a zastavateľnosť" source="Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.">
+      <Sec id="up" n={num("up")} title="Územný plán a zastavateľnosť" source="Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.">
         <Grid rows={[["Funkčná zóna", z.name ?? "nemáme zónu ÚP pre parcelu"]]} />
         {mk && fact(c, "up", mk) ? (<><Sub>Zóna z výkresu ÚP (georeferencovaný výkres, orientačné)</Sub><FactsBlock grp="up" data={fact(c, "up", mk)} /></>) : null}
         {fact(c, "up", kuKey) ? <FactsBlock grp="up" data={Object.fromEntries(Object.entries(fact(c, "up", kuKey) ?? {}).filter(([k]) => ["zdroj", "dokumenty", "metoda", "presnost_m", "poznamka"].includes(k)))} /> : null}
@@ -507,7 +707,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           ))}</ul></>) : null}
       </Sec>
 
-      <Sec id="limity" title="Limity a riziká" source={<>Úradné registre: {[...new Set([...(d.limits?.items ?? []).map((h) => h.attribution), ...(d.ext ?? []).map((e) => e.attribution)])].join(", ") || "—"}. Bez prieniku = v použitej vrstve a dostupnom pokrytí sa nič nenašlo.</>}>
+      <Sec id="limity" n={num("limity")} title="Limity a riziká" source={<>Úradné registre: {[...new Set([...(d.limits?.items ?? []).map((h) => h.attribution), ...(d.ext ?? []).map((e) => e.attribution)])].join(", ") || "—"}. Bez prieniku = v použitej vrstve a dostupnom pokrytí sa nič nenašlo.</>}>
         {d.limits?.items.length ? (
           <Table head={["Register", "Výsledok"]} rows={d.limits.items.map((h) => [
             <span key="l">{h.label}{h.names?.length ? <span className="text-muted"> · {h.names.slice(0, 2).join(", ")}</span> : null}</span>,
@@ -517,19 +717,19 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {d.ext?.length ? <ExtBlock items={d.ext} /> : null}
       </Sec>
 
-      <Sec id="teren" title="Terén a slnko" source="Digitálny model reliéfu DMR 5.0 (ÚGKK SR, CC BY 4.0); poloha slnka (výpočet NOAA) s horizontom z terénu.">
+      <Sec id="teren" n={num("teren")} title="Terén a slnko" source="Digitálny model reliéfu DMR 5.0 (ÚGKK SR, CC BY 4.0); poloha slnka (výpočet NOAA) s horizontom z terénu.">
         {teren ? <FactsBlock grp="teren" data={teren} /> : <Muted>Terén pre parcelu zatiaľ nie je spočítaný.</Muted>}
         {mk && fact(c, "slnko", mk) ? (<><Sub>Slnko</Sub>
           <HorizonChart hor={fact(c, "slnko", mk)?.hor} lat={c.main.lat} />
           <FactsBlock grp="slnko" data={fact(c, "slnko", mk)} skip={["hor"]} /></>) : null}
       </Sec>
 
-      <Sec id="klima" title="Klíma a stavebné normy" source={<>{c.factMeta.klima?.source ?? "NASA POWER, PVGIS (EÚ JRC)"}; normy STN EN (národné prílohy).</>}>
+      <Sec id="klima" n={num("klima")} title="Klíma a stavebné normy" source={<>{c.factMeta.klima?.source ?? "NASA POWER, PVGIS (EÚ JRC)"}; normy STN EN (národné prílohy).</>}>
         {fact(c, "klima", kuKey) ? <KlimaBlock data={fact(c, "klima", kuKey) as Record<string, unknown>} elev={elev} /> : <Muted>Klimatické údaje pre lokalitu zatiaľ nie sú spočítané.</Muted>}
         {fact(c, "normy", kuKey) ? (<><Sub>Stavebné normy lokality</Sub><BandsBlock grp="normy" data={fact(c, "normy", kuKey) as Record<string, unknown>} elev={elev} skip={["elev_range"]} /></>) : null}
       </Sec>
 
-      <Sec id="siete" title="Siete a energie" source="OpenStreetMap (© prispievatelia OSM), údaje o obci (vodovody, kanalizácie, plyn); presné trasy sietí potvrdí len vyjadrenie správcu.">
+      <Sec id="siete" n={num("siete")} title="Siete a energie" source="OpenStreetMap (© prispievatelia OSM), údaje o obci (vodovody, kanalizácie, plyn); presné trasy sietí potvrdí len vyjadrenie správcu.">
         {mk && fact(c, "osm", mk) ? (<>
           <FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_NET} />
           <Sub>Ochranné pásma a okolie</Sub>
@@ -540,7 +740,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         <Muted>Existenciu a polohu sietí potvrdí správca vo „vyjadrení k existencii sietí" (elektrina, plyn, voda, telekomunikácie); cenu prípojok určí projekt a cenník správcu.</Muted>
       </Sec>
 
-      <Sec id="doprava" title="Doprava a vybavenosť" source="OpenStreetMap; časy jazdy odhadom po cestnej sieti.">
+      <Sec id="doprava" n={num("doprava")} title="Doprava a vybavenosť" source="OpenStreetMap; časy jazdy odhadom po cestnej sieti.">
         {d.access ? (
           <div className="grid grid-cols-2 gap-x-6 text-xs sm:grid-cols-3">
             {[...Object.entries(d.access.transport), ...Object.entries(d.access.amenities), ...Object.entries(d.access.infra)].filter(([, v]) => v).slice(0, 18).map(([k, v]) => (
@@ -560,7 +760,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         ) : null}
       </Sec>
 
-      <Sec id="hodnota" title="Hodnota" source="Ceny zo zmlúv zapísaných v katastri (SPI, od 2019); automatický odhad z ponúk a predajov v okrese; ponuky z verejnej inzercie. Orientačné — nie znalecký posudok.">
+      <Sec id="hodnota" n={num("hodnota")} title="Hodnota" source="Ceny zo zmlúv zapísaných v katastri (SPI, od 2019); automatický odhad z ponúk a predajov v okrese; ponuky z verejnej inzercie. Orientačné — nie znalecký posudok.">
         <Grid rows={[
           ["Odhad podľa skutočných predajov v okolí", c.compStats?.estimateEur ? `${eur(c.compStats.estimateEur)}${c.compStats.basisM2 && c.compStats.medPpm2 ? ` (${nf(c.compStats.medPpm2)} €/m² × ${nf(c.compStats.basisM2)} m²)` : ""}` : "—"],
           ["Rozpätie €/m² (25.–75. percentil)", c.compStats?.p25 != null && c.compStats?.p75 != null ? `${nf(c.compStats.p25)}–${nf(c.compStats.p75)} €/m²` : "—"],
@@ -580,7 +780,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           <Table head={["Dátum", "LV", "Druh", "Položky", "Cena v zmluve", "€/m²"]} rows={c.prices.map((p) => [date(p.cas), p.lvNo, p.kind, (p.items ?? "").slice(0, 40), eur(p.cen), p.ppm2 ? nf(p.ppm2) : "—"])} /></>) : null}
       </Sec>
 
-      <Sec id="trh" title="Trh a dopyt" source="Verejná inzercia (denný zber), satelitné snímky Copernicus (nová zástavba), Centrálny register zmlúv.">
+      <Sec id="trh" n={num("trh")} title="Trh a dopyt" source="Verejná inzercia (denný zber), satelitné snímky Copernicus (nová zástavba), Centrálny register zmlúv.">
         {c.listings.length ? (<><Sub>Pravdepodobne táto nehnuteľnosť v inzercii (priradené podľa výmery a polohy — overiť)</Sub>
           <Table head={["Inzerát", "Cena", "€/m²", "Od", "Naposledy", "Vývoj ceny", "Istota"]} rows={c.listings.map((l) => [
             l.url ? <a key="u" href={l.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{(l.title ?? "inzerát").slice(0, 40)}</a> : l.title ?? "inzerát",
@@ -602,12 +802,12 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {!isClient && internal?.buyers ? (<><Sub>Kto by mohol kúpiť</Sub>{internal.buyers}</>) : null}
       </Sec>
 
-      <Sec id="obec" title="Obec a ľudia" source={<>{c.factMeta.obec?.source ?? "Štatistický úrad SR, ÚPSVR, MV SR"}.</>}>
+      <Sec id="obec" n={num("obec")} title="Obec a ľudia" source={<>{c.factMeta.obec?.source ?? "Štatistický úrad SR, ÚPSVR, MV SR"}.</>}>
         {fact(c, "obec", kuKey) ? <FactsBlock grp="obec" data={fact(c, "obec", kuKey)} /> : <Muted>Údaje o obci zatiaľ nie sú načítané.</Muted>}
       </Sec>
 
       {!isClient ? (
-        <Sec id="praca" title="Signály a práca (interné)" source="Scenáre appky (vysporiadanie, príležitosti, zdedené byty, pôda na bývanie, zadania), evidencia obchodov a kontaktov.">
+        <Sec id="praca" n={num("praca")} title="Signály a práca (interné)" source="Scenáre appky (vysporiadanie, príležitosti, zdedené byty, pôda na bývanie, zadania), evidencia obchodov a kontaktov.">
           <ul className="text-xs">
             {c.signals.settlement.map((s, i) => <li key={`s${i}`} className="border-b border-line/40 py-0.5"><b>Vysporiadanie</b> — {s.classification === "MATCH" ? "kandidát" : "na preskúmanie"} · parcela {s.parcel_no}{s.buyout_eur ? ` · odkup ~${eur(s.buyout_eur)}` : ""}</li>)}
             {c.signals.landsearch.map((s, i) => <li key={`l${i}`} className="border-b border-line/40 py-0.5"><b>Príležitosť</b> — {s.purpose ?? "?"} · {s.verdict ?? "?"}{s.quality != null ? ` · skóre ${Math.round(s.quality)}` : ""}</li>)}
@@ -623,11 +823,11 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         </Sec>
       ) : null}
 
-      <Sec id="overit" title="Čo overiť pred kúpou" source="Zostavené automaticky zo zistení v tomto liste — nie je to právne poradenstvo.">
+      <Sec id="overit" n={num("overit")} title="Čo overiť pred kúpou" source="Zostavené automaticky zo zistení v tomto liste — nie je to právne poradenstvo.">
         <ol className="list-decimal space-y-1 pl-5 text-sm">{checks.map((x, i) => <li key={i}>{x.text}<span className="text-xs text-muted"> — {x.why}</span></li>)}</ol>
       </Sec>
 
-      <Sec id="zdroje" title="Zdroje a úplnosť">
+      <Sec id="zdroje" n={num("zdroje")} title="Zdroje a úplnosť">
         <Grid rows={[
           ["Úplnosť listu", `${comp.have} z ${comp.total} oblastí s údajmi`],
           ["Chýba", comp.missing.join(", ") || "—"],

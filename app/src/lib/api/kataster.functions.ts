@@ -22,7 +22,7 @@ import type {
 } from "../domain";
 import { phraseIssues, type PhraseIssue } from "../phrases";
 import { accessTimesLabel, plural, zoneLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
-import { regulativByCode } from "../development";
+import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEFAULTS } from "../development";
 import { EXT_DEFS, type ExtDef } from "../ext-sources";
 
 const roleSchema = z.enum([
@@ -8180,9 +8180,13 @@ export const getPropertyCore = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<PropertyCore> => {
     const u = await requireUser(data.token);
+    if (!u) return ({ ok: false, message: "Neprihlásený." } as unknown as PropertyCore);
+    return buildPropertyCore(data, ownerAccess((u.role ?? "viewer") as Role));
+  });
+
+/** Jadro listu — volá ho stránka (rola zo session) aj zostavovač klientskej verzie (vždy bez mien). */
+async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; ref: string; register?: "C" | "E" }, access: OwnerAccess): Promise<PropertyCore> {
     const fail = (message: string) => ({ ok: false, message } as unknown as PropertyCore);
-    if (!u) return fail("Neprihlásený.");
-    const access = ownerAccess((u.role ?? "viewer") as Role);
     const ds = (await q<{ id: string; ku_code: string | null; ku_name: string | null; region: string | null; updated_at: string | null }>(
       "SELECT id, ku_code, ku_name, region, updated_at FROM datasets WHERE id=?", [data.datasetId]))[0];
     if (!ds) return fail("Dataset neexistuje.");
@@ -8536,7 +8540,7 @@ export const getPropertyCore = createServerFn({ method: "POST" })
       firms, obec: { changes, upChanges }, stateContracts: { n: scN, recent: scRecent },
       flats, market: { trend, kuSales, rent, domDays, freePlots: { landsearch: freeLs, up: freeUp }, buildingMix },
     };
-  });
+}
 
 // ——— LIST NEHNUTEĽNOSTI — úradné registre na požiadanie (geológia, voda, príroda…) ———
 // Definície: src/lib/ext-sources.ts (generované z overeného registra 49_LIST_NEHNUTELNOSTI/zdroje). Len bezplatné
@@ -8695,15 +8699,12 @@ export const probeExt = createServerFn({ method: "POST" })
 // Snapshot pripraví stránka (rovnaké dáta, aké vidí používateľ); server ho ešte raz očistí podľa pevného zoznamu
 // ciest: mená vlastníkov, firmy-vlastníci, signály scenárov a pracovné záznamy sa NIKDY neuložia. Tituly a ťarchy
 // len ako kódy typu („zalozne_pravo 2019") — iný text sa zahodí.
-export const createPropertyShare = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), kind: z.string().max(10), ref: z.string().max(60), title: z.string().max(200), snapshot: z.string().max(3_000_000), days: z.number().int().min(1).max(60).optional() }))
-  .handler(async ({ data }): Promise<{ ok: boolean; path?: string; expiresAt?: string; message?: string }> => {
-    const u = await requireUser(data.token);
-    if (!u || !canExport(u.role as Role)) return { ok: false, message: "Bez oprávnenia na export." };
-    let snap: Record<string, unknown>;
-    try { snap = JSON.parse(data.snapshot) as Record<string, unknown>; } catch { return { ok: false, message: "Neplatný obsah listu." }; }
+// Klientska snímka listu: pevný zoznam ciest, ktoré sa NIKDY neuložia (mená vlastníkov, firmy-vlastníci, signály
+// scenárov, pracovné záznamy); tituly a ťarchy len ako kódy typu; BPEJ len kódy (texty VÚPOP — súhlas VÚPOP);
+// geometria zóny ÚP sa neukladá (veľká, list ju nepotrebuje).
+function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid" | "toolarge" {
     const core = asObj(snap.core);
-    if (!core) return { ok: false, message: "Neplatný obsah listu." };
+    if (!core) return "invalid";
     const owners = asObj(core.owners);
     if (owners && Array.isArray(owners.perLv)) owners.perLv = (owners.perLv as Record<string, unknown>[]).map((l) => ({ ...l, owners: [] }));
     if (owners) owners.access = "summary";
@@ -8720,12 +8721,27 @@ export const createPropertyShare = createServerFn({ method: "POST" })
     if (bp) for (const [k, v] of Object.entries(bp)) {
       try { const o = JSON.parse(String(v)) as Record<string, unknown>; bp[k] = JSON.stringify({ kod: o.kod, skupina: o.skupina, odvod_eur_m2: o.odvod_eur_m2, podiel_pct: o.podiel_pct }); } catch { delete bp[k]; }
     }
+    const zn = asObj(snap.zone);
+    if (zn) delete zn.geometry_json;
     let out = JSON.stringify(snap);
     if (out.length > 1_800_000 && Array.isArray(core.parcels)) {
       core.parcels = (core.parcels as Record<string, unknown>[]).map((p, i) => (i < 30 ? p : { ...p, geometry_json: null }));
       out = JSON.stringify(snap);
     }
-    if (out.length > 1_800_000) return { ok: false, message: "List je príliš veľký na zdieľanie (príliš veľa parciel)." };
+    return out.length > 1_800_000 ? "toolarge" : out;
+}
+
+export const createPropertyShare = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), kind: z.string().max(10), ref: z.string().max(60), title: z.string().max(200), snapshot: z.string().max(3_000_000), days: z.number().int().min(1).max(60).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; path?: string; expiresAt?: string; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u || !canExport(u.role as Role)) return { ok: false, message: "Bez oprávnenia na export." };
+    let snap: Record<string, unknown>;
+    try { snap = JSON.parse(data.snapshot) as Record<string, unknown>; } catch { return { ok: false, message: "Neplatný obsah listu." }; }
+    const out = sanitizeShareSnapshot(snap);
+    if (out === "invalid") return { ok: false, message: "Neplatný obsah listu." };
+    if (out === "toolarge") return { ok: false, message: "List je príliš veľký na zdieľanie (príliš veľa parciel)." };
+
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
     const tok = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
     const days = data.days ?? 14;
@@ -8744,6 +8760,54 @@ export const listPropertyShares = createServerFn({ method: "POST" })
       [data.datasetId, data.kind, data.ref]).catch(() => []);
     return { ok: true, rows: rows.map((r) => ({ token: r.token, expiresAt: r.expires_at, views: r.views, lastView: r.last_view, revoked: !!r.revoked, createdAt: r.created_at })) };
   });
+// Klientska verzia listu zostavená NA SERVERI (Mac: PDF výstupy listov, napr. pre shortlist zadania) — alert secret.
+// Rovnaké dáta ako stránka: jadro (bez mien), limity, dostupnosť, ÚP zóna, AVM, registre, development, dokumenty ÚP.
+export const buildClientShare = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt"]), ref: z.string().min(1).max(60),
+    register: z.enum(["C", "E"]).optional(), days: z.number().int().min(1).max(60).optional(), client: z.string().max(120).optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; path?: string; title?: string; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const core = await buildPropertyCore(data, "summary");
+    if (!core.ok || !core.dataset) return { ok: false, message: core.message ?? "List sa nepodarilo zostaviť." };
+    const { lat, lng } = core.main;
+    const mp = core.parcels.find((p) => p.parcel_no === core.main.parcelNo && p.register === core.main.register) ?? core.parcels[0];
+    let limits: LimitsResult | null = null, access: Accessibility | null = null, ext: ExtHitRow[] | null = null, zone: Record<string, unknown> | null = null, avm: AvmResult | null = null;
+    if (lat != null && lng != null) {
+      [limits, access, ext] = await Promise.all([
+        limitsCore(lat, lng).catch(() => null), accessibilityCore(lat, lng).catch(() => null), extAll(lat, lng, false).then((r) => r.items).catch(() => null)]);
+      const zones = await q<Record<string, unknown> & { geometry_json: string }>(`SELECT ${UPZONE_COLS} FROM up_zones WHERE dataset_id = ?`, [core.dataset.id]).catch(() => []);
+      zone = zones.find((zn) => zoneContains(zn.geometry_json, lng, lat)) ?? null;
+      try {
+        const { druhCode, umCode } = inferDruhCodes(mp?.use_type);
+        avm = await computeAvm(lat, lng, mp?.area_m2 ?? null, druhCode, umCode, mp?.bpej_skupina ?? null, mp?.settled ?? null, core.dataset.okres,
+          (core.dataset.ku_name ?? "").replace(/^k\.ú\.\s*/i, "").trim() || null, await getCalibMap());
+      } catch { avm = null; }
+    }
+    const medPoz = core.dataset.okres ? (await q<{ median_eur_m2: number }>("SELECT median_eur_m2 FROM market_index WHERE okres=? AND ptype='pozemok' AND deal='predaj' AND obec IS NULL ORDER BY day DESC LIMIT 1", [core.dataset.okres]).catch(() => []))[0]?.median_eur_m2 ?? null : null;
+    const upDocs = await q<{ id: string; title: string | null; url: string | null; kind: string | null }>("SELECT id,title,url,kind FROM up_docs WHERE dataset_id=? AND (change_state IS NULL OR change_state <> 'removed') ORDER BY kind, id", [core.dataset.id]).catch(() => []);
+    const areaC = core.parcels.filter((p) => p.register === "C").reduce((t, p) => t + (p.area_m2 ?? 0), 0);
+    const regUp = regulativFromZone(zone as never);
+    const reg = regUp ?? (mp ? regulativByCode(proxyZone(mp.use_type, mp.placement)) : undefined);
+    let dev: Record<string, unknown> | null = null;
+    if (reg && areaC) {
+      const r = developmentCalc(areaC, reg, { ...DEV_DEFAULTS, predajEurM2: medPoz ?? DEV_DEFAULTS.predajEurM2 });
+      dev = { regName: reg.name ?? null, proxy: !regUp, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
+    }
+    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, generatedAt: new Date().toISOString(), client: data.client ?? null };
+    const out = sanitizeShareSnapshot(JSON.parse(JSON.stringify(snap)) as Record<string, unknown>);
+    if (out === "invalid" || out === "toolarge") return { ok: false, message: out === "toolarge" ? "List je príliš veľký." : "Neplatný obsah listu." };
+    const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
+    const tok = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const exp = (await q<{ e: string }>("SELECT datetime('now', ?) e", [`+${data.days ?? 14} days`]))[0]?.e ?? "";
+    await q("INSERT INTO property_shares (token, dataset_id, kind, ref, title, snapshot, created_by, expires_at) VALUES (?,?,?,?,?,?,?,?)",
+      [tok, data.datasetId, data.kind, data.ref, core.title, out, "Mac — PDF zostava", exp]);
+    await logAudit("property.share", "system", `Klientsky list ${core.title} (${data.datasetId} ${data.kind} ${data.ref}) zostavený na serveri`, data.datasetId);
+    return { ok: true, path: `/n/${tok}`, title: core.title };
+  });
+
 export const revokePropertyShare = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string(), share: z.string().regex(/^[0-9a-f]{32}$/) }))
   .handler(async ({ data }): Promise<{ ok: boolean }> => {

@@ -19,11 +19,11 @@ function PublicPropertyPage() {
       .catch(() => setD({ ok: false, message: "List sa nepodarilo načítať." }));
   }, [token]);
   return (
-    <div className="min-h-dvh bg-cream px-4 py-8 text-fg">
+    <div className="min-h-dvh bg-cream px-4 py-8 text-fg print:min-h-0 print:bg-white print:p-0">
       {!d ? <p className="mx-auto max-w-4xl text-sm text-muted">Načítavam list nehnuteľnosti…</p>
         : !d.ok || !d.snapshot ? <div className="mx-auto max-w-4xl rounded-xl border border-line bg-paper p-6 text-sm">{d.message ?? "List nie je dostupný."}</div>
         : (
-          <div className="mx-auto max-w-4xl space-y-3 rounded-xl border border-line bg-paper p-6">
+          <div className="mx-auto max-w-4xl space-y-3 rounded-xl border border-line bg-paper p-6 print:max-w-none print:rounded-none print:border-0 print:p-0">
             <div className="no-print flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
               <span>Odkaz platí do {(d.expiresAt ?? "").slice(0, 10).split("-").reverse().join(". ")}</span>
               <button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">Tlačiť / uložiť PDF</button>

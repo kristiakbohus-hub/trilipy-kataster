@@ -105,7 +105,7 @@ function PropertyPage() {
     URL.revokeObjectURL(url);
   }
   return (
-    <div className="px-4 py-5">
+    <div className="px-4 py-5 print:p-0">
       <PropertySheet d={sheet} mode="internal" internal={{
         actions: (
           <div className="flex flex-wrap items-center gap-2 text-xs">
