@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiIngestFactsRouteImport } from './routes/api.ingest-facts'
 import { Route as ApiIngestAuctionsRouteImport } from './routes/api.ingest-auctions'
 import { Route as ApiBackupRouteImport } from './routes/api.backup'
 import { Route as ApiIngestListingMatchesRouteImport } from './routes/api.ingest-listing-matches'
@@ -189,6 +190,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiIngestFactsRoute = ApiIngestFactsRouteImport.update({
+  id: '/api/ingest-facts',
+  path: '/api/ingest-facts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiIngestAuctionsRoute = ApiIngestAuctionsRouteImport.update({
@@ -530,6 +536,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-facts': typeof ApiIngestFactsRoute
   '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
@@ -613,6 +620,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-facts': typeof ApiIngestFactsRoute
   '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
@@ -697,6 +705,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/ingest-facts': typeof ApiIngestFactsRoute
   '/api/ingest-auctions': typeof ApiIngestAuctionsRoute
   '/api/backup': typeof ApiBackupRoute
   '/api/ingest-listing-matches': typeof ApiIngestListingMatchesRoute
@@ -782,6 +791,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-facts'
     | '/api/ingest-auctions'
     | '/api/backup'
     | '/api/ingest-listing-matches'
@@ -865,6 +875,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-facts'
     | '/api/ingest-auctions'
     | '/api/backup'
     | '/api/ingest-listing-matches'
@@ -948,6 +959,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/ingest-facts'
     | '/api/ingest-auctions'
     | '/api/backup'
     | '/api/ingest-listing-matches'
@@ -1028,6 +1040,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiIngestFactsRoute: typeof ApiIngestFactsRoute
   ApiIngestAuctionsRoute: typeof ApiIngestAuctionsRoute
   ApiBackupRoute: typeof ApiBackupRoute
   ApiIngestListingMatchesRoute: typeof ApiIngestListingMatchesRoute
@@ -1346,6 +1359,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/ingest-facts': {
+      id: '/api/ingest-facts'
+      path: '/api/ingest-facts'
+      fullPath: '/api/ingest-facts'
+      preLoaderRoute: typeof ApiIngestFactsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/ingest-auctions': {
@@ -1687,6 +1707,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiIngestFactsRoute: ApiIngestFactsRoute,
   ApiIngestAuctionsRoute: ApiIngestAuctionsRoute,
   ApiBackupRoute: ApiBackupRoute,
   ApiIngestListingMatchesRoute: ApiIngestListingMatchesRoute,

@@ -8011,3 +8011,43 @@ export const ownerPortfolio = createServerFn({ method: "POST" })
     }
     return { ok: true, name: data.name, lvs, rings };
   });
+
+// ——— LIST NEHNUTEĽNOSTI: predpočítané údaje z Mac modulov (2026-11-12) ———
+// Kontrakt 49_LIST_NEHNUTELNOSTI/CONTRACT.md. Každý modul zapisuje svoju skupinu (grp) pre k.ú.; `reset` zmaže
+// skupinu k.ú. pred zápisom. Odpoveď nesie veľkosť databázy (meta.size_after), aby Mac moduly zastavili zápis
+// pred 5 GB (nad to je D1 platená). Bez osobných údajov — moduly posielajú len agregáty a typy.
+const FACT_SUBJECTS = ["parcel_c", "parcel_e", "lv", "building", "flat", "ku"] as const;
+export const ingestFacts = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), grp: z.string().regex(/^[a-z_]{2,20}$/), reset: z.boolean().optional(),
+    rows: z.array(z.object({
+      subjectType: z.enum(FACT_SUBJECTS), subjectRef: z.string().min(1).max(60),
+      data: z.record(z.string(), z.unknown()), source: z.string().max(120).nullable().optional(), asOf: z.string().max(10).nullable().optional(),
+    })).max(2000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; rejected?: number; dbSizeMb?: number | null; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const sizeOf = (m: unknown) => { const s = (m as { size_after?: number } | undefined)?.size_after; return typeof s === "number" ? Math.round(s / 1e6) : null; };
+    if (data.grp === "ping") {
+      const r = await DB.prepare("SELECT COUNT(*) AS n FROM property_facts").run().catch(() => null);
+      return { ok: true, inserted: 0, dbSizeMb: sizeOf(r?.meta) };
+    }
+    const stmts: ReturnType<typeof DB.prepare>[] = [];
+    if (data.reset) stmts.push(DB.prepare("DELETE FROM property_facts WHERE kod_ku=? AND grp=?").bind(data.kodKu, data.grp));
+    const ps = DB.prepare("INSERT OR REPLACE INTO property_facts (kod_ku,subject_type,subject_ref,grp,data_json,source,as_of) VALUES (?,?,?,?,?,?,?)");
+    let rejected = 0;
+    for (const r of data.rows) {
+      const js = JSON.stringify(r.data);
+      if (js.length > 6000) { rejected += 1; continue; }
+      stmts.push(ps.bind(data.kodKu, r.subjectType, r.subjectRef, data.grp, js, r.source ?? null, r.asOf ?? null));
+    }
+    let size: number | null = null;
+    for (let i = 0; i < stmts.length; i += 100) {
+      const res = await DB.batch(stmts.slice(i, i + 100));
+      size = sizeOf(res[res.length - 1]?.meta) ?? size;
+    }
+    return { ok: true, inserted: data.rows.length - rejected, rejected, dbSizeMb: size };
+  });
