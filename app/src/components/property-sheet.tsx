@@ -4,13 +4,15 @@
 // NEZNÁMY stav; každá sekcia uvádza zdroj; formulácie podľa phrases.ts (Property-360 §4).
 import type { ReactNode } from "react";
 import { FACT_GROUP_LABEL, FACT_SCHEMA, type FactField } from "../lib/facts-schema";
-import { checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
+import { checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
 const nf = (n: number, d = 0) => n.toLocaleString("sk-SK", { maximumFractionDigits: d, minimumFractionDigits: 0 });
-const eur = (n: number | null | undefined) => (n == null ? "—" : `${nf(Math.round(n))} €`);
-const m2 = (n: number | null | undefined) => (n == null ? "—" : `${nf(Math.round(n))} m²`);
-const dist = (m: number | null | undefined) => (m == null ? "—" : m < 1000 ? `${Math.round(m / 10) * 10} m` : `${nf(m / 1000, 1)} km`);
+const eur = (n: number | null | undefined) => (n == null ? "—" : `${nf(Math.round(n))}\u00a0€`);
+const m2 = (n: number | null | undefined) => (n == null ? "—" : `${nf(Math.round(n))}\u00a0m²`);
+const dist = (m: number | null | undefined) => (m == null ? "—" : m < 1000 ? `${Math.round(m / 10) * 10}\u00a0m` : `${nf(m / 1000, 1)}\u00a0km`);
+/** „šport/ihriská" → „Šport / ihriská" (rodiny zón z enginu sú technické názvy) */
+const prettyZone = (z: string | null | undefined) => (z ? z.replace(/\s*\/\s*/g, " / ").replace(/^./, (x) => x.toUpperCase()) : z ?? null);
 const date = (s: string | null | undefined) => (s ? s.slice(0, 10).split("-").reverse().join(". ") : "—");
 
 const LEGAL_LABEL: Record<string, string> = {
@@ -75,9 +77,13 @@ function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
 const human = (k: string) => k.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 function fmtVal(v: unknown, f?: FactField): ReactNode {
   if (v == null || v === "") return "—";
-  const unit = f?.unit ? ` ${f.unit}` : "";
+  const unit = f?.unit && f.unit !== "MM-DD" ? `\u00a0${f.unit}` : "";
   if (typeof v === "boolean") return v ? "áno" : "nie";
-  if (typeof v === "number") return `${nf(v, Math.abs(v) < 10 ? 2 : Math.abs(v) < 100 ? 1 : 0)}${unit}`;
+  if (typeof v === "number") {
+    if (Number.isInteger(v) && /\brok|year|\bLV\b|list vlastníctva|súpisn|číslo|kód/i.test(f?.label ?? "")) return `${v}${unit}`;
+    return `${nf(v, Math.abs(v) < 10 ? 2 : Math.abs(v) < 100 ? 1 : 0)}${unit}`;
+  }
+  if (typeof v === "string" && /^\d{2}-\d{2}$/.test(v)) return `${Number(v.slice(3))}. ${Number(v.slice(0, 2))}.`;
   if (typeof v === "string") return `${v}${unit && !/[a-zA-Z€%°]$/.test(v) ? unit : ""}`;
   if (Array.isArray(v)) {
     if (!v.length) return "—";
@@ -97,7 +103,7 @@ export function FactsBlock({ grp, data, skip = [], only, depth = 0 }: { grp: str
   if (!data) return null;
   const schema = FACT_SCHEMA[grp] ?? {};
   const entries = (only ? only.filter((k) => k in data).map((k) => [k, data[k]] as [string, unknown]) : Object.entries(data))
-    .filter(([k, v]) => !skip.includes(k) && v != null && v !== "" && !(Array.isArray(v) && !v.length));
+    .filter(([k, v]) => !skip.includes(k) && !["lat", "lon", "lng"].includes(k) && v != null && v !== "" && !(Array.isArray(v) && !v.length));
   if (!entries.length) return null;
   const simple = entries.filter(([, v]) => typeof v !== "object" || (Array.isArray(v) && v.every((x) => typeof x !== "object")));
   const complex = entries.filter((e) => !simple.includes(e));
@@ -156,7 +162,7 @@ function ringsOf(g: string | null): [number, number][][] {
   } catch { /* poškodená geometria */ }
   return [];
 }
-export function ParcelSketch({ d }: { d: SheetData }) {
+export function ParcelSketch({ d, labels = "all" }: { d: SheetData; labels?: "all" | "main" }) {
   const ps = d.core.parcels.filter((p) => p.geometry_json).slice(0, 120);
   const all = ps.flatMap((p) => ringsOf(p.geometry_json).flat());
   if (all.length < 3) return <Muted>Obrys parciel nie je k dispozícii — poloha len podľa stredu parcely.</Muted>;
@@ -179,10 +185,11 @@ export function ParcelSketch({ d }: { d: SheetData }) {
       <image href={orto} x="0" y="0" width={W} height={H} preserveAspectRatio="none" opacity="0.92" />
       {ps.map((p) => ringsOf(p.geometry_json).map((r, i) => (
         <polygon key={`${p.register}${p.parcel_no}-${i}`} points={r.map(P).join(" ")}
-          fill={isMain(p.parcel_no, p.register) ? "rgba(255,190,90,.22)" : p.register === "E" ? "rgba(120,150,230,.18)" : "rgba(255,255,255,.12)"}
-          stroke={isMain(p.parcel_no, p.register) ? "#ffb347" : "#fff"} strokeWidth={isMain(p.parcel_no, p.register) ? 2.5 : 1.2} />
+          fill={isMain(p.parcel_no, p.register) ? "rgba(255,255,255,.26)" : p.register === "E" ? "rgba(255,255,255,.06)" : "rgba(255,255,255,.12)"}
+          stroke="#fff" strokeWidth={isMain(p.parcel_no, p.register) ? 3 : 1.1} strokeDasharray={isMain(p.parcel_no, p.register) ? undefined : "4 2"}
+          style={{ filter: isMain(p.parcel_no, p.register) ? "drop-shadow(0 0 1.5px rgba(0,0,0,.9))" : undefined }} />
       )))}
-      {ps.length <= 30 ? ps.map((p) => {
+      {ps.length <= 30 ? ps.filter((p) => labels === "all" || isMain(p.parcel_no, p.register)).map((p) => {
         const r = ringsOf(p.geometry_json)[0]; if (!r) return null;
         const cx = r.reduce((s, c) => s + c[0], 0) / r.length, cy = r.reduce((s, c) => s + c[1], 0) / r.length;
         const [x, y] = P([cx, cy]).split(",");
@@ -203,11 +210,11 @@ export function ParcelSketch({ d }: { d: SheetData }) {
 function HistoricMap({ lat, lng }: { lat: number; lng: number }) {
   const R = 20037508.34;
   const mx = (lng * R) / 180, my = (Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180)) * (R / 180);
-  const h = 650;
+  const h = 1400;
   const src = `https://zbgisws.skgeodesy.sk/hm_III_vm/service.svc/get?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=1&STYLES=&CRS=EPSG:3857&BBOX=${(mx - h).toFixed(1)},${(my - h).toFixed(1)},${(mx + h).toFixed(1)},${(my + h).toFixed(1)}&WIDTH=512&HEIGHT=512&FORMAT=image/jpeg`;
   return (
     <figure className="space-y-1">
-      <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded-md border border-line bg-surface-2">
+      <div className="ps-hist relative mx-auto w-full max-w-sm overflow-hidden rounded-md border border-line bg-surface-2">
         <img src={src} alt="Historická mapa okolia (III. vojenské mapovanie)" className="block h-auto w-full" loading="lazy" />
         <span aria-hidden className="absolute left-1/2 top-1/2 h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2" style={{ borderColor: "#c0392b" }} />
       </div>
@@ -360,7 +367,7 @@ function Scores({ d, isClient }: { d: SheetData; isClient: boolean }) {
 // ——— TLAČ / PDF v značke TRI LIPY (brandbook: charcoal #333 na bielej, Josefin Sans verzálky s prestrkom, Montserrat) ———
 const LIGHT_WORD: Record<Light["state"], string> = { ok: "v poriadku", warn: "pozor", bad: "riziko", unknown: "neznáme" };
 const LIGHT_DOT: Record<Light["state"], string> = { ok: "#5b7a58", warn: "#b08a3e", bad: "#9c4a40", unknown: "#b5b5b5" };
-const short = (t: string, n: number) => (t.length > n ? `${t.slice(0, n - 1).trim()}…` : t);
+const short = (t: string, n: number) => { if (t.length <= n) return t; const cut = t.slice(0, n - 1); const sp = cut.lastIndexOf(" "); return `${(sp > n * 0.6 ? cut.slice(0, sp) : cut).replace(/[\s,;:(·-]+$/, "")} …`; };
 const dateLong = (iso: string) => new Date(iso).toLocaleDateString("sk-SK", { day: "numeric", month: "long", year: "numeric" });
 const esc = (t: string) => t.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, " ");
 
@@ -376,12 +383,12 @@ function keyFindings(d: SheetData): string[] {
   const est = c.compStats?.estimateEur ?? d.avm?.estimate_eur ?? null;
   if (c.compStats?.estimateEur) out.push(`Orientačná hodnota ${eur(c.compStats.estimateEur)} podľa ${c.compStats.n} porovnateľných predajov zo zmlúv v okrese${c.compStats.medPpm2 ? ` (medián ${nf(c.compStats.medPpm2)} €/m²)` : ""}.`);
   else if (est) out.push(`Orientačná hodnota ${eur(est)} (automatický odhad z ponúk a predajov v okrese).`);
-  const z = zoneOf(d); out.push(z.name ? `Územný plán: ${z.name}.` : "Zónu územného plánu pre parcelu nemáme — overiť na obci.");
+  const z = zoneOf(d); out.push(z.name ? `Územný plán: ${prettyZone(z.name)}.` : "Zónu územného plánu pre parcelu nemáme — overiť na obci.");
   const pr = mk ? fact(c, "pristup", mk) : null;
   if (pr?.trieda) out.push(`Prístup: ${String(pr.trieda)}${pr.front_m ? `, front ${nf(Number(pr.front_m))} m` : ""}.`);
   const t = mk ? fact(c, "teren", mk) : null, sl = mk ? fact(c, "slnko", mk) : null;
   if (t) out.push(`Terén: priemerný sklon ${nf(Number(t.sklon_avg ?? 0), 1)} %, orientácia ${String(t.orient ?? "—")}, ${String(t.poloha ?? "").toLowerCase() || "poloha neurčená"}${sl?.dec_slnko != null ? `; 21. 12. priame slnko ${nf(Number(sl.dec_slnko), 1)} h` : ""}.`);
-  const hits = [...(d.limits?.items ?? []).filter((h) => h.hit).map((h) => h.label), ...(d.ext ?? []).filter((e) => e.status === "hit" && e.risk).map((e) => `${e.label}${e.value ? ` (${short(e.value, 40)})` : ""}`)];
+  const hits = [...(d.limits?.items ?? []).filter((h) => h.hit).map((h) => h.label), ...(d.ext ?? []).filter(riskyHit).map((e) => `${e.label}${e.value ? ` (${short(e.value, 40)})` : ""}`)];
   out.push(hits.length ? `Zásahy v úradných registroch: ${hits.slice(0, 5).join("; ")}${hits.length > 5 ? " …" : ""}.` : "V sledovaných registroch limitov a rizík bez prieniku v dostupnom pokrytí.");
   const ob = fact(c, "obec", `ku:${c.dataset?.ku_code ?? ""}`); const osm = mk ? fact(c, "osm", mk) : null;
   const net = [ob?.vodovod_verejny_pct != null ? `vodovod ${nf(Number(ob.vodovod_verejny_pct))} % domov obce` : null, ob?.kanal_pripojka_pct != null ? `kanalizácia ${nf(Number(ob.kanal_pripojka_pct))} %` : null,
@@ -400,7 +407,7 @@ function PrintCover({ d, lights, isClient }: { d: SheetData; lights: Light[]; is
   const kpis: [string, string][] = [
     ["Výmera", m2(total)], ["Parcely", String(c.parcels.length)],
     ["List vlastníctva", c.lvs.length ? `${c.lvs.slice(0, 3).join(", ")}${c.lvs.length > 3 ? " …" : ""}` : "—"],
-    ["Územný plán", z.name ? short(z.name.replace(/ — ÚP z výkresu, orientačné$/, " (výkres)"), 30) : "bez zóny"],
+    ["Územný plán", z.name ? short(prettyZone(z.name.replace(/ — ÚP z výkresu, orientačné$/, " (výkres)")) ?? "", 30) : "bez zóny"],
     ["Orientačná hodnota", est ? eur(est) : "—"], ["Katastrálne územie", (c.dataset?.ku_name ?? "—").replace(/^k\.ú\.\s*/i, "")],
   ];
   return (
@@ -418,7 +425,7 @@ function PrintCover({ d, lights, isClient }: { d: SheetData; lights: Light[]; is
         <h1 className="ps-cover-title">{c.title}</h1>
         {c.celokNote ? <p className="ps-cover-note">{c.celokNote}</p> : null}
       </div>
-      <div className="ps-cover-map"><ParcelSketch d={d} /></div>
+      <div className="ps-cover-map"><ParcelSketch d={d} labels="main" /></div>
       <div className="ps-kpis">{kpis.map(([k, v]) => <div key={k} className="ps-kpi"><div className="ps-kpi-v">{v}</div><div className="ps-kpi-k">{k}</div></div>)}</div>
       <div className="ps-cover-lights">
         {lights.map((l) => (
@@ -437,7 +444,7 @@ function PrintCover({ d, lights, isClient }: { d: SheetData; lights: Light[]; is
 }
 
 function PrintSummary({ d, lights, isClient, toc }: { d: SheetData; lights: Light[]; isClient: boolean; toc: [string, string][] }) {
-  const checks = checklist(d).slice(0, 9);
+  const checks = checklist(d).slice(0, 7);
   const suit = suitability(d);
   return (
     <section className="ps-summary">
@@ -462,8 +469,6 @@ function PrintSummary({ d, lights, isClient, toc }: { d: SheetData; lights: Ligh
       <ol className="ps-checks">{checks.map((x, i) => <li key={i}><b>{x.text}</b><span> — {x.why}</span></li>)}</ol>
       <h3 className="ps-sub">Obsah dokumentu</h3>
       <ol className="ps-toc">{toc.map(([n, t]) => <li key={n}><span className="ps-num">{n}</span>{t}</li>)}</ol>
-      <p className="ps-disclaimer">Orientačný podklad zostavený z verejných a katastrálnych údajov ku dňu vygenerovania — nie znalecký posudok, právne ani geodetické stanovisko.
-        Údaje označené ako odvodené sú výpočty TRI LIPY; „neznáme" znamená, že zdroj chýba, nie že je všetko v poriadku.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}</p>
     </section>
   );
 }
@@ -513,13 +518,17 @@ function printCss(title: string): string {
   /* zhrnutie */
   .ps-summary { display: block !important; break-after: page; }
   .ps-sum-cols { display: grid; grid-template-columns: 1.25fr 1fr; gap: 8mm; }
-  .ps-findings { margin: 0; padding-left: 4mm; } .ps-findings li { margin: 0 0 1.6mm; }
+  .ps-findings { margin: 0; padding: 0; list-style: none; } .ps-findings li { margin: 0 0 1.5mm; padding-left: 4mm; position: relative; }
+  .ps-findings li::before { content: ""; position: absolute; left: 0; top: 1.55mm; width: 1.3mm; height: 1.3mm; background: #333; }
+  .ps-hist { max-width: 92mm !important; border: none !important; }
   .ps-suit-row { display: grid; grid-template-columns: 38mm 1fr 8mm; align-items: center; gap: 2mm; padding: .9mm 0; border-bottom: .3pt solid #e6e6e6; }
   .ps-bar { height: 1.6mm; background: #ececec; display: block; } .ps-bar > span { display: block; height: 100%; background: #333; }
   .ps-suit-n { text-align: right; font-variant-numeric: tabular-nums; }
   .ps-sum-light { padding: 1.4mm 0 1.6mm; border-bottom: .3pt solid #e6e6e6; } .ps-sum-light div { color: #5a5a5a; margin-left: 3.8mm; }
   .ps-sum-light .ps-dot { margin-right: 1.6mm; vertical-align: middle; }
-  .ps-checks { margin: 0; padding-left: 5mm; } .ps-checks li { margin-bottom: 1.3mm; } .ps-checks span { color: #6a6a6a; }
+  .ps-checks { margin: 0; padding: 0; list-style: none; counter-reset: chk; } .ps-checks li { margin-bottom: 1.4mm; padding-left: 7mm; position: relative; counter-increment: chk; }
+  .ps-checks li::before { content: counter(chk, decimal-leading-zero); position: absolute; left: 0; top: 0; font-family: "Josefin Sans", sans-serif; font-weight: 300; color: #a0a0a0; }
+  .ps-checks span { color: #6a6a6a; }
   .ps-checks b { font-weight: 600; }
   .ps-toc { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 10mm; } .ps-toc li { padding: .7mm 0; border-bottom: .3pt dotted #d0d0d0; break-inside: avoid; }
   .ps-toc .ps-num { display: inline-block; width: 8mm; }
@@ -688,7 +697,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
       </Sec>
 
       <Sec id="up" n={num("up")} title="Územný plán a zastavateľnosť" source="Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.">
-        <Grid rows={[["Funkčná zóna", z.name ?? "nemáme zónu ÚP pre parcelu"]]} />
+        <Grid rows={[["Funkčná zóna", prettyZone(z.name) ?? "nemáme zónu ÚP pre parcelu"]]} />
         {mk && fact(c, "up", mk) ? (<><Sub>Zóna z výkresu ÚP (georeferencovaný výkres, orientačné)</Sub><FactsBlock grp="up" data={fact(c, "up", mk)} /></>) : null}
         {fact(c, "up", kuKey) ? <FactsBlock grp="up" data={Object.fromEntries(Object.entries(fact(c, "up", kuKey) ?? {}).filter(([k]) => ["zdroj", "dokumenty", "metoda", "presnost_m", "poznamka"].includes(k)))} /> : null}
         {d.dev ? (

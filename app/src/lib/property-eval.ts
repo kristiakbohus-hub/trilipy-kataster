@@ -37,6 +37,16 @@ export function parseFact(raw: string | undefined | null): Record<string, unknow
   parsed.set(raw, v);
   return v;
 }
+/** Je zásah v registri naozaj riziko? Niektoré registre vracia „zásah" aj pri priaznivom výsledku (nízky radón, stabilné územie). */
+export function riskyHit(e: ExtHit): boolean {
+  if (e.status !== "hit" || !e.risk) return false;
+  const v = (e.value ?? "").toLowerCase();
+  if (e.key === "geo_radon") return /stredn|vysok/.test(v);
+  if (e.key === "geo_nachylnost_svahove_pohyby") return !/stabiln/.test(v);
+  if (e.key === "geo_kontaminacia_pod") return !/nekontamin|relatívne čist|relativne cist/.test(v);
+  if (["mapa_lps_vzdusny_priestor_uas", "env_ipkz", "voda_zranitelna_oblast_dusicnany"].includes(e.key)) return false;   // informácia, nie riziko pozemku
+  return true;
+}
 export function fact(core: PropertyCore, grp: string, subject: string): Record<string, unknown> | null {
   return parseFact(core.facts?.[grp]?.[subject]);
 }
@@ -89,7 +99,7 @@ export function semafor(d: SheetData): Light[] {
   const ex = (k: string) => (d.ext ?? []).find((e) => e.key === k && e.status === "hit");
   const extBad = [ex("voda_zaplava_q5_q1000"), ex("geo_dobyvaci_priestor"), ex("geo_chlu"), (ex("geo_radon")?.value ?? "").includes("vysok") ? ex("geo_radon") : undefined,
     /vysok|veľmi/i.test(ex("geo_nachylnost_svahove_pohyby")?.value ?? "") ? ex("geo_nachylnost_svahove_pohyby") : undefined].filter((x): x is NonNullable<typeof x> => !!x);
-  const extWarn = (d.ext ?? []).filter((e) => e.status === "hit" && e.risk && !extBad.includes(e));
+  const extWarn = (d.ext ?? []).filter((e) => riskyHit(e) && !extBad.includes(e));
   if (!items.length) out.push({ key: "limity", label: "Limity a riziká", state: "unknown", text: "Registre limitov sa nepodarilo načítať." });
   else if (hits.some((h) => BAD_LIMITS.has(h.key)) || extBad.length) out.push({ key: "limity", label: "Limity a riziká", state: "bad", text: [...hits.filter((h) => BAD_LIMITS.has(h.key)).map((h) => h.label), ...extBad.map((e) => e.label)].slice(0, 3).join(", ") });
   else if (hits.length || extWarn.length) out.push({ key: "limity", label: "Limity a riziká", state: "warn", text: [...hits.map((h) => h.label), ...extWarn.map((e) => e.label)].slice(0, 3).join(", ") });
@@ -216,7 +226,7 @@ export function checklist(d: SheetData): { text: string; why: string }[] {
       case "prir_vchu_zona_stupen": if (/III|IV|V\./.test(e.value ?? "")) add("Vyšší stupeň ochrany prírody — výstavba len so súhlasom orgánu ochrany prírody", w); break;
       case "prir_lpis_diel": add("Pozemok je v poľnohospodárskom diele (LPIS) — overiť nájom s poľnohospodárom a výpovednú lehotu", w); break;
       case "env_seveso": add("V okolí je prevádzka s rizikom závažnej priemyselnej havárie — zohľadniť bezpečnostné pásmo", w); break;
-      case "geo_kontaminacia_pod": add("Možná kontaminácia pôdy — overiť rozbor pôdy pri záhrade/pestovaní", w); break;
+      case "geo_kontaminacia_pod": if (riskyHit(e)) add("Možná kontaminácia pôdy — overiť rozbor pôdy pri záhrade/pestovaní", w); break;
       case "mapa_lps_vzdusny_priestor_uas": add("Vzdušný priestor letiska — obmedzenia výšky stavieb a dronov, vyjadrenie Dopravného úradu", w); break;
     }
   }
