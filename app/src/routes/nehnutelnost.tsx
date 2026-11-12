@@ -112,7 +112,7 @@ function PropertyPage() {
             <button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">Tlačiť / uložiť PDF</button>
             <button onClick={downloadJson} disabled={!ready} className="rounded-md border border-line px-3 py-1.5 hover:border-ink disabled:opacity-50">Stiahnuť JSON</button>
             {lv != null ? <WatchButton subjectType="lv" subjectId={`${core.dataset!.id}:${lv}`} label={core.title} /> : null}
-            {lv != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: core.dataset!.id, lvNo: String(lv) }} className="text-brand underline">Výpis LV {lv}</Link> : null}
+            {lv != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: core.dataset!.id, lvNo: String(lv) }} search={{ typ: "vypis" as const }} className="text-brand underline">Výpis LV {lv}</Link> : null}
             {mainC ? <Link to="/report/$datasetId/$parcelNo" params={{ datasetId: core.dataset!.id, parcelNo: mainC }} className="text-brand underline">Dossier parcely</Link> : null}
             <span className="text-muted">{ready ? `odtlačok ${hash ?? "…"}` : "načítavam registre…"}</span>
             <div className="w-full"><PropertyShareBox sheet={sheet} ready={ready} /></div>

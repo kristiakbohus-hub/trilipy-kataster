@@ -2425,10 +2425,16 @@ export function MapView({
 
           {/* PDF dossier parcely — jedno-klik podklad na klienta/kolegu */}
           {identified.parcel_no && datasetId ? (
-            <Link to="/report/$datasetId/$parcelNo" params={{ datasetId, parcelNo: identified.parcel_no }}
-              className="mt-2 flex items-center justify-center gap-1 rounded-md border border-line px-3 py-2 text-sm font-medium text-fg hover:bg-surface-2">
-              📄 PDF dossier parcely →
-            </Link>
+            <>
+              <Link to="/nehnutelnost" search={{ ds: datasetId, p: identified.parcel_no }}
+                className="mt-2 flex items-center justify-center gap-1 rounded-md bg-ink px-3 py-2 text-sm font-medium text-cream">
+                List nehnuteľnosti (celok) →
+              </Link>
+              <Link to="/report/$datasetId/$parcelNo" params={{ datasetId, parcelNo: identified.parcel_no }}
+                className="mt-2 flex items-center justify-center gap-1 rounded-md border border-line px-3 py-2 text-sm font-medium text-fg hover:bg-surface-2">
+                📄 PDF dossier parcely →
+              </Link>
+            </>
           ) : null}
 
           {/* Kolaborácia — sledovanie + tímové komentáre k parcele */}

@@ -4,7 +4,7 @@
 // NEZNÁMY stav; každá sekcia uvádza zdroj; formulácie podľa phrases.ts (Property-360 §4).
 import type { ReactNode } from "react";
 import { FACT_GROUP_LABEL, FACT_SCHEMA, type FactField } from "../lib/facts-schema";
-import { checklist, completeness, fact, mainKey, semafor, zoneOf, type Light, type SheetData } from "../lib/property-eval";
+import { checklist, completeness, fact, mainKey, parseFact, semafor, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
 const nf = (n: number, d = 0) => n.toLocaleString("sk-SK", { maximumFractionDigits: d, minimumFractionDigits: 0 });
@@ -259,10 +259,10 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           rows={c.parcels.slice(0, 60).map((p) => [`${p.register === "E" ? "E " : ""}${p.parcel_no}`, m2(p.area_m2), p.use_type ?? "—", p.placement ?? "—", p.lv_no ?? "—", p.role, p.zone ?? "—"])} />
         {c.parcels.length > 60 ? <Muted>… a ďalších {c.parcels.length - 60} parciel.</Muted> : null}
         {c.buildings.length ? (<><Sub>Stavby</Sub><Table head={["Stavba", "Súpisné č.", "Na parcele", "LV"]} rows={c.buildings.map((b) => [b.descr, b.sc ?? "—", b.on_parcel ?? "—", b.lv_no])} /></>) : null}
-        {Object.entries(c.facts.stavby ?? {}).filter(([k]) => k.startsWith("building:")).slice(0, 10).map(([k, v]) => (
+        {Object.entries(c.facts.stavby ?? {}).filter(([k]) => k.startsWith("building:")).slice(0, 10).map(([k, raw]) => [k, parseFact(raw)] as const).map(([k, v]) => (
           <div key={k}><Sub>Stavba {k.replace("building:", "").replace("sc:", "s.č. ").replace("p:", "na parcele ")}</Sub><FactsBlock grp="stavby" data={v} /></div>
         ))}
-        {flatsByLv.length ? (<><Sub>Byty a nebytové priestory</Sub>{flatsByLv.slice(0, 12).map(([k, v]) => <FactsBlock key={k} grp="byty" data={v} />)}</>) : null}
+        {flatsByLv.length ? (<><Sub>Byty a nebytové priestory</Sub>{flatsByLv.slice(0, 12).map(([k, raw]) => <FactsBlock key={k} grp="byty" data={parseFact(raw)} />)}</>) : null}
         {mk && fact(c, "mapa", mk) ? (<><Sub>Z katastrálnej mapy</Sub><FactsBlock grp="mapa" data={fact(c, "mapa", mk)} /></>) : null}
         {mk && fact(c, "bpej", mk) ? (<><Sub>Pôda (BPEJ)</Sub><FactsBlock grp="bpej" data={fact(c, "bpej", mk)} /></>)
           : mainParcel?.bpej ? <Grid rows={[["BPEJ", mainParcel.bpej], ["Skupina kvality", mainParcel.bpej_skupina != null ? String(mainParcel.bpej_skupina) : "—"], ["Odvod za vyňatie (odhad)", mainParcel.odnatie_eur != null ? eur(mainParcel.odnatie_eur) : "—"]]} /> : null}

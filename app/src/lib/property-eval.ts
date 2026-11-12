@@ -25,8 +25,18 @@ const BAD_FLAGS = new Set(["exekucia", "konkurz", "drazba", "sudne_konanie", "sp
 const BAD_LIMITS = new Set(["zaplava", "zosuvy", "banske", "env", "ez_sazp", "skladka"]);
 
 /** Hodnota predpočítaného údaju: skupina → subjekt („parcel_c:1234/5") → objekt. */
+const parsed = new Map<string, Record<string, unknown> | null>();
+export function parseFact(raw: string | undefined | null): Record<string, unknown> | null {
+  if (!raw) return null;
+  if (parsed.has(raw)) return parsed.get(raw) ?? null;
+  let v: Record<string, unknown> | null = null;
+  try { const j = JSON.parse(raw) as unknown; v = j && typeof j === "object" ? (j as Record<string, unknown>) : null; } catch { v = null; }
+  if (parsed.size > 5000) parsed.clear();
+  parsed.set(raw, v);
+  return v;
+}
 export function fact(core: PropertyCore, grp: string, subject: string): Record<string, unknown> | null {
-  return (core.facts?.[grp]?.[subject] as Record<string, unknown> | undefined) ?? null;
+  return parseFact(core.facts?.[grp]?.[subject]);
 }
 export function mainKey(core: PropertyCore): string | null {
   return core.main.parcelNo ? `${core.main.register === "E" ? "parcel_e" : "parcel_c"}:${core.main.parcelNo}` : null;

@@ -8074,7 +8074,8 @@ export type PropertyCore = {
   dataset: { id: string; ku_code: string | null; ku_name: string | null; region: string | null; okres: string | null; updated_at: string | null } | null;
   main: { parcelNo: string | null; register: "C" | "E" | null; lvNo: number | null; lat: number | null; lng: number | null; sc: string | null; flat: string | null };
   parcels: PropParcel[]; lvs: number[]; buildings: PropBuilding[];
-  facts: Record<string, Record<string, Record<string, unknown>>>;
+  /** skupina -> parcel_c:1234/5 -> JSON text (rozbalí property-eval.fact; server fn nesmie vracať unknown) */
+  facts: Record<string, Record<string, string>>;
   factMeta: Record<string, { source: string | null; asOf: string | null; n: number }>;
   owners: { access: OwnerAccess; perLv: { lvNo: number; count: number; companies: number; persons: number; owners: { name: string; share: string | null; is_company: number; ico: string | null }[] }[] };
   legal: { lvNo: number; hasData: boolean; titlesCount: number; tarchyCount: number; titles: string[]; tarchy: string[] }[];
@@ -8247,7 +8248,7 @@ export const getPropertyCore = createServerFn({ method: "POST" })
       const rows = await qIn<{ subject_ref: string; grp: string; data_json: string; source: string | null; as_of: string | null }>(
         (ph) => `SELECT subject_ref, grp, data_json, source, as_of FROM property_facts WHERE kod_ku=? AND subject_type=? AND subject_ref IN (${ph})`, [kod, stype], refs);
       for (const r of rows) {
-        try { ((facts[r.grp] ??= {})[`${stype}:${r.subject_ref}`] = JSON.parse(r.data_json) as Record<string, unknown>); } catch { continue; }
+        (facts[r.grp] ??= {})[`${stype}:${r.subject_ref}`] = r.data_json;
         const m = (factMeta[r.grp] ??= { source: r.source, asOf: r.as_of, n: 0 }); m.n += 1;
       }
     }
@@ -8396,7 +8397,8 @@ export const getPropertyCore = createServerFn({ method: "POST" })
     const fmt = (n: number) => Math.round(n).toLocaleString("sk-SK");
     let title: string;
     if (kind === "byt") {
-      const fd = facts.byty?.[`flat:${flat}`] ?? {};
+      let fd: Record<string, unknown> = {};
+      try { fd = JSON.parse(facts.byty?.[`flat:${flat}`] ?? '{}') as Record<string, unknown>; } catch { /* poškodené */ }
       title = `Byt${fd.cislo != null ? ` č. ${String(fd.cislo)}` : ""}${fd.vchod != null ? `, vchod ${String(fd.vchod)}` : ""}${sc ? `, dom s.č. ${sc}` : ""}`;
     } else if (kind === "lv") title = `List vlastníctva č. ${lvNo}`;
     else if (house) title = `${house.descr.replace(/\s+/g, " ").trim()}${house.sc && !house.descr.includes(house.sc) ? ` s.č. ${house.sc}` : ""}${parcels.length > 1 ? " s pozemkami" : ""}`;
