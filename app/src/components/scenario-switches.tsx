@@ -32,10 +32,12 @@ export function variantParams(v: ScenarioVariant | null | undefined): Vals {
 
 const STATUS: Record<string, string> = { pending: "čaká na Mac", running: "počíta sa", done: "hotové", failed: "zlyhalo" };
 
-export function ScenarioSwitches({ scenario, selected, onSelect }: {
+export function ScenarioSwitches({ scenario, selected, onSelect, onVariants }: {
   scenario: "ZA" | "GOLD19" | "GOLD04" | "UP" | "BU";
   selected: number | null;
   onSelect: (id: number | null, v: ScenarioVariant | null, schema: ScenarioSchema | null) => void;
+  /** scenár bez vlastnej tabuľky (GOLD19): karta si z variantov nájde predvolený beh */
+  onVariants?: (variants: ScenarioVariant[], schema: ScenarioSchema | null) => void;
 }) {
   const { token } = useAuth();
   const { role } = useRole();
@@ -50,8 +52,10 @@ export function ScenarioSwitches({ scenario, selected, onSelect }: {
     getScenarioSwitches({ data: { scenario } }).then((r) => {
       setSchema(r.schema);
       setVariants(r.variants);
+      onVariants?.(r.variants, r.schema);
       setVals((cur) => (Object.keys(cur).length || !r.schema ? cur : Object.fromEntries(r.schema.params.map((p) => [p.key, p.default]))));
     }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scenario]);
   useEffect(() => { load(); }, [load]);
   // kým niečo čaká alebo beží, obnovovať stav

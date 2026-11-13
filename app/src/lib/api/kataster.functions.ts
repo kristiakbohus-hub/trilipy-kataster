@@ -9507,8 +9507,12 @@ export const getScenarioVariantRows = createServerFn({ method: "POST" })
 export const scenarioVariantQueue = createServerFn({ method: "POST" })
   .validator(z.object({
     secret: z.string(),
-    action: z.enum(["pending", "start", "results", "progress", "finish", "fail", "schema"]),
+    action: z.enum(["pending", "start", "results", "progress", "finish", "fail", "schema", "ensure"]),
     id: z.number().int().optional(),
+    // action=ensure: predvolený beh scenára, ktorý žije len ako variant (GOLD19) — Mac ho založí/obnoví po importe
+    params: z.record(z.string(), z.union([z.number(), z.boolean(), z.string()])).optional(),
+    label: z.string().max(200).optional(),
+    refresh: z.boolean().optional(),
     scenario: z.enum(SCENARIO_KEYS).optional(),
     schema: z.string().max(20000).optional(),
     kodKu: z.string().regex(/^\d{6}$/).optional(),
@@ -9528,6 +9532,24 @@ export const scenarioVariantQueue = createServerFn({ method: "POST" })
       await q("INSERT INTO market_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
         [`scenario_params:${data.scenario}`, data.schema]);
       return { ok: true };
+    }
+    if (data.action === "ensure") {
+      if (!data.scenario) return { ok: false, message: "Chýba scenár." };
+      const schema = await scenarioSchema(data.scenario);
+      if (!schema) return { ok: false, message: "Scenár nemá zverejnené prepínače." };
+      const n = normalizeScenarioParams(schema, data.params ?? {});
+      if (n.error) return { ok: false, message: n.error };
+      const pj = JSON.stringify(Object.fromEntries(Object.keys(n.params).sort().map((k) => [k, n.params[k]])));
+      const hash = await sha256HexFull(`${data.scenario}|${pj}`);
+      const ex = (await q<{ id: number; status: string }>("SELECT id, status FROM scenario_variants WHERE scenario=? AND params_hash=? ORDER BY id DESC LIMIT 1",
+        [data.scenario, hash]).catch(() => []))[0];
+      if (ex) {
+        if (data.refresh || ex.status === "failed") await q("UPDATE scenario_variants SET status='pending', progress='obnova po importe', error=NULL WHERE id=? AND status<>'running'", [ex.id]);
+        return { ok: true, inserted: 0 };
+      }
+      await q("INSERT INTO scenario_variants (scenario,label,params_json,params_hash,author) VALUES (?,?,?,?,?)",
+        [data.scenario, data.label ?? "predvolené", pj, hash, "Mac — predvolený beh"]);
+      return { ok: true, inserted: 1 };
     }
     if (data.action === "pending") {
       await q("UPDATE scenario_variants SET status='pending', progress='obnovené po prerušení' WHERE status='running' AND started_at < datetime('now','-6 hours')");

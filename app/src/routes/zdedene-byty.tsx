@@ -91,7 +91,7 @@ function InheritedFlatsPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-fg">Zdedené byty</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted">
-          Byty, kde aktuálny spoluvlastník zdedil podiel v rokoch {yrs}
+          Byty, kde aktuálny spoluvlastník zdedil podiel v {y0 === y1 ? "roku" : "rokoch"} {yrs}
           {exFirst || exTop ? `, byt NIE JE na ${exFirst && exTop ? "prvom ani poslednom" : exFirst ? "prvom" : "poslednom"} podlaží budovy` : ""}
           {needAddr ? " a vlastník má inú evidovanú adresu" : ""}. Signál na preskúmanie — nie tvrdenie o (ne)obývaní
           ani právny posudok.
