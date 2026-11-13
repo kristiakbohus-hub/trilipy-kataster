@@ -1145,6 +1145,72 @@ export const EXT_DEFS: ExtDef[] = [
   "special": null
  },
  {
+  "key": "env_uses_biocentra",
+  "label": "ÚSES – nadregionálne biocentrum (GNÚSES, orientačne)",
+  "category": "Príroda a pôda",
+  "provider": "SAŽP",
+  "method": "arcgis_query",
+  "url": "https://arc.sazp.sk/arcgis/rest/services/uses/gnuses/MapServer/0/query",
+  "params": {
+   "geometry": "{lon},{lat}",
+   "geometryType": "esriGeometryPoint",
+   "inSR": "4326",
+   "spatialRel": "esriSpatialRelIntersects",
+   "outFields": "*",
+   "returnGeometry": "false",
+   "f": "json"
+  },
+  "fields": {
+   "NAZOV": "Názov biocentra",
+   "KATEG": "Kategória"
+  },
+  "valueMap": {},
+  "risk": false,
+  "special": null
+ },
+ {
+  "key": "env_uses_bk_terestricky",
+  "label": "ÚSES – nadregionálny terestrický biokoridor (orientačne)",
+  "category": "Príroda a pôda",
+  "provider": "SAŽP",
+  "method": "arcgis_query",
+  "url": "https://arc.sazp.sk/arcgis/rest/services/uses/gnuses/MapServer/1/query",
+  "params": {
+   "geometry": "{lon},{lat}",
+   "geometryType": "esriGeometryPoint",
+   "inSR": "4326",
+   "spatialRel": "esriSpatialRelIntersects",
+   "outFields": "*",
+   "returnGeometry": "false",
+   "f": "json"
+  },
+  "fields": {},
+  "valueMap": {},
+  "risk": false,
+  "special": null
+ },
+ {
+  "key": "env_uses_bk_hydricky",
+  "label": "ÚSES – nadregionálny hydrický biokoridor (orientačne)",
+  "category": "Príroda a pôda",
+  "provider": "SAŽP",
+  "method": "arcgis_query",
+  "url": "https://arc.sazp.sk/arcgis/rest/services/uses/gnuses/MapServer/2/query",
+  "params": {
+   "geometry": "{lon},{lat}",
+   "geometryType": "esriGeometryPoint",
+   "inSR": "4326",
+   "spatialRel": "esriSpatialRelIntersects",
+   "outFields": "*",
+   "returnGeometry": "false",
+   "f": "json"
+  },
+  "fields": {},
+  "valueMap": {},
+  "risk": false,
+  "special": null
+ },
+ {
   "key": "env_ovzdusie_pm25",
   "label": "Kvalita ovzdušia – PM2,5 ročný priemer (µg/m³, model EEA 1 km)",
   "category": "Životné prostredie",

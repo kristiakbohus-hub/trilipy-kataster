@@ -734,7 +734,15 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
           ["Miestny názov", String(fact(c, "mapa", mk ?? "")?.miestny_nazov ?? "—")],
         ]} />
         {offices(d).length ? (<><Sub>Príslušné úrady</Sub><Grid rows={offices(d)} /></>) : null}
-        {!isClient && c.main.lat != null ? <a className="no-print text-xs text-brand underline" href={`/mapa?ll=${c.main.lat},${c.main.lng}`}>Otvoriť na mape →</a> : null}
+        {c.main.lat != null && c.main.lng != null ? (
+          <div className="no-print flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            {!isClient ? <a className="text-brand underline" href={`/mapa?ll=${c.main.lat},${c.main.lng}`}>Otvoriť na mape →</a> : null}
+            {/* 2026-11-13 (porovnanie s parcelnik.sk): rýchly pohľad z ulice a na okolie — bez sledovania, len odkaz */}
+            <a className="text-brand underline" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${c.main.lat.toFixed(6)},${c.main.lng.toFixed(6)}`}>Pohľad z ulice (Street View) ↗</a>
+            <a className="text-brand underline" target="_blank" rel="noopener noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${c.main.lat.toFixed(6)},${c.main.lng.toFixed(6)}`}>Google Mapy ↗</a>
+            <a className="text-brand underline" target="_blank" rel="noopener noreferrer" href={`https://zbgis.skgeodesy.sk/mapka/sk/kataster?pos=${c.main.lat.toFixed(6)},${c.main.lng.toFixed(6)},19`}>ZBGIS kataster ↗</a>
+          </div>
+        ) : null}
       </Sec>
 
       <Sec id="skladba" n={num("skladba")} explain={ex("skladba")} {...asof("skladba")} title={tt("skladba", "Skladba nehnuteľnosti")} source="SPI a VGI (ÚGKK SR); zóna ÚP z našich územnoplánovacích podkladov.">
