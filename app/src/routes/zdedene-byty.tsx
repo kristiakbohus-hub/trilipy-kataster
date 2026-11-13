@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createDeal, getZACases, type ZARow } from "../lib/api/kataster.functions";
+import { createDeal, getScenarioVariantRows, getZACases, type ScenarioVariant, type ZARow } from "../lib/api/kataster.functions";
+import { ScenarioSwitches, variantParams } from "../components/scenario-switches";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -18,10 +19,23 @@ function InheritedFlatsPage() {
   const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [rows, setRows] = useState<ZARow[]>([]);
   const [loading, setLoading] = useState(true);
+  // PREPÍNAČE (0117): null = predvolený beh (za_cases); inak hotový variant z Macu (scenario_variant_results)
+  const [variantId, setVariantId] = useState<number | null>(null);
+  const [variant, setVariant] = useState<ScenarioVariant | null>(null);
   const reload = useCallback(() => {
+    setLoading(true);
+    if (variantId && variant?.status === "done") {
+      getScenarioVariantRows({ data: { variantId } }).then((r) => setRows(r.rows.map(zaRowFromVariant)))
+        .catch(() => setRows([])).finally(() => setLoading(false));
+      return;
+    }
     getZACases({ data: {} }).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
-  }, []);
+  }, [variantId, variant?.status]);
   useEffect(() => { reload(); }, [reload]);
+  const vp = variantParams(variant);
+  const y0 = Number(vp.year_from ?? 2025), y1 = Number(vp.year_to ?? 2026);
+  const yrs = y0 === y1 ? String(y0) : `${y0}–${y1}`;
+  const exFirst = vp.exclude_first_floor !== false, exTop = vp.exclude_top_floor !== false, needAddr = vp.require_other_address !== false;
   const [kuFilter, setKuFilter] = useState("");
   const [cls, setCls] = useState<"MATCH" | "PROVISIONAL">("MATCH");
   const [limit, setLimit] = useState(40);
@@ -49,7 +63,7 @@ function InheritedFlatsPage() {
   const vKu = useMemo(() => (kuFilter ? rows.filter((r) => r.kod_ku === kuFilter) : rows), [rows, kuFilter]);
   const nMatch = vKu.filter((r) => r.classification === "MATCH").length;
   const nProv = vKu.filter((r) => r.classification === "PROVISIONAL").length;
-  const n2026 = vKu.filter((r) => r.classification === "MATCH" && r.instrument_year === 2026).length;
+  const nLast = vKu.filter((r) => r.classification === "MATCH" && r.instrument_year === y1).length;
   // Rozhodnutie vlastníka 2026-11-11: byty „na preskúmanie" sa ukazujú ODDELENE a S DÔVODOM.
   // Rozpis podľa toho, čo treba overiť (engine píše konkrétny dôvod do `reason`).
   const provWhy = useMemo(() => {
@@ -76,21 +90,27 @@ function InheritedFlatsPage() {
       <div>
         <h1 className="text-xl font-semibold tracking-tight text-fg">Zdedené byty</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted">
-          Byty, kde aktuálny spoluvlastník zdedil podiel v rokoch 2025–2026, byt NIE JE na prvom ani
-          poslednom podlaží budovy a vlastník má inú evidovanú adresu (mimo mesta bytu). Signál na
-          preskúmanie — nie tvrdenie o (ne)obývaní ani právny posudok.
+          Byty, kde aktuálny spoluvlastník zdedil podiel v rokoch {yrs}
+          {exFirst || exTop ? `, byt NIE JE na ${exFirst && exTop ? "prvom ani poslednom" : exFirst ? "prvom" : "poslednom"} podlaží budovy` : ""}
+          {needAddr ? " a vlastník má inú evidovanú adresu" : ""}. Signál na preskúmanie — nie tvrdenie o (ne)obývaní
+          ani právny posudok.
         </p>
       </div>
+
+      <ScenarioSwitches
+        scenario="ZA" selected={variantId}
+        onSelect={(id, v) => { setVariantId(id); setVariant(v); setLimit(40); }}
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Kandidáti (MATCH)" value={nMatch} />
         <Stat label="Na preskúmanie" value={nProv} />
-        <Stat label="Dedičstvo 2026" value={n2026} />
+        <Stat label={`Dedičstvo ${y1}`} value={nLast} />
         <Stat label={kuFilter ? "Vybrané k.ú." : "Katastre"} value={kuFilter ? 1 : katastre.length} />
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <SectionHeader title="Kandidáti" hint="Dedičstvo 2025/26 + iná adresa toho istého vlastníka." />
+        <SectionHeader title="Kandidáti" hint={`Dedičstvo ${yrs}${needAddr ? " + iná adresa toho istého vlastníka" : ""}.`} />
         <div className="ml-auto flex items-center gap-2">
           <div className="flex overflow-hidden rounded-md border border-line text-xs">
             <button
@@ -223,4 +243,18 @@ function InheritedFlatsPage() {
       </Disclaimer>
     </div>
   );
+}
+
+/** Riadok variantu (tvar z 21_NL_SEARCH/gold_za_push.py) → ZARow karty. */
+function zaRowFromVariant(r: Record<string, unknown>): ZARow {
+  const n = (x: unknown) => (x === undefined || x === null ? null : Number(x));
+  const t = (x: unknown) => (x === undefined || x === null ? null : String(x));
+  return {
+    kod_ku: String(r.kodKu ?? ""), ku_name: t(r._kuName) ?? t(r.kuName), dataset_id: t(r._datasetId),
+    flat_id: String(r.flatId ?? ""), lv_no: n(r.lvNo), floor: n(r.floor),
+    building_min_floor: n(r.buildingMinFloor), building_max_floor: n(r.buildingMaxFloor),
+    classification: String(r.classification ?? ""), score: n(r.score),
+    instrument_year: n(r.instrumentYear), registration_year: n(r.registrationYear),
+    owner_obec: t(r.ownerObec), reason: t(r.reason), criteria_json: t(r.criteriaJson),
+  } as ZARow;
 }

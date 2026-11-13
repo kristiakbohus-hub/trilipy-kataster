@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ApiScenarioQueueRouteImport } from './routes/api.scenario-queue'
 import { Route as ObhliadkaRouteImport } from './routes/obhliadka'
 import { Route as PorovnanieRouteImport } from './routes/porovnanie'
 import { Route as ZiadostiRouteImport } from './routes/ziadosti'
@@ -203,6 +204,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiScenarioQueueRoute = ApiScenarioQueueRouteImport.update({
+  id: '/api/scenario-queue',
+  path: '/api/scenario-queue',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ObhliadkaRoute = ObhliadkaRouteImport.update({
@@ -614,6 +620,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/scenario-queue': typeof ApiScenarioQueueRoute
   '/obhliadka': typeof ObhliadkaRoute
   '/porovnanie': typeof PorovnanieRoute
   '/ziadosti': typeof ZiadostiRoute
@@ -711,6 +718,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/scenario-queue': typeof ApiScenarioQueueRoute
   '/obhliadka': typeof ObhliadkaRoute
   '/porovnanie': typeof PorovnanieRoute
   '/ziadosti': typeof ZiadostiRoute
@@ -809,6 +817,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/api/scenario-queue': typeof ApiScenarioQueueRoute
   '/obhliadka': typeof ObhliadkaRoute
   '/porovnanie': typeof PorovnanieRoute
   '/ziadosti': typeof ZiadostiRoute
@@ -908,6 +917,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/scenario-queue'
     | '/obhliadka'
     | '/porovnanie'
     | '/ziadosti'
@@ -1005,6 +1015,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/scenario-queue'
     | '/obhliadka'
     | '/porovnanie'
     | '/ziadosti'
@@ -1102,6 +1113,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/api/scenario-queue'
     | '/obhliadka'
     | '/porovnanie'
     | '/ziadosti'
@@ -1196,6 +1208,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ApiScenarioQueueRoute: typeof ApiScenarioQueueRoute
   ObhliadkaRoute: typeof ObhliadkaRoute
   PorovnanieRoute: typeof PorovnanieRoute
   ZiadostiRoute: typeof ZiadostiRoute
@@ -1528,6 +1541,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/scenario-queue': {
+      id: '/api/scenario-queue'
+      path: '/api/scenario-queue'
+      fullPath: '/api/scenario-queue'
+      preLoaderRoute: typeof ApiScenarioQueueRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/obhliadka': {
@@ -1967,6 +1987,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ApiScenarioQueueRoute: ApiScenarioQueueRoute,
   ObhliadkaRoute: ObhliadkaRoute,
   PorovnanieRoute: PorovnanieRoute,
   ZiadostiRoute: ZiadostiRoute,

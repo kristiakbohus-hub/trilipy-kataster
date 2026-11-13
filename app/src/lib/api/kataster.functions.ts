@@ -9403,3 +9403,157 @@ export const revokePropertyShare = createServerFn({ method: "POST" })
     await logAudit("property.share.revoke", u.role, `Zrušený odkaz na list ${data.share.slice(0, 8)}…`);
     return { ok: true };
   });
+
+// ——— PREPÍNAČE GOLD SCENÁROV (0117, 2026-11-13) ———
+// Pokyn vlastníka: „gold musia všetky fungovať s prepínaním, napr. dedičstvá 2025 sa musia dať prepnúť na 2022“.
+// Predvolený beh ostáva vo vlastnej tabuľke scenára; VARIANT = ten istý engine s inými parametrami, ktorý prepočíta
+// Mac (brief_worker → scenario_variants.py) a uloží do scenario_variant_results. Zoznam prepínačov (typ, rozsah,
+// jednotka, pôvod) publikuje engine do market_meta ('scenario_params:<SC>'), appka ho len vykreslí a overí.
+export type ScenarioParamDef = {
+  key: string; label: string; type: "int" | "number" | "bool"; default: number | boolean;
+  min?: number; max?: number; step?: number; unit?: string | null; origin?: string | null; help?: string | null;
+};
+export type ScenarioSchema = { scenario: string; title: string; params: ScenarioParamDef[]; defaultLabel?: string | null };
+export type ScenarioVariant = {
+  id: number; scenario: string; label: string | null; params_json: string; status: string; progress: string | null;
+  error: string | null; n_match: number | null; n_provisional: number | null; author: string | null;
+  created_at: string; finished_at: string | null;
+};
+const SCENARIO_KEYS = ["ZA", "GOLD19", "GOLD04", "UP", "BU"] as const;
+
+async function scenarioSchema(sc: string): Promise<ScenarioSchema | null> {
+  const v = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key=?", [`scenario_params:${sc}`]).catch(() => []))[0]?.value;
+  if (!v) return null;
+  try { return JSON.parse(v) as ScenarioSchema; } catch { return null; }
+}
+
+/** Normalizácia parametrov podľa schémy enginu: len známe kľúče, typy a rozsahy; chýbajúce = predvolené. */
+function normalizeScenarioParams(schema: ScenarioSchema, raw: Record<string, unknown>): { params: Record<string, number | boolean>; error?: string } {
+  const out: Record<string, number | boolean> = {};
+  for (const p of schema.params) {
+    const v = raw[p.key];
+    if (v === undefined || v === null || v === "") { out[p.key] = p.default; continue; }
+    if (p.type === "bool") { out[p.key] = v === true || v === "true" || v === 1; continue; }
+    const n = Number(v);
+    if (!Number.isFinite(n)) return { params: out, error: `${p.label}: nie je číslo.` };
+    if (p.min !== undefined && n < p.min) return { params: out, error: `${p.label}: najmenej ${p.min}.` };
+    if (p.max !== undefined && n > p.max) return { params: out, error: `${p.label}: najviac ${p.max}.` };
+    out[p.key] = p.type === "int" ? Math.round(n) : n;
+  }
+  return { params: out };
+}
+
+export const getScenarioSwitches = createServerFn({ method: "POST" })
+  .validator(z.object({ scenario: z.enum(SCENARIO_KEYS) }))
+  .handler(async ({ data }): Promise<{ schema: ScenarioSchema | null; variants: ScenarioVariant[] }> => {
+    const schema = await scenarioSchema(data.scenario);
+    const variants = await q<ScenarioVariant>(
+      `SELECT id, scenario, label, params_json, status, progress, error, n_match, n_provisional, author, created_at, finished_at
+       FROM scenario_variants WHERE scenario=? ORDER BY id DESC LIMIT 30`, [data.scenario]).catch(() => []);
+    return { schema, variants };
+  });
+
+export const createScenarioVariant = createServerFn({ method: "POST" })
+  .validator(z.object({
+    token: z.string(), scenario: z.enum(SCENARIO_KEYS),
+    params: z.record(z.union([z.number(), z.boolean(), z.string()])),
+    label: z.string().max(200).optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; id?: number; existing?: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    if (u.role === "viewer" || u.role === "external_readonly") return { ok: false, message: "Rola nemôže spúšťať prepočty." };
+    const schema = await scenarioSchema(data.scenario);
+    if (!schema) return { ok: false, message: "Scenár zatiaľ nemá zverejnené prepínače (engine na Macu ich pošle pri najbližšom behu)." };
+    const n = normalizeScenarioParams(schema, data.params);
+    if (n.error) return { ok: false, message: n.error };
+    const pj = JSON.stringify(Object.fromEntries(Object.keys(n.params).sort().map((k) => [k, n.params[k]])));
+    const hash = await sha256HexFull(`${data.scenario}|${pj}`);
+    // rovnaké nastavenie sa nepočíta dvakrát — vráti sa existujúci (čakajúci, bežiaci alebo hotový) variant
+    const ex = (await q<{ id: number }>("SELECT id FROM scenario_variants WHERE scenario=? AND params_hash=? AND status IN ('pending','running','done') ORDER BY id DESC LIMIT 1",
+      [data.scenario, hash]).catch(() => []))[0];
+    if (ex) return { ok: true, id: ex.id, existing: true };
+    const r = await q<{ id: number }>(
+      "INSERT INTO scenario_variants (scenario,label,params_json,params_hash,user_id,author) VALUES (?,?,?,?,?,?) RETURNING id",
+      [data.scenario, data.label ?? null, pj, hash, Number(u.id) || null, u.name ?? u.email]);
+    await logAudit("scenario.variant", u.role, `Variant ${data.scenario} #${r[0]?.id ?? "?"}: ${pj.slice(0, 300)}`);
+    return { ok: true, id: r[0]?.id };
+  });
+
+export const getScenarioVariantRows = createServerFn({ method: "POST" })
+  .validator(z.object({ variantId: z.number().int(), kodKu: z.string().regex(/^\d{6}$/).optional() }))
+  .handler(async ({ data }): Promise<{ variant: ScenarioVariant | null; rows: Record<string, unknown>[] }> => {
+    const v = (await q<ScenarioVariant>(
+      `SELECT id, scenario, label, params_json, status, progress, error, n_match, n_provisional, author, created_at, finished_at
+       FROM scenario_variants WHERE id=?`, [data.variantId]).catch(() => []))[0] ?? null;
+    if (!v) return { variant: null, rows: [] };
+    const where = data.kodKu ? "AND r.kod_ku=?" : "";
+    // dataset a názov k.ú. pribalí server (odkazy na výpis LV a list nehnuteľnosti ako pri predvolenom behu)
+    const rs = await q<{ data_json: string; dataset_id: string | null; ds_ku_name: string | null }>(
+      `SELECT r.data_json, ds.id AS dataset_id, ds.ku_name AS ds_ku_name
+       FROM scenario_variant_results r LEFT JOIN datasets ds ON ds.ku_code = r.kod_ku
+       WHERE r.variant_id=? ${where} ORDER BY r.classification, r.id LIMIT 20000`,
+      data.kodKu ? [data.variantId, data.kodKu] : [data.variantId]).catch(() => []);
+    const rows: Record<string, unknown>[] = [];
+    for (const r of rs) {
+      try { rows.push({ ...(JSON.parse(r.data_json) as Record<string, unknown>), _datasetId: r.dataset_id, _kuName: r.ds_ku_name }); }
+      catch { /* poškodený riadok vynechať */ }
+    }
+    return { variant: v, rows };
+  });
+
+/** Mac (brief_worker → scenario_variants.py): fronta variantov, zverejnenie prepínačov a zápis výsledkov. */
+export const scenarioVariantQueue = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    action: z.enum(["pending", "start", "results", "progress", "finish", "fail", "schema"]),
+    id: z.number().int().optional(),
+    scenario: z.enum(SCENARIO_KEYS).optional(),
+    schema: z.string().max(20000).optional(),
+    kodKu: z.string().regex(/^\d{6}$/).optional(),
+    rows: z.array(z.record(z.unknown())).max(2000).optional(),
+    progress: z.string().max(300).optional(),
+    error: z.string().max(1000).optional(),
+    stats: z.string().max(100000).optional(),
+    nMatch: z.number().int().optional(), nProvisional: z.number().int().optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; started?: boolean; variants?: ScenarioVariant[]; inserted?: number; message?: string }> => {
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "DB nedostupná" };
+    if (data.action === "schema") {
+      if (!data.scenario || !data.schema) return { ok: false, message: "Chýba scenár alebo schéma." };
+      try { JSON.parse(data.schema); } catch { return { ok: false, message: "Schéma nie je JSON." }; }
+      await q("INSERT INTO market_meta (key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [`scenario_params:${data.scenario}`, data.schema]);
+      return { ok: true };
+    }
+    if (data.action === "pending") {
+      await q("UPDATE scenario_variants SET status='pending', progress='obnovené po prerušení' WHERE status='running' AND started_at < datetime('now','-6 hours')");
+      return { ok: true, variants: await q<ScenarioVariant>("SELECT * FROM scenario_variants WHERE status='pending' ORDER BY id LIMIT 5") };
+    }
+    if (!data.id) return { ok: false, message: "Chýba id variantu." };
+    if (data.action === "start") {
+      const r = await q<{ id: number }>(
+        "UPDATE scenario_variants SET status='running', started_at=datetime('now'), progress=?, error=NULL WHERE id=? AND status IN ('pending','running') RETURNING id",
+        [data.progress ?? null, data.id]);
+      if (r.length) await q("DELETE FROM scenario_variant_results WHERE variant_id=?", [data.id]);
+      return { ok: true, started: r.length > 0 };
+    }
+    if (data.action === "results") {
+      if (!data.kodKu || !data.rows) return { ok: false, message: "Chýba k.ú. alebo riadky." };
+      const stmt = DB.prepare("INSERT INTO scenario_variant_results (variant_id,kod_ku,classification,data_json) VALUES (?,?,?,?)");
+      const batch = data.rows.map((r) => stmt.bind(data.id, data.kodKu, String((r as { classification?: unknown }).classification ?? "MATCH"), JSON.stringify(r)));
+      for (let i = 0; i < batch.length; i += 100) await DB.batch(batch.slice(i, i + 100));
+      return { ok: true, inserted: batch.length };
+    }
+    if (data.action === "progress") {
+      await q("UPDATE scenario_variants SET progress=? WHERE id=? AND status='running'", [data.progress ?? null, data.id]);
+    } else if (data.action === "finish") {
+      await q("UPDATE scenario_variants SET status='done', progress=NULL, finished_at=datetime('now'), stats_json=?, n_match=?, n_provisional=? WHERE id=?",
+        [data.stats ?? null, data.nMatch ?? null, data.nProvisional ?? null, data.id]);
+    } else {
+      await q("UPDATE scenario_variants SET status='failed', finished_at=datetime('now'), error=? WHERE id=?", [data.error ?? "neznáma chyba", data.id]);
+    }
+    return { ok: true };
+  });
