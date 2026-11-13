@@ -8197,6 +8197,68 @@ export const ownerPortfolio = createServerFn({ method: "POST" })
     return { ok: true, name: data.name, lvs, rings };
   });
 
+// ——— VÝPIS PODĽA VLASTNÍKA (2026-11-13, zadanie vlastníka): všetko, čo osoba/firma vlastní v našich k.ú. ———
+// Rovnaká identita ako ownerPortfolio (meno + dátum narodenia, ak je zapísaný). Len plný prístup, rešpektuje
+// námietku (suppression); do audit logu ide len počet LV, nie meno.
+export type OwnerStatementLv = {
+  datasetId: string; kuName: string; okres: string | null; lvNo: number; share: string | null; shareFrac: number | null; coOwners: number;
+  parcels: { register: string; parcelNo: string; areaM2: number | null; druh: string | null; placement: string | null }[];
+  buildings: { descr: string; onParcel: string | null; sc: string | null }[];
+  tarchy: number; flags: string[]; areaM2: number; shareAreaM2: number | null;
+};
+export type OwnerStatement = {
+  ok: boolean; message?: string; name?: string; birthKnown?: boolean; truncated?: boolean; lvs: OwnerStatementLv[];
+  totals?: { lvs: number; kus: number; parcels: number; buildings: number; areaM2: number; shareAreaM2: number; byDruh: { druh: string; areaM2: number; shareAreaM2: number }[] };
+};
+export const ownerStatement = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), lvNo: z.number().int(), name: z.string().min(2).max(200) }))
+  .handler(async ({ data }): Promise<OwnerStatement> => {
+    const u = await requireUser(data.token);
+    if (!u || ownerAccess(u.role) !== "full") return { ok: false, lvs: [], message: "Výpis podľa vlastníka vidí len rola s plným prístupom." };
+    if ((await suppressedNameSet()).has(normName(data.name))) return { ok: false, lvs: [], message: "Osoba uplatnila námietku — údaje sa nezobrazujú." };
+    const me = (await q<{ birth_date: string | null }>("SELECT birth_date FROM lv_owners WHERE dataset_id = ? AND lv_no = ? AND name = ? LIMIT 1", [data.datasetId, data.lvNo, data.name]))[0];
+    if (!me) return { ok: false, lvs: [], message: "Vlastník sa na zadanom LV nenašiel." };
+    const rows = await q<{ dataset_id: string; lv_no: number; share: string | null; ku_name: string; region: string | null }>(
+      `SELECT o.dataset_id, o.lv_no, o.share, d.ku_name, d.region FROM lv_owners o JOIN datasets d ON d.id = o.dataset_id
+       WHERE o.name = ? ${me.birth_date ? "AND o.birth_date = ?" : ""} ORDER BY d.ku_name, o.lv_no LIMIT 400`,
+      me.birth_date ? [data.name, me.birth_date] : [data.name]).catch(() => []);
+    const seen = new Set<string>();
+    const uniq = rows.filter((r) => { const k = `${r.dataset_id}:${r.lv_no}`; if (seen.has(k)) return false; seen.add(k); return true; });
+    const lvs: OwnerStatementLv[] = [];
+    for (const r of uniq.slice(0, 120)) {
+      const [ps, bs, tc, fl, oc] = await Promise.all([
+        q<{ register: string; parcel_no: string; area_m2: number | null; drp_text: string | null; placement: string | null }>(
+          "SELECT register, parcel_no, area_m2, drp_text, placement FROM lv_parcels WHERE dataset_id=? AND lv_no=? ORDER BY register, area_m2 DESC LIMIT 300", [r.dataset_id, r.lv_no]).catch(() => []),
+        q<{ descr: string; on_parcel: string | null; sc: string | null }>("SELECT descr, on_parcel, supisne_cislo AS sc FROM lv_buildings WHERE dataset_id=? AND lv_no=? LIMIT 100", [r.dataset_id, r.lv_no]).catch(() => []),
+        q<{ n: number }>("SELECT COUNT(*) n FROM lv_titles WHERE dataset_id=? AND lv_no=? AND kind='tarcha'", [r.dataset_id, r.lv_no]).catch(() => []),
+        q<{ label: string }>("SELECT DISTINCT label FROM lv_flags WHERE dataset_id=? AND lv_no=? LIMIT 8", [r.dataset_id, r.lv_no]).catch(() => []),
+        q<{ n: number }>("SELECT COUNT(*) n FROM lv_owners WHERE dataset_id=? AND lv_no=?", [r.dataset_id, r.lv_no]).catch(() => []),
+      ]);
+      let parcels = ps.map((p) => ({ register: p.register, parcelNo: p.parcel_no, areaM2: p.area_m2, druh: p.drp_text, placement: p.placement }));
+      if (!parcels.length) parcels = (await q<{ parcel_no: string; area_m2: number | null; use_type: string | null }>(
+        "SELECT parcel_no, area_m2, use_type FROM parcels WHERE dataset_id=? AND lv_no=? LIMIT 300", [r.dataset_id, r.lv_no]).catch(() => []))
+        .map((p) => ({ register: "C", parcelNo: p.parcel_no, areaM2: p.area_m2, druh: p.use_type, placement: null }));
+      const area = parcels.reduce((s, p) => s + (p.areaM2 ?? 0), 0);
+      const frac = shareToFrac(r.share);
+      lvs.push({ datasetId: r.dataset_id, kuName: r.ku_name, okres: (r.region ?? "").split(" · ")[0].replace(/^okres\s+/, "") || null, lvNo: r.lv_no, share: r.share,
+        shareFrac: frac, coOwners: oc[0]?.n ?? 0, parcels, buildings: bs.map((b) => ({ descr: b.descr, onParcel: b.on_parcel, sc: b.sc })),
+        tarchy: tc[0]?.n ?? 0, flags: fl.map((f) => f.label), areaM2: area, shareAreaM2: frac != null ? area * frac : null });
+    }
+    const byD = new Map<string, { areaM2: number; shareAreaM2: number }>();
+    for (const l of lvs) for (const p of l.parcels) {
+      const k = p.druh ?? "neuvedené"; const g = byD.get(k) ?? { areaM2: 0, shareAreaM2: 0 };
+      g.areaM2 += p.areaM2 ?? 0; g.shareAreaM2 += (p.areaM2 ?? 0) * (l.shareFrac ?? 0); byD.set(k, g);
+    }
+    await logAudit("owner.statement", u.role, `Výpis podľa vlastníka: ${lvs.length} LV v ${new Set(lvs.map((l) => l.datasetId)).size} k.ú.`, data.datasetId).catch(() => undefined);
+    return {
+      ok: true, name: data.name, birthKnown: !!me.birth_date, truncated: uniq.length > 120, lvs,
+      totals: { lvs: lvs.length, kus: new Set(lvs.map((l) => l.datasetId)).size, parcels: lvs.reduce((s, l) => s + l.parcels.length, 0),
+        buildings: lvs.reduce((s, l) => s + l.buildings.length, 0), areaM2: lvs.reduce((s, l) => s + l.areaM2, 0),
+        shareAreaM2: lvs.reduce((s, l) => s + (l.shareAreaM2 ?? 0), 0),
+        byDruh: [...byD.entries()].map(([druh, g]) => ({ druh, ...g })).sort((a, b) => b.shareAreaM2 - a.shareAreaM2) },
+    };
+  });
+
 // ——— LIST NEHNUTEĽNOSTI: predpočítané údaje z Mac modulov (2026-11-12) ———
 // Kontrakt 49_LIST_NEHNUTELNOSTI/CONTRACT.md. Každý modul zapisuje svoju skupinu (grp) pre k.ú.; `reset` zmaže
 // skupinu k.ú. pred zápisom. Odpoveď nesie veľkosť databázy (meta.size_after), aby Mac moduly zastavili zápis
