@@ -8552,7 +8552,7 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       const n1 = parcels.length - 1, mainNo = `${main?.register === "E" ? "E " : ""}${main?.parcel_no ?? data.ref}`;
       title = n1 > 0 ? `Pozemok parc. č. ${mainNo} s ${n1} ${n1 === 1 ? "priľahlou parcelou" : "priľahlými parcelami"}` : `Pozemok parc. č. ${mainNo}`;
     }
-    const subtitle = [ds.ku_name, okres ? `okres ${okres}` : null, `${parcels.length} ${parcels.length === 1 ? "parcela" : parcels.length < 5 ? "parcely" : "parciel"} · ${fmt(totalArea)} m²`,
+    const subtitle = [ds.ku_name, okres ? `okres ${okres}` : null, `${plural(parcels.length, "parcela", "parcely", "parciel")} · ${fmt(totalArea)} m²`,
       lvs.length ? `LV ${lvs.slice(0, 6).join(", ")}${lvs.length > 6 ? "…" : ""}` : null].filter(Boolean).join(" · ");
 
     return {

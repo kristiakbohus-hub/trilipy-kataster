@@ -335,7 +335,7 @@ export function propertyTaxOf(d: SheetData, b: Basis): { eur: number | null; det
     if (typeof rate === "number") { const fl = Math.max(0, (b.floors ?? 1) - 1); const t = b.footprintM2 * rate + fl * b.footprintM2 * (dan.priplatok_podlazie_eur_m2 ?? 0); sum += t; parts.push(`stavba ${r0(b.footprintM2)} m² × ${rate} €${fl ? ` + príplatok za ${fl} podl.` : ""} = ${r0(t)} €`); }
     else unknown = true;
   }
-  return { eur: sum ? r0(sum) : null, detail: `${parts.join(" · ") || "—"}${unknown ? " · časť sadzieb chýba" : ""} (VZN ${dan.vzn ?? "obce"})`, vzn: dan.vzn ?? null };
+  return { eur: sum ? r0(sum) : null, detail: `${parts.join(" · ") || "—"}${unknown ? " · časť sadzieb chýba" : ""} (${/^VZN/i.test(dan.vzn ?? "") ? dan.vzn : `VZN ${dan.vzn ?? "obce"}`})`, vzn: dan.vzn ?? null };
 }
 
 const EC_KWH: Record<string, number> = { A0: 30, A1: 50, B: 90, C: 130, D: 170, E: 210, F: 260, G: 320 };

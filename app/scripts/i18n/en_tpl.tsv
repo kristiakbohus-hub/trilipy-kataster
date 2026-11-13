@@ -513,7 +513,6 @@ verejná kanalizácia SEVAK, vlastná ČOV Čadca ({0} z {1} obyv. pripojených)
 Zoning plan: výroba/technická (Slovak zoning category).	Zoning plan: industry/technical (Slovak zoning category).
 cadastral area Žilina · okres Žilina · {0} parcely · {1} m² · LV {2}, {3}	cadastral area Žilina · district Žilina · {0} parcels · {1} m² · title deeds {2}, {3}
 cadastral area Žilina · okres Žilina · {0} parcely · {1} m² · LV {2}	cadastral area Žilina · district Žilina · {0} parcels · {1} m² · title deed {2}
-cadastral area Turzovka · okres Čadca · {0} parcela · {1} m²	cadastral area Turzovka · district Čadca · {0} parcel · {1} m²
 Celok: zvolená parcela + priľahlé parcely tých istých vlastníkov (podľa spoločnej hranice z katastrálnej mapy).	Unit: the selected parcel + adjacent parcels of the same owners (by shared boundary in the cadastral map).
 Radónové riziko z podložia (prognózna mapa), Ochranná hrádza – do {0} m, Seveso podniky (závažné priemyselné havárie) – do {1} km	Radon risk from subsoil (forecast map), Flood dike – within {0} m, Seveso sites (major industrial accidents) – within {1} km
 Radónové riziko z podložia (prognózna mapa), Chránená vodohospodárska oblasť (CHVO)	Radon risk from subsoil (forecast map), Protected water management area (CHVO)
@@ -900,3 +899,138 @@ najviac	at most
 limity WHO {0}	WHO {0} limits
 Norma	Standard
 Stav	Status
+ŠGÚDŠ (Atlas krajiny SR)	ŠGÚDŠ (Landscape Atlas of Slovakia)
+{0} parcely	{0} parcels
+{0} parciel	{0} parcels
+Dôvod predaja	Reason for sale
+Kedy sa dá nehnuteľnosť odovzdať / uvoľniť	When the property can be handed over / vacated
+Spory, nároky tretích osôb, nedoplatky (áno/nie, čo)	Disputes, third-party claims, arrears (yes/no, what)
+Iné, čo má kupujúci vedieť	Anything else the buyer should know
+Energetický certifikát — trieda	Energy performance certificate — class
+nemá certifikát	no certificate
+Certifikát — typ (budova / byt)	Certificate — type (building / flat)
+Globálny ukazovateľ / potreba energie (kWh/m²·rok)	Global indicator / energy demand (kWh/m²·year)
+Certifikát platný do (rok)	Certificate valid until (year)
+Výnimka z certifikátu (dôvod)	Exemption from the certificate (reason)
+Stavebné povolenie — rok	Building permit — year
+Kolaudácia — rok	Occupancy approval — year
+Prístavby, zmeny stavby — povolené? (čo a kedy)	Extensions and alterations — permitted? (what and when)
+Rekonštrukcie (rok — čo: strecha, okná, rozvody, zateplenie…)	Renovations (year — what: roof, windows, wiring and plumbing, insulation…)
+Známe vady (vlhkosť, praskliny, zatekanie, statika…)	Known defects (damp, cracks, leaks, structure…)
+Kúrenie a zdroj tepla	Heating and heat source
+Náklady na energie ročne (podľa faktúr)	Annual energy costs (per bills)
+Internet / pripojenie	Internet / connection
+Čo zostáva v cene (kuchyňa, spotrebiče, nábytok, garáž…)	Included in the price (kitchen, appliances, furniture, garage…)
+{0} — bez vád	{0} — no defects
+{0} — opravy v budúcnosti	{0} — repairs needed in future
+{0} — vážne / naliehavé	{0} — serious / urgent
+neprezerané	not inspected
+Technický stav — strecha a klampiarske prvky	Technical condition — roof and flashing
+Technický stav — fasáda a zateplenie	Technical condition — facade and insulation
+Technický stav — okná a dvere	Technical condition — windows and doors
+Technický stav — statika (praskliny)	Technical condition — structure (cracks)
+Technický stav — vlhkosť, pleseň	Technical condition — damp, mould
+Technický stav — elektroinštalácia	Technical condition — electrical installation
+Technický stav — voda a kanalizácia	Technical condition — water and drainage
+Technický stav — kúrenie	Technical condition — heating
+strecha a klampiarske prvky	roof and flashing
+fasáda a zateplenie	facade and insulation
+okná a dvere	windows and doors
+statika (praskliny)	structure (cracks)
+vlhkosť, pleseň	damp, mould
+elektroinštalácia	electrical installation
+voda a kanalizácia	water and drainage
+Dátum obhliadky	Viewing date
+Správca / spoločenstvo (názov firmy)	Building manager / owners' association (company name)
+Fond opráv (€ mesačne)	Repair fund (€ per month)
+Zálohy spolu (€ mesačne)	Service charges in total (€ per month)
+Plánované opravy domu a schválené úvery	Planned building repairs and approved loans
+Nedoplatky bytu voči správcovi	Arrears of the flat to the building manager
+Nájom poľnohospodárovi do (dátum / výpovedná lehota)	Lease to a farmer until (date / notice period)
+Nájomca (typ: družstvo, firma, SHR — bez mien osôb)	Tenant (type: cooperative, company, sole farmer — no personal names)
+Prípojky na pozemku (elektrina, voda, kanalizácia, plyn)	Connections on the plot (electricity, water, sewer, gas)
+Oplotenie	Fencing
+Studňa / vrt	Well / borehole
+Technický stav podľa obhliadky	Technical condition from the viewing
+Doplniť / upraviť údaje od predávajúceho	Add / edit seller information
+Skryť formulár údajov od predávajúceho	Hide the seller information form
+Neuvádzajte mená ani kontakty osôb.	Do not enter names or contact details of persons.
+Uložené.	Saved.
+Nepodarilo sa uložiť.	Could not save.
+Uložiť	Save
+exekúcia na LV — kúpa až po jej zrušení a výmaze	enforcement order on the title deed — buy only after it is cancelled and deleted
+konkurz — predaj len cez správcu	bankruptcy — sale only through the insolvency administrator
+prístup cez cudzí pozemok — zabezpečiť vecné bremeno (kľúčový pás pozemku pri ceste)	access across third-party land — secure an easement (the key strip of land by the road)
+ochranné pásmo elektrického vedenia cez pozemok ({0}/{1} § {2}) — zmenšuje zastavateľnú plochu, preložka na náklady investora	power line protection zone across the plot ({0}/{1} § {2}) — reduces the buildable area; relocation at the developer's cost
+ochranné / bezpečnostné pásmo plynovodu ({0}/{1} § {2}–{3}) — stavba len so súhlasom SPP-distribúcia	gas pipeline protection / safety zone ({0}/{1} § {2}–{3}) — building only with the consent of SPP-distribúcia
+územný plán nepripúšťa výstavbu — len po zmene ÚP ({0}–{1} roky, neisté)	the zoning plan does not allow building — only after a zoning plan change ({0}–{1} years, uncertain)
+zosuvné územie	landslide area
+nezistený vlastník (správa SPF) — súdne alebo osobitné vysporiadanie	unidentified owner (managed by the Slovak Land Fund) — court or special settlement
+národná kultúrna pamiatka na pozemku alebo stavbe — zásahy len so súhlasom krajského pamiatkového úradu ({0}/{1})	national cultural monument on the land or building — works only with the consent of the regional monuments office ({0}/{1})
+stavba bez zápisu — dodatočné povolenie (pri stavbách do {0}. {1}. {2} do {3}. {4}. {5} podľa novely {6}/{7})	unregistered building — retrospective permit (for buildings completed by {0}. {1}. {2}, possible until {3}. {4}. {5} under amendment {6}/{7})
+KÚPIŤ	BUY
+bez vylučujúcich podmienok v údajoch listu	no blocking conditions in the sheet data
+cena {0} € je nad maximom {1} €	price {0} € is above the maximum {1} €
+súčasný stav	current state
+Predaj bytov €/m²	Flat sale price €/m²
+Predaj RD €/m²	House sale price €/m²
+Stavba €/m²	Construction €/m²
+Zisk developera %	Developer's profit %
+Ostatné náklady %	Other costs %
+Komerčné €/m²	Commercial €/m²
+Komerčná stavba €/m²	Commercial construction €/m²
+Diskont %/rok	Discount %/year
+Rozparcelovať na {0} pozemky	Subdivide into {0} plots
+Komerčná / obchodná stavba	Commercial / retail building
+zosuvné / náchylné územie — nevyhnutný	landslide / susceptible area — essential
+Dendrologický posudok a súhlas na výrub	Arboricultural survey and tree-felling consent
+stromy na pozemku alebo les do {0} m	trees on the plot or forest within {0} m
+{0} – {1} € + náhradná výsadba	€{0} – €{1} + replacement planting
+Dopravná / kapacitná štúdia a zisťovacie konanie EIA (podľa veľkosti)	Traffic / capacity study and EIA screening (depending on size)
+hrubá podlažná plocha ~{0} m²	gross floor area ~{0} m²
+Na úradnej tabuli obce je oznámenie o stavebnej uzávere — overiť, či sa týka pozemku.	The municipal notice board shows a building moratorium notice — check whether it affects the plot.
+potrebná — spravidla {0}–{1} mesiacov, výsledok neistý	required — usually {0}–{1} months, uncertain outcome
+oznámenie	notice
+fyzické osoby v zahraničí	natural persons abroad
+pravdepodobne zosnulí (dedičské konanie)	probably deceased (probate)
+obec (zámer, uznesenie, zverejnenie)	municipality (intent, resolution, publication)
+štát / SPF	state / Slovak Land Fund
+nezistený vlastník (SPF / súd)	unidentified owner (Slovak Land Fund / court)
+— s tieňom terénu; budovy a stromy nie sú započítané	— with terrain shading; buildings and trees are not included
+Výškový profil pozemku	Elevation profile of the plot
+exekúcia / dražba	enforcement / auction
+inzerát stiahnutý	listing withdrawn
+dražba	auction
+Mapa porovnateľných predajov	Map of comparable sales
+exekúcia	enforcement order
+zóna ÚP umožňuje bývanie	zoning allows housing
+obchodná verejná súťaž, dražba alebo priamy predaj (len do {0} € a najmenej za všeobecnú hodnotu); zámer zverejniť min. {1} dní, ponuky min. {2} dní; výnimky — pozemok pod stavbou kupujúceho, osobitný zreteľ ({3}/{4} § {5}a)	public tender, auction or direct sale (only up to {0} € and at least at market value); intent published for at least {1} days, offers at least {2} days; exceptions — land under the buyer's building, special consideration ({3}/{4} § {5}a)
+osobitný postup: žiadosť, ocenenie znaleckým posudkom, súhlas, ponuka — cena podľa predpisov	special procedure: application, expert valuation, consent, offer — price set by regulations
+poplatok podľa sadzobníka	fee per tariff
+inzerát	listing
+tiché	quiet
+hlučnejšie	louder
+veľmi hlučné	very noisy
+bez vysokých objektov	no tall objects
+bez výraznej prekážky	no significant obstacle
+hrad / kaštieľ	castle / manor house
+kláštor	monastery
+pomník	monument
+archeologická lokalita	archaeological site
+zastávka	stop
+chránená	protected
+vhodné na rodinný dom	suitable for a family house
+dopyt po nájme v okolí	rental demand nearby
+výmera a regulatív na viac jednotiek	area and zoning rules allow several units
+pokojná poloha	quiet location
+Bývanie je v zóne spravidla prípustné; potvrdí ho územnoplánovacia informácia obce.	Housing is usually permitted in this zone; the municipality's zoning information confirms it.
+Pred kúpou na stavbu overiť územnoplánovaciu informáciu obce.	Before buying to build, verify the municipality's zoning information.
+Overiť u správcov sietí (vzor žiadostí je pripravený).	Check with the utility operators (request templates are prepared).
+pozemok v zastavanom území — cestné pásmo sa neuplatňuje	plot in the built-up area — the road protection zone does not apply
+najviac {0} m, len ak ho určí VZN obce	at most {0} m, only if set by a municipal ordinance
+overiť VZN obce	check the municipal ordinance
+Letisko / vzdušný priestor	Airport / airspace
+stavby od {0} m výšky aj mimo pásma, do {1} km od letiska — súhlas Dopravného úradu	buildings from {0} m height even outside the zone, within {1} km of an airport — consent of the Transport Authority
+mestská pamiatková rezervácia	urban heritage reserve
+pamiatková zóna	heritage zone
+pamiatková rezervácia ľudovej architektúry	folk architecture heritage reserve

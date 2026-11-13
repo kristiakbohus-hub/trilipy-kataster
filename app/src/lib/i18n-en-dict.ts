@@ -979,7 +979,6 @@ const EN_PATTERNS: [RegExp, Rep][] = [
   [/^Pozemky (\d+) parciel$/, "Land — $1 parcels"],
   [/^(.+), súp\. č\. (\d+) s pozemkami$/, "$1, reg. no. $2 with land"],
   [/^(.+), súp\. č\. (\d+)$/, "$1, reg. no. $2"],
-  [/^k\.ú\. (.+)$/, "cadastral area $1"],
   [/^zámer v obci: (.+)$/, "municipal project: $1"],
   [/^obec: (.+)$/, (_m, a) => `municipality: ${enText(a)}`],
   [/^LV (\d+): kúpa(.*)$/, "LV $1: purchase$2"], [/^LV (\d+): dedičstvo(.*)$/, "LV $1: inheritance$2"], [/^LV (\d+): darovanie(.*)$/, "LV $1: gift$2"],
@@ -995,8 +994,14 @@ const EN_PATTERNS: [RegExp, Rep][] = [
   [/^snímkované (.+)$/, "captured $1"],
   [/^v inzercii za (.+)$/, "listed for $1"], [/^zmena ceny na (.+)$/, "price changed to $1"], [/^zmluva s cenou (.+)$/, "contract price $1"],
   // úrady, obce a okresy — mená ostávajú, preloží sa len typ
-  [/^k\. ?ú\. (.+)$/, "cadastral area $1"],
-  [/^· okres (.+)$/, "· district $1"], [/^okres (.+)$/, "district $1"],
+  [/^k\. ?ú\. ([^·|]+)$/, "cadastral area $1"],
+  // verdikt a štúdie (decision.ts) — hodnota za dvojbodkou sa preloží rekurzívne
+  [/^najvýhodnejšie využitie: (.+)$/, (_m, a) => `highest and best use: ${enText(a)}`],
+  [/^radónové riziko: (.+)$/, (_m, a) => `radon risk: ${enText(a)}`],
+  [/^cesta (\S+) vo vzdialenosti (\d+) m$/, "road $1 at a distance of $2 m"],
+  [/^(.+) ★$/, (_m, a) => `${enText(a)} ★`],
+  [/^· najviac$/, "· at most"],
+  [/^· okres ([^·|]+)$/, "· district $1"], [/^okres ([^·|]+)$/, "district $1"],
   [/^Obec (\p{Lu}[\p{L} .-]+)$/u, "Municipality of $1"],
   [/^Okresný úrad (.+), katastrálny odbor$/, "District Office $1, cadastral department"],
   [/^Okresný úrad (.+), pozemkový a lesný odbor \(príslušnosť overiť\)$/, "District Office $1, land and forestry department (verify competence)"],
@@ -1059,6 +1064,19 @@ function bySegments(k: string): string | undefined {
 export function enText(k: string): string {
   return lookup(k) ?? bySegments(k) ?? k;
 }
+// Anglický zápis čísel a dátumov: 2,1 km → 2.1 km · 3 800 € → €3,800 · 13. 11. 2026 → 13 Nov 2026 · 3 až 5 → 3 to 5.
+// Medzera ako oddeľovač tisícov sa mení len pred presne trojicou číslic (PSČ „010 01", čísla parciel „5531/22" ostanú).
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export function enNums(s: string): string {
+  if (!/\d/.test(s)) return s;
+  return s
+    .replace(/(?<![\d.])(\d{1,2})\. ?(\d{1,2})\. ?((?:19|20)\d{2})(?!\d)/g, (m, d, mo, y) => (Number(mo) >= 1 && Number(mo) <= 12 && Number(d) >= 1 && Number(d) <= 31 ? `${Number(d)} ${MON[Number(mo) - 1]} ${y}` : m))
+    .replace(/(?<![\d,./])(\d+),(\d+)(?![\d,])/g, "$1.$2")
+    .replace(/(?<![\d,./])(\d{1,3})((?:[ \u00a0\u202f]\d{3})+)(?!\d)/g, (_m, a, b) => a + b.replace(/[ \u00a0\u202f]/g, ","))
+    .replace(/(\d) až (-?\d)/g, "$1 to $2")
+    .replace(/(\d[\d,]*(?:\.\d+)?)( ?– ?)(\d[\d,]*(?:\.\d+)?)[ \u00a0\u202f]?€(?![ \u00a0\u202f]?[-−]?\d)/g, "€$1$2$3")
+    .replace(/(-|−)?(\d[\d,]*(?:\.\d+)?)[ \u00a0\u202f]?€(?![ \u00a0\u202f]?[-−]?\d)/g, (_m, sg, n) => `${sg ?? ""}€${n}`);
+}
 const done = new WeakMap<Text, string>();
 export function translateDom(root: HTMLElement | null): void {
   if (!root || typeof document === "undefined") return;
@@ -1067,11 +1085,15 @@ export function translateDom(root: HTMLElement | null): void {
   while (w.nextNode()) nodes.push(w.currentNode as Text);
   for (const n of nodes) {
     const t = n.nodeValue ?? ""; if (done.get(n) === t) continue;
+    if (n.parentElement?.closest("textarea, script, style, [data-no-en]")) { done.set(n, t); continue; }
     const k = t.trim();
+    let v = t;
     if (k && k.length <= 3000 && /\p{L}/u.test(k)) {
       const e = lookup(k) ?? bySegments(k);
-      if (e != null && e !== k) { const v = t.replace(k, () => e); n.nodeValue = v; done.set(n, v); continue; }
+      if (e != null && e !== k) v = t.replace(k, () => e);
     }
-    done.set(n, t);
+    v = enNums(v);
+    if (v !== t) n.nodeValue = v;
+    done.set(n, v);
   }
 }
