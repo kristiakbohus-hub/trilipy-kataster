@@ -2503,7 +2503,7 @@ function bytesToB64(bytes: Uint8Array): string {
 
 type RasterRow = {
   id: string; name: string; kind: string; mime: string | null;
-  width: number | null; height: number | null;
+  width: number | null; height: number | null; legend_json?: string | null; edited_at?: string | null;
   transform_json: string | null; points_json: string | null; opacity: number; note: string | null;
 };
 
@@ -2511,7 +2511,7 @@ export const listRasters = createServerFn({ method: "POST" })
   .validator(z.object({ datasetId: z.string() }))
   .handler(async ({ data }) => {
     return await q<RasterRow>(
-      "SELECT id, name, kind, mime, width, height, transform_json, points_json, opacity, note FROM up_rasters WHERE dataset_id = ? ORDER BY created_at",
+      "SELECT id, name, kind, mime, width, height, transform_json, points_json, opacity, note, legend_json, edited_at FROM up_rasters WHERE dataset_id = ? ORDER BY created_at",
       [data.datasetId],
     );
   });
@@ -2569,7 +2569,8 @@ export const saveGeoref = createServerFn({ method: "POST" })
     if (!canRunPipeline(role)) return { ok: false, message: "Rola nemá oprávnenie georeferencovať." };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
-    await DB.prepare("UPDATE up_rasters SET transform_json = ?, points_json = ? WHERE id = ?")
+    // edited_at (0119): pri výkresoch z Macu (kind 'up_mac') je to signál, že ich treba prepočítať podľa nových bodov
+    await DB.prepare("UPDATE up_rasters SET transform_json = ?, points_json = ?, edited_at = datetime('now') WHERE id = ?")
       .bind(JSON.stringify(data.transform), JSON.stringify(data.points), data.id)
       .run();
     await logAudit("raster.georef", role, `Podklad ${data.id} georeferencovaný (${data.points.length} kontrolných bodov).`);
@@ -9605,5 +9606,91 @@ export const setOwnerTodoDone = createServerFn({ method: "POST" })
     if (u.role === "viewer" || u.role === "external_readonly") return { ok: false, message: "Rola nemôže meniť pripomienky." };
     await q("UPDATE owner_todos SET done_at = ?, done_by = ? WHERE slug = ?", [data.done ? new Date().toISOString().slice(0, 19).replace("T", " ") : null, data.done ? (u.name ?? u.email) : null, data.slug]);
     await logAudit("owner.todo", u.role, `Pripomienka ${data.slug}: ${data.done ? "hotovo" : "znovu otvorená"}`);
+    return { ok: true };
+  });
+
+
+// ——— VÝKRESY ÚP Z MACU v podkladoch mapy (0119) ———
+// Mac publikuje georeferencované výkresy (JPEG do R2 + transformácia pixel → Web Mercator + kontrolné body) a berie späť
+// úpravy z appky (body, legenda) podľa edited_at. Auth: kľúč Macu.
+// kľúče = 49_LIST_NEHNUTELNOSTI/up/up_legend.py KAT_LABEL (+ _ignore = čiary, text, podklad)
+const UP_KATS = ["byvanie_rd", "byvanie_bd", "zmiesane", "ov", "vyroba", "polno_vyroba", "tech", "doprava", "sport", "rekreacia",
+  "zelen", "zahrady", "orna", "ttp", "pol_poda", "les", "voda", "_ignore"] as const;
+export const upDrawingQueue = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(),
+    action: z.enum(["publish", "list"]),
+    drawingId: z.string().regex(/^[a-z0-9_]{3,60}$/).optional(),
+    datasetIds: z.array(z.string().regex(/^kn-\d{6}$/)).max(8).optional(),
+    name: z.string().max(200).optional(), note: z.string().max(600).optional(),
+    dataBase64: z.string().max(40_000_000).optional(),
+    width: z.number().int().optional(), height: z.number().int().optional(),
+    transform: z.object({ a: z.number(), b: z.number(), c: z.number(), d: z.number(), e: z.number(), f: z.number() }).optional(),
+    points: z.array(z.object({ px: z.number(), py: z.number(), lng: z.number(), lat: z.number() })).max(20).optional(),
+    legend: z.array(z.object({ rgb: z.array(z.number().int().min(0).max(255)).length(3), kat: z.string().max(40), popis: z.string().max(160).optional() })).max(60).optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; rows?: { id: string; dataset_id: string; mac_drawing: string | null; transform_json: string | null; points_json: string | null; legend_json: string | null; edited_at: string | null }[] }> => {
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
+    const { DB, STORAGE } = bindings();
+    if (!DB) return { ok: false, message: "DB nedostupná" };
+    if (data.action === "list") {
+      const rows = await q<{ id: string; dataset_id: string; mac_drawing: string | null; transform_json: string | null; points_json: string | null; legend_json: string | null; edited_at: string | null }>(
+        "SELECT id, dataset_id, mac_drawing, transform_json, points_json, legend_json, edited_at FROM up_rasters WHERE kind = 'up_mac'");
+      return { ok: true, rows };
+    }
+    if (!data.drawingId || !data.datasetIds?.length || !data.transform) return { ok: false, message: "Chýba výkres, dataset alebo transformácia." };
+    const key = `up-mac/${data.drawingId}.jpg`;
+    if (data.dataBase64) {
+      if (!STORAGE) return { ok: false, message: "R2 nedostupné" };
+      await STORAGE.put(key, b64ToBytes(data.dataBase64), { httpMetadata: { contentType: "image/jpeg" } });
+    }
+    for (const ds of data.datasetIds) {
+      const id = `mac-${data.drawingId}-${ds.slice(3)}`;
+      // publikovanie z Macu NEprepíše úpravy z appky, kým ich Mac neprevezme (edited_at sa nuluje len pri prevzatí)
+      await q(`INSERT INTO up_rasters (id, dataset_id, name, kind, r2_key, mime, width, height, transform_json, points_json, opacity, note, created_by, mac_drawing, legend_json, edited_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,0.6,?,?,?,?,NULL)
+               ON CONFLICT(id) DO UPDATE SET name=excluded.name, r2_key=excluded.r2_key, width=excluded.width, height=excluded.height,
+                 note=excluded.note, mac_drawing=excluded.mac_drawing,
+                 transform_json=CASE WHEN up_rasters.edited_at IS NULL THEN excluded.transform_json ELSE up_rasters.transform_json END,
+                 points_json=CASE WHEN up_rasters.edited_at IS NULL THEN excluded.points_json ELSE up_rasters.points_json END,
+                 legend_json=CASE WHEN up_rasters.edited_at IS NULL THEN excluded.legend_json ELSE up_rasters.legend_json END`,
+        [id, ds, data.name ?? data.drawingId, "up_mac", key, "image/jpeg", data.width ?? null, data.height ?? null,
+         JSON.stringify(data.transform), JSON.stringify(data.points ?? []), data.note ?? null, "Mac — výkres ÚP", data.drawingId,
+         data.legend ? JSON.stringify(data.legend) : null]);
+    }
+    return { ok: true };
+  });
+
+/** Mac po prevzatí úprav vynuluje edited_at (a zapíše novú transformáciu). */
+export const upDrawingAck = createServerFn({ method: "POST" })
+  .validator(z.object({ secret: z.string(), ids: z.array(z.string().max(90)).max(40),
+    transform: z.object({ a: z.number(), b: z.number(), c: z.number(), d: z.number(), e: z.number(), f: z.number() }).optional(), note: z.string().max(600).optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
+    for (const id of data.ids) {
+      await q("UPDATE up_rasters SET edited_at = NULL, transform_json = COALESCE(?, transform_json), note = COALESCE(?, note) WHERE id = ? AND kind = 'up_mac'",
+        [data.transform ? JSON.stringify(data.transform) : null, data.note ?? null, id]);
+    }
+    return { ok: true };
+  });
+
+export const UP_LEGEND_KATS = UP_KATS;
+export const UP_KAT_LABEL: Record<(typeof UP_KATS)[number], string> = {
+  byvanie_rd: "bývanie – rodinné domy", byvanie_bd: "bývanie – bytové domy", zmiesane: "zmiešané územie (bývanie + vybavenosť)",
+  ov: "občianska vybavenosť", vyroba: "výroba, sklady", polno_vyroba: "poľnohospodárska výroba", tech: "technická vybavenosť",
+  doprava: "doprava", sport: "šport", rekreacia: "rekreácia", zelen: "zeleň (verejná, ochranná, park, cintorín)", zahrady: "záhrady",
+  orna: "orná pôda", ttp: "trvalé trávne porasty", pol_poda: "poľnohospodárska pôda", les: "les", voda: "vodné plochy a toky",
+  _ignore: "ignorovať (čiary, text, podklad)",
+};
+/** Legenda výkresu z appky (farba → kategória) — uloží sa k podkladu; Mac ju prevezme a prepočíta zóny. */
+export const saveRasterLegend = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), id: z.string().max(90),
+    legend: z.array(z.object({ rgb: z.array(z.number().int().min(0).max(255)).length(3), kat: z.enum(UP_KATS), popis: z.string().max(160).optional() })).max(60) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    if (!canRunPipeline(u.role as Role)) return { ok: false, message: "Rola nemá oprávnenie upravovať výkresy." };
+    await q("UPDATE up_rasters SET legend_json = ?, edited_at = datetime('now') WHERE id = ?", [JSON.stringify(data.legend), data.id]);
+    await logAudit("raster.legend", u.role, `Legenda podkladu ${data.id}: ${data.legend.length} farieb`);
     return { ok: true };
   });

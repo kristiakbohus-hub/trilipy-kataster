@@ -5,6 +5,7 @@ import { decSk } from "../lib/domain";
 import type { LvOwner, Parcel, Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
+import { saveRasterLegend, UP_KAT_LABEL } from "../lib/api/kataster.functions";
 import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listMapLayers, type MapLayerFeature, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, mapIdentify, parcelBuildings, type EsknParcel, type MapRing } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
 import { LvCard } from "./lv-card";
@@ -25,7 +26,9 @@ type RasterInfo = {
   id: string; name: string; kind: string; mime: string | null;
   width: number | null; height: number | null;
   transform_json: string | null; points_json: string | null; opacity: number; note: string | null;
+  legend_json?: string | null; edited_at?: string | null;
 };
+type LegendItem = { rgb: [number, number, number]; kat: string; popis?: string };
 function solve3(M: number[][]): [number, number, number] | null {
   for (let i = 0; i < 3; i++) {
     let piv = i;
@@ -499,6 +502,37 @@ export function MapView({
   }
 
   const georefRaster = rasters.find((r) => r.id === georefId) ?? null;
+  // ——— LEGENDA výkresu (0119): klik na farbu výkresu → kategória; pri výkresoch z Macu ju Mac prevezme a prepočíta zóny ———
+  const [panelMode, setPanelMode] = useState<"body" | "legenda">("body");
+  const [legend, setLegend] = useState<LegendItem[]>([]);
+  const [pickColor, setPickColor] = useState<[number, number, number] | null>(null);
+  const [pickKat, setPickKat] = useState<string>("byvanie_rd");
+  const [legendMsg, setLegendMsg] = useState<string | null>(null);
+  const legendCanvas = useRef<HTMLCanvasElement | null>(null);
+  useEffect(() => {
+    if (!georefRaster) { setLegend([]); return; }
+    try { setLegend(georefRaster.legend_json ? (JSON.parse(georefRaster.legend_json) as LegendItem[]) : []); } catch { setLegend([]); }
+    setPickColor(null); setLegendMsg(null);
+  }, [georefRaster?.id, georefRaster?.legend_json]); // eslint-disable-line react-hooks/exhaustive-deps
+  function sampleColor(img: HTMLImageElement, px: number, py: number): [number, number, number] | null {
+    try {
+      let cv = legendCanvas.current;
+      if (!cv || cv.width !== img.naturalWidth) {
+        cv = document.createElement("canvas"); cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+        cv.getContext("2d")?.drawImage(img, 0, 0); legendCanvas.current = cv;
+      }
+      // medián 5×5 okolia — jeden pixel býva čiara alebo písmeno
+      const ctx = cv.getContext("2d"); if (!ctx) return null;
+      const d = ctx.getImageData(Math.max(0, Math.round(px) - 2), Math.max(0, Math.round(py) - 2), 5, 5).data;
+      const ch = (o: number) => { const v: number[] = []; for (let i = o; i < d.length; i += 4) v.push(d[i]); v.sort((a, b) => a - b); return v[Math.floor(v.length / 2)]; };
+      return [ch(0), ch(1), ch(2)];
+    } catch { return null; }
+  }
+  async function saveLegendNow() {
+    if (!georefId || !token) return;
+    const r = await saveRasterLegend({ data: { token, id: georefId, legend: legend as never } });
+    setLegendMsg(r.ok ? (georefRaster?.kind === "up_mac" ? "Uložené — Mac legendu prevezme a prepočíta zóny (do pár minút)." : "Uložené.") : (r.message ?? "Nepodarilo sa uložiť."));
+  }
 
   // ——— Swipe porovnanie (dnes ↔ historický georeferencovaný raster) ———
   const [swipe, setSwipe] = useState<{ id: string; x: number } | null>(null);
@@ -2092,6 +2126,7 @@ export function MapView({
                 const rect = e.currentTarget.getBoundingClientRect();
                 const px = ((e.clientX - rect.left) / rect.width) * georefRaster.width!;
                 const py = ((e.clientY - rect.top) / rect.height) * georefRaster.height!;
+                if (panelMode === "legenda") { setPickColor(sampleColor(e.currentTarget, px * (e.currentTarget.naturalWidth / georefRaster.width!), py * (e.currentTarget.naturalHeight / georefRaster.height!))); return; }
                 setPendingPx({ px, py });
                 pushEvent(`Raster bod zvolený — teraz klikni na mapu na to isté miesto.`);
               }}
@@ -2108,6 +2143,43 @@ export function MapView({
                 style={{ left: `${(pendingPx.px / georefRaster.width!) * 100}%`, top: `${(pendingPx.py / georefRaster.height!) * 100}%`, background: "#9a7b3e" }} />
             ) : null}
           </div>
+          <div className="mt-2 flex overflow-hidden rounded-md border border-line text-[11px]">
+            {(["body", "legenda"] as const).map((m) => (
+              <button key={m} onClick={() => { setPanelMode(m); setPendingPx(null); }}
+                className={`flex-1 px-2 py-1 ${panelMode === m ? "bg-ink text-cream" : "text-muted hover:text-fg"}`}>
+                {m === "body" ? "Kontrolné body" : `Legenda (${legend.length})`}
+              </button>
+            ))}
+          </div>
+          {panelMode === "legenda" ? (
+            <div className="mt-2 space-y-2 text-[11px]">
+              <div className="text-muted">Klikni do výkresu na farbu plochy, vyber kategóriu a pridaj. Farby, ktoré nie sú plochou (čiary, text, podklad), daj ako „ignorovať“.</div>
+              {pickColor ? (
+                <div className="flex items-center gap-2">
+                  <span className="h-5 w-8 shrink-0 rounded border border-line" style={{ background: `rgb(${pickColor.join(",")})` }} />
+                  <select value={pickKat} onChange={(e) => setPickKat(e.target.value)} className="min-w-0 flex-1 rounded border border-line bg-paper px-1 py-0.5 text-fg">
+                    {Object.entries(UP_KAT_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                  </select>
+                  <button onClick={() => { setLegend((L) => [...L, { rgb: pickColor, kat: pickKat }]); setPickColor(null); setLegendMsg(null); }}
+                    className="rounded bg-ink px-2 py-0.5 text-cream">Pridať</button>
+                </div>
+              ) : null}
+              <ul className="max-h-40 space-y-1 overflow-auto">
+                {legend.map((it, i) => (
+                  <li key={i} className="flex items-center gap-2">
+                    <span className="h-4 w-6 shrink-0 rounded border border-line" style={{ background: `rgb(${it.rgb.join(",")})` }} />
+                    <span className="min-w-0 flex-1 truncate text-fg">{(UP_KAT_LABEL as Record<string, string>)[it.kat] ?? it.kat}</span>
+                    <button onClick={() => { setLegend((L) => L.filter((_, j) => j !== i)); setLegendMsg(null); }} className="text-muted hover:text-fg">✕</button>
+                  </li>
+                ))}
+              </ul>
+              <div className="flex items-center justify-between">
+                <span className="text-muted">{legendMsg ?? ""}</span>
+                <button onClick={() => void saveLegendNow()} className="rounded bg-ink px-3 py-1 font-medium text-cream">Uložiť legendu</button>
+              </div>
+            </div>
+          ) : null}
+          {panelMode === "body" ? (<>
           <div className="mt-2 rounded-md px-2 py-1.5 text-[11px]" style={{ background: pendingPx ? "#9a7b3e22" : "#5b7a5822", color: "#4a4a4a" }}>
             {pendingPx
               ? "② Klikni na MAPU na zodpovedajúce miesto."
@@ -2123,6 +2195,8 @@ export function MapView({
                 className="rounded bg-ink px-3 py-1 font-medium text-cream disabled:opacity-40">Uložiť</button>
             </div>
           </div>
+          {georefRaster.kind === "up_mac" ? <div className="mt-1 text-[10px] text-muted">Výkres z Macu — po uložení bodov ho Mac prevlícuje a prepočíta zóny parciel.</div> : null}
+          </>) : null}
         </div>
       ) : null}
 
