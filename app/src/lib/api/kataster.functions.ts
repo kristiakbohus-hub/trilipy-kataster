@@ -7750,6 +7750,33 @@ export const contractPriceFacets = createServerFn({ method: "POST" })
       minCas: kus.reduce<string | null>((m, k) => (!m || k.mn < m ? k.mn : m), null), maxCas: kus.reduce<string | null>((m, k) => (!m || k.mx > m ? k.mx : m), null) };
   });
 
+export type TarchaItem = { kat: string; oprTyp: string | null; oprNazov: string | null; parcely: string | null; listina: string | null; rok: number | null; txt: string | null };
+/** Ťarchy po položkách z Macu (41_IMPORT/kataster_tarchy_push.py) — 0114. reset = zmaž k.ú. pred prvým chunkom. */
+export const ingestTarchyItems = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), reset: z.boolean().optional(),
+    rows: z.array(z.object({
+      lvNo: z.number().int(), idx: z.number().int().min(1).max(5000),
+      kat: z.enum(["zalozne_pravo", "dozivotne_byvanie", "pravo_prechodu", "siete", "uzivanie", "predkupne_pravo", "exekucia", "zakaz", "najom", "ine"]),
+      oprTyp: z.enum(["banka", "firma", "obec", "stat", "parcely", "fyzicka_osoba", "neuvedene"]).nullable().optional(),
+      oprNazov: z.string().max(90).nullable().optional(), parcely: z.string().max(400).nullable().optional(),
+      listina: z.string().max(40).nullable().optional(), rok: z.number().int().min(1800).max(2100).nullable().optional(), txt: z.string().max(400).nullable().optional(),
+    })).max(3000),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
+    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
+    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
+    const did = `kn-${data.kodKu}`;
+    if (data.reset) await DB.prepare("DELETE FROM lv_tarchy_items WHERE dataset_id=?").bind(did).run();
+    const ps = DB.prepare("INSERT OR REPLACE INTO lv_tarchy_items (dataset_id,lv_no,idx,kat,opr_typ,opr_nazov,parcely,listina,rok,txt) VALUES (?,?,?,?,?,?,?,?,?,?)");
+    const stmts = data.rows.map((r) => ps.bind(did, r.lvNo, r.idx, r.kat, r.oprTyp ?? null, r.oprTyp === "fyzicka_osoba" ? null : (r.oprNazov ?? null),
+      r.parcely ?? null, r.listina ?? null, r.rok ?? null, r.txt ?? null));
+    for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
+    return { ok: true, inserted: stmts.length };
+  });
+
 export const ingestLvParts = createServerFn({ method: "POST" })
   .validator(z.object({
     secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), reset: z.boolean().optional(),
@@ -8330,7 +8357,7 @@ export type PropertyCore = {
   facts: Record<string, Record<string, string>>;
   factMeta: Record<string, { source: string | null; asOf: string | null; n: number }>;
   owners: { access: OwnerAccess; perLv: { lvNo: number; count: number; companies: number; persons: number; owners: { name: string; share: string | null; is_company: number; ico: string | null }[] }[] };
-  legal: { lvNo: number; hasData: boolean; titlesCount: number; tarchyCount: number; titles: string[]; tarchy: string[] }[];
+  legal: { lvNo: number; hasData: boolean; titlesCount: number; tarchyCount: number; titles: string[]; tarchy: string[]; items?: TarchaItem[] }[];
   legalYears: { lvNo: number; inh_max: number | null; exek_max: number | null; lien_max: number | null; sale_max: number | null; gift_max: number | null }[];
   flags: (LvFlag & { lvNo: number })[];
   prices: (LvPrice & { lvNo: number })[];
@@ -8619,8 +8646,12 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
         owners: access === "full" ? os.map((o) => (suppressed.has(normName(o.name)) ? { ...o, name: "— (námietka, nezobrazuje sa)", ico: null } : o)) : [] });
       const lt = await q<{ kind: string; txt: string }>("SELECT kind, txt FROM lv_titles WHERE dataset_id=? AND lv_no=? ORDER BY kind DESC, id", [ds.id, lv]).catch(() => []);
       const tit = lt.filter((r) => r.kind === "titul"), tar = lt.filter((r) => r.kind === "tarcha");
-      legal.push({ lvNo: lv, hasData: lt.length > 0, titlesCount: tit.length, tarchyCount: tar.length,
-        titles: access === "full" ? tit.map((r) => r.txt) : [], tarchy: access === "full" ? tar.map((r) => r.txt) : [] });
+      // ťarchy po položkách (0114): štruktúra pre všetkých, pôvodný text len plný prístup
+      const ti = await q<{ kat: string; opr_typ: string | null; opr_nazov: string | null; parcely: string | null; listina: string | null; rok: number | null; txt: string | null }>(
+        "SELECT kat, opr_typ, opr_nazov, parcely, listina, rok, txt FROM lv_tarchy_items WHERE dataset_id=? AND lv_no=? ORDER BY idx LIMIT 80", [ds.id, lv]).catch(() => []);
+      legal.push({ lvNo: lv, hasData: lt.length > 0 || ti.length > 0, titlesCount: tit.length, tarchyCount: Math.max(tar.length, ti.length),
+        titles: access === "full" ? tit.map((r) => r.txt) : [], tarchy: access === "full" ? tar.map((r) => r.txt) : [],
+        items: ti.map((r) => ({ kat: r.kat, oprTyp: r.opr_typ, oprNazov: r.opr_nazov, parcely: r.parcely, listina: r.listina, rok: r.rok, txt: access === "full" ? r.txt : null })) });
       for (const f of await q<{ kind: string; label: string; year: number | null; parcel_no: string | null }>("SELECT kind, label, year, parcel_no FROM lv_flags WHERE dataset_id=? AND lv_no=? ORDER BY kind, year DESC LIMIT 60", [ds.id, lv]).catch(() => []))
         flags.push({ kind: f.kind, label: f.label, year: f.year, parcelNo: f.parcel_no, lvNo: lv });
       for (const r of await q<{ cas: string; cen: number; kind: string; n_items: number; land_m2: number | null; flat_m2: number | null; ppm2: number | null; flag: string | null; items: string | null }>(

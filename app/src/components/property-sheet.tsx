@@ -818,7 +818,8 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
               <>
                 {l.tarchyCount === 0 ? <Muted>V našom zázname nie je zapísaná ťarcha. Pred prevodom over na úradnom výpise — záznam nemusí byť aktuálny.</Muted>
                   : <div className="text-sm font-medium" style={{ color: "#9c4a40" }}>{l.tarchyCount}× zapísaná ťarcha alebo poznámka</div>}
-                {l.tarchy.length ? <ul className="text-xs">{groupLegal(l.tarchy).map((g, i) => <li key={i} className="flex justify-between border-b border-line/40 py-0.5"><span>{g.label}{g.span ? <span className="text-muted"> · {g.span}</span> : null}</span>{g.n > 1 ? <span className="text-muted">×{g.n}</span> : null}</li>)}</ul> : null}
+                {l.items?.length ? <TarchyItems items={l.items} isClient={isClient} /> : null}
+                {!l.items?.length && l.tarchy.length ? <ul className="text-xs">{groupLegal(l.tarchy).map((g, i) => <li key={i} className="flex justify-between border-b border-line/40 py-0.5"><span>{g.label}{g.span ? <span className="text-muted"> · {g.span}</span> : null}</span>{g.n > 1 ? <span className="text-muted">×{g.n}</span> : null}</li>)}</ul> : null}
                 {l.titles.length ? <div className="text-xs text-muted">Tituly nadobudnutia: {groupLegal(l.titles).slice(0, 6).map((g) => `${g.label}${g.span ? ` (${g.span})` : ""}${g.n > 1 ? ` ×${g.n}` : ""}`).join(" · ")}</div>
                   : l.titlesCount ? <Muted>{l.titlesCount} titulov nadobudnutia.</Muted> : null}
               </>
@@ -1076,5 +1077,54 @@ function RequestAnswers({ d, kinds, title, isClient }: { d: SheetData; kinds: st
         </span>,
       ] as [ReactNode, ReactNode])} />
     </>
+  );
+}
+
+
+// ——— Ťarchy po položkách s výkladom (0114, zadanie vlastníka 2026-11-13): čo ťarcha je, kto je oprávnený,
+// čoho sa týka a ČO TO ZNAMENÁ pre kupujúceho. Klient vidí len štruktúru (bez mien), plný prístup aj pôvodný text.
+const TARCHA: Record<string, { label: string; color: string; what: string; impact: string }> = {
+  zalozne_pravo: { label: "Záložné právo", color: "#b07d2b", what: "Nehnuteľnosť je zábezpekou úveru alebo iného dlhu.",
+    impact: "Pri predaji sa dlh spravidla splatí z kúpnej ceny (cez úschovu) a záložné právo sa vymaže — kupujúci ho nemá preberať." },
+  exekucia: { label: "Exekúcia / exekučné záložné právo", color: "#9c4a40", what: "Exekútor alebo štát má na nehnuteľnosť (alebo podiel) nárok na vymoženie dlhu.",
+    impact: "Predaj je možný len so súhlasom exekútora alebo oprávneného a po vyplatení; bez výmazu je to vážne riziko." },
+  zakaz: { label: "Zákaz scudzenia / zaťaženia", color: "#9c4a40", what: "Vlastník nesmie nehnuteľnosť predať alebo zaťažiť bez súhlasu oprávneného.",
+    impact: "Bez písomného súhlasu oprávneného kataster prevod nepovolí." },
+  dozivotne_byvanie: { label: "Právo doživotného bývania / užívania", color: "#9c4a40", what: "Konkrétna osoba smie v nehnuteľnosti bývať alebo ju užívať do smrti.",
+    impact: "Prechádza na nového vlastníka a zaniká až smrťou oprávneného alebo jeho vzdaním sa — výrazne znižuje použiteľnosť aj cenu." },
+  pravo_prechodu: { label: "Vecné bremeno — prechod / prejazd", color: "#b07d2b", what: "Cez nehnuteľnosť smú prechádzať alebo prechádzať autom iní (vlastníci uvedených parciel alebo osoby).",
+    impact: "Prechádza na nového vlastníka; časť pozemku musí ostať priechodná — obmedzuje oplotenie a zástavbu tejto časti." },
+  siete: { label: "Vecné bremeno — siete / stavebné práce", color: "#b07d2b", what: "Vlastník musí strpieť vedenie alebo zariadenie siete (voda, plyn, elektrina, telekomunikácie) a práce na ňom.",
+    impact: "Prechádza na nového vlastníka; nad vedením a v jeho pásme sa spravidla nesmie stavať — over trasu u správcu." },
+  uzivanie: { label: "Vecné bremeno — užívanie", color: "#b07d2b", what: "Iná osoba alebo vlastník inej parcely smie časť nehnuteľnosti užívať.",
+    impact: "Prechádza na nového vlastníka; rozsah užívania je v listine — prečítať pred kúpou." },
+  predkupne_pravo: { label: "Predkupné právo", color: "#b07d2b", what: "Pred predajom treba nehnuteľnosť najprv ponúknuť oprávnenému.",
+    impact: "Bez ponuky oprávnenému je predaj napadnuteľný; vyžiadať vzdanie sa predkupného práva." },
+  najom: { label: "Nájom", color: "#b07d2b", what: "Nehnuteľnosť je prenajatá a nájom je zapísaný v katastri.",
+    impact: "Nájomca môže zostať aj po predaji (napr. poľnohospodársky nájom) — over dobu a výpoveď." },
+  ine: { label: "Iná ťarcha alebo poznámka", color: "#8a8a8a", what: "Iný zápis v časti C listu vlastníctva.", impact: "Prečítať na úradnom výpise, čo presne obmedzuje." },
+};
+const OPR: Record<string, string> = { banka: "banka", firma: "firma", obec: "obec / mesto", stat: "štát / úrad", parcely: "vlastníci uvedených parciel", fyzicka_osoba: "fyzická osoba", neuvedene: "—" };
+function TarchyItems({ items, isClient }: { items: NonNullable<SheetData["core"]["legal"][number]["items"]>; isClient: boolean }) {
+  return (
+    <div className="space-y-1.5">
+      {items.map((it, i) => {
+        const k = TARCHA[it.kat] ?? TARCHA.ine;
+        return (
+          <div key={i} className="break-inside-avoid rounded border border-line/60 px-2 py-1.5 text-xs">
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <b style={{ color: k.color }}>{k.label}</b>
+              <span className="text-muted">{[it.listina ? `listina ${it.listina}` : null, it.rok ? String(it.rok) : null].filter(Boolean).join(" · ")}</span>
+            </div>
+            <div className="mt-0.5 text-fg">
+              {it.oprTyp && it.oprTyp !== "neuvedene" ? <>V prospech: {it.oprNazov && it.oprTyp !== "fyzicka_osoba" ? it.oprNazov : OPR[it.oprTyp] ?? it.oprTyp}. </> : null}
+              {it.parcely ? <>Týka sa parciel: {it.parcely}. </> : null}
+            </div>
+            <div className="mt-0.5 text-muted"><span className="text-fg">Čo to je:</span> {k.what} <span className="text-fg">Čo to znamená pre kupujúceho:</span> {k.impact}</div>
+            {!isClient && it.txt ? <div className="mt-0.5 font-mono text-[10px] text-muted">Text zápisu: {it.txt}</div> : null}
+          </div>
+        );
+      })}
+    </div>
   );
 }

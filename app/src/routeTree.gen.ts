@@ -58,6 +58,7 @@ import { Route as ZadanieIdRouteImport } from './routes/zadanie.$id'
 import { Route as ApiBriefQueueRouteImport } from './routes/api.brief-queue'
 import { Route as ApiMarketExportRouteImport } from './routes/api.market-export'
 import { Route as ApiTgDigestRouteImport } from './routes/api.tg-digest'
+import { Route as ApiIngestTarchyRouteImport } from './routes/api.ingest-tarchy'
 import { Route as ApiVersionRouteImport } from './routes/api.version'
 import { Route as ApiIngestLvpartsRouteImport } from './routes/api.ingest-lvparts'
 import { Route as KontrolaRouteImport } from './routes/kontrola'
@@ -349,6 +350,11 @@ const ApiTgDigestRoute = ApiTgDigestRouteImport.update({
   path: '/api/tg-digest',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiIngestTarchyRoute = ApiIngestTarchyRouteImport.update({
+  id: '/api/ingest-tarchy',
+  path: '/api/ingest-tarchy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiVersionRoute = ApiVersionRouteImport.update({
   id: '/api/version',
   path: '/api/version',
@@ -637,6 +643,7 @@ export interface FileRoutesByFullPath {
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
   '/api/tg-digest': typeof ApiTgDigestRoute
+  '/api/ingest-tarchy': typeof ApiIngestTarchyRoute
   '/api/version': typeof ApiVersionRoute
   '/api/ingest-lvparts': typeof ApiIngestLvpartsRoute
   '/zmeny': typeof ZmenyRoute
@@ -733,6 +740,7 @@ export interface FileRoutesByTo {
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
   '/api/tg-digest': typeof ApiTgDigestRoute
+  '/api/ingest-tarchy': typeof ApiIngestTarchyRoute
   '/api/version': typeof ApiVersionRoute
   '/api/ingest-lvparts': typeof ApiIngestLvpartsRoute
   '/zmeny': typeof ZmenyRoute
@@ -830,6 +838,7 @@ export interface FileRoutesById {
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
   '/api/tg-digest': typeof ApiTgDigestRoute
+  '/api/ingest-tarchy': typeof ApiIngestTarchyRoute
   '/api/version': typeof ApiVersionRoute
   '/api/ingest-lvparts': typeof ApiIngestLvpartsRoute
   '/zmeny': typeof ZmenyRoute
@@ -928,6 +937,7 @@ export interface FileRouteTypes {
     | '/api/brief-queue'
     | '/api/market-export'
     | '/api/tg-digest'
+    | '/api/ingest-tarchy'
     | '/api/version'
     | '/api/ingest-lvparts'
     | '/zmeny'
@@ -1024,6 +1034,7 @@ export interface FileRouteTypes {
     | '/api/brief-queue'
     | '/api/market-export'
     | '/api/tg-digest'
+    | '/api/ingest-tarchy'
     | '/api/version'
     | '/api/ingest-lvparts'
     | '/zmeny'
@@ -1120,6 +1131,7 @@ export interface FileRouteTypes {
     | '/api/brief-queue'
     | '/api/market-export'
     | '/api/tg-digest'
+    | '/api/ingest-tarchy'
     | '/api/version'
     | '/api/ingest-lvparts'
     | '/zmeny'
@@ -1213,6 +1225,7 @@ export interface RootRouteChildren {
   ApiBriefQueueRoute: typeof ApiBriefQueueRoute
   ApiMarketExportRoute: typeof ApiMarketExportRoute
   ApiTgDigestRoute: typeof ApiTgDigestRoute
+  ApiIngestTarchyRoute: typeof ApiIngestTarchyRoute
   ApiVersionRoute: typeof ApiVersionRoute
   ApiIngestLvpartsRoute: typeof ApiIngestLvpartsRoute
   ZmenyRoute: typeof ZmenyRoute
@@ -1720,6 +1733,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTgDigestRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/ingest-tarchy': {
+      id: '/api/ingest-tarchy'
+      path: '/api/ingest-tarchy'
+      fullPath: '/api/ingest-tarchy'
+      preLoaderRoute: typeof ApiIngestTarchyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/version': {
       id: '/api/version'
       path: '/api/version'
@@ -1976,6 +1996,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBriefQueueRoute: ApiBriefQueueRoute,
   ApiMarketExportRoute: ApiMarketExportRoute,
   ApiTgDigestRoute: ApiTgDigestRoute,
+  ApiIngestTarchyRoute: ApiIngestTarchyRoute,
   ApiVersionRoute: ApiVersionRoute,
   ApiIngestLvpartsRoute: ApiIngestLvpartsRoute,
   ZmenyRoute: ZmenyRoute,
