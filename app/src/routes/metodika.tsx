@@ -35,7 +35,7 @@ const RULES: { area: string; rows: [State, string][]; note?: string }[] = [
   ], note: "Cesta v mape nie je dôkaz práva prechodu ani povolenia vjazdu; napojenie potvrdí obec alebo správca cesty." },
   { area: "Limity a riziká (úradné registre)", rows: [
     ["bad", "záplavové územie (Q5 až Q1000), vysoká náchylnosť na svahové pohyby alebo zosuv, dobývací priestor, chránené ložiskové územie, environmentálna záťaž alebo skládka, vysoké radónové riziko"],
-    ["warn", "iný zásah: ochranné pásmo vodného zdroja, chránená vodohospodárska oblasť, Natura 2000, maloplošné chránené územie, SEVESO, hydromeliorácie, zraniteľná oblasť a pod."],
+    ["warn", "iný zásah: pamiatková rezervácia, pamiatková zóna, ochranné pásmo pamiatky, UNESCO (treba záväzné stanovisko krajského pamiatkového úradu), ochranné pásmo vodného zdroja, chránená vodohospodárska oblasť, Natura 2000, maloplošné chránené územie, SEVESO, hydromeliorácie, zraniteľná oblasť a pod."],
     ["ok", "v sledovaných registroch bez zásahu"],
     ["unknown", "registre neodpovedali"],
   ], note: "Registre sa pýtame na bod v strede parcely (pri niektorých s okolím ± 50 m). Pri veľkej alebo pretiahnutej parcele môže zásah do jej časti uniknúť. Nadregionálny ÚSES uvádzame len ako informáciu — záväzný miestny ÚSES je v územnom pláne obce." },

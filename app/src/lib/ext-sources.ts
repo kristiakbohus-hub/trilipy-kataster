@@ -1510,5 +1510,168 @@ export const EXT_DEFS: ExtDef[] = [
   "valueMap": {},
   "risk": false,
   "special": null
+ },
+ {
+  "key": "pam_rezervacia",
+  "label": "Pamiatková rezervácia",
+  "category": "Pamiatková ochrana",
+  "provider": "Pamiatkový úrad SR (PAMIS, CC BY 4.0)",
+  "method": "wms_getfeatureinfo",
+  "url": "https://gis.pamiatky.sk/project/f11bc94e12c291e6794b04d66ec0613c/",
+  "params": {
+   "SERVICE": "WMS",
+   "VERSION": "1.3.0",
+   "REQUEST": "GetFeatureInfo",
+   "LAYERS": "pamis_pamiatkove_rezervacie",
+   "QUERY_LAYERS": "pamis_pamiatkove_rezervacie",
+   "CRS": "CRS:84",
+   "BBOX": "{lon_min},{lat_min},{lon_max},{lat_max}",
+   "WIDTH": "101",
+   "HEIGHT": "101",
+   "I": "50",
+   "J": "50",
+   "FILTER_GEOM": "POINT({lon} {lat})",
+   "INFO_FORMAT": "application/json",
+   "FEATURE_COUNT": "5",
+   "WITH_GEOMETRY": "false"
+  },
+  "fields": {
+   "Nazov": "Názov",
+   "Typ": "Typ",
+   "Datum_vyhlasenia": "Vyhlásená"
+  },
+  "valueMap": {},
+  "risk": true,
+  "special": null
+ },
+ {
+  "key": "pam_zona",
+  "label": "Pamiatková zóna",
+  "category": "Pamiatková ochrana",
+  "provider": "Pamiatkový úrad SR (PAMIS, CC BY 4.0)",
+  "method": "wms_getfeatureinfo",
+  "url": "https://gis.pamiatky.sk/project/f11bc94e12c291e6794b04d66ec0613c/",
+  "params": {
+   "SERVICE": "WMS",
+   "VERSION": "1.3.0",
+   "REQUEST": "GetFeatureInfo",
+   "LAYERS": "pamis_pamiatkove_zony",
+   "QUERY_LAYERS": "pamis_pamiatkove_zony",
+   "CRS": "CRS:84",
+   "BBOX": "{lon_min},{lat_min},{lon_max},{lat_max}",
+   "WIDTH": "101",
+   "HEIGHT": "101",
+   "I": "50",
+   "J": "50",
+   "FILTER_GEOM": "POINT({lon} {lat})",
+   "INFO_FORMAT": "application/json",
+   "FEATURE_COUNT": "5",
+   "WITH_GEOMETRY": "false"
+  },
+  "fields": {
+   "Nazov": "Názov",
+   "Typ": "Typ",
+   "Datum_vyhlasenia": "Vyhlásená"
+  },
+  "valueMap": {},
+  "risk": true,
+  "special": null
+ },
+ {
+  "key": "pam_ochranne_pasmo",
+  "label": "Ochranné pásmo pamiatky alebo pamiatkového územia",
+  "category": "Pamiatková ochrana",
+  "provider": "Pamiatkový úrad SR (PAMIS, CC BY 4.0)",
+  "method": "wms_getfeatureinfo",
+  "url": "https://gis.pamiatky.sk/project/f11bc94e12c291e6794b04d66ec0613c/",
+  "params": {
+   "SERVICE": "WMS",
+   "VERSION": "1.3.0",
+   "REQUEST": "GetFeatureInfo",
+   "LAYERS": "pamis_ochranne_pasma",
+   "QUERY_LAYERS": "pamis_ochranne_pasma",
+   "CRS": "CRS:84",
+   "BBOX": "{lon_min},{lat_min},{lon_max},{lat_max}",
+   "WIDTH": "101",
+   "HEIGHT": "101",
+   "I": "50",
+   "J": "50",
+   "FILTER_GEOM": "POINT({lon} {lat})",
+   "INFO_FORMAT": "application/json",
+   "FEATURE_COUNT": "5",
+   "WITH_GEOMETRY": "false"
+  },
+  "fields": {
+   "Nazov": "Názov",
+   "Typ_OP": "Pásmo čoho (NKP / PR / PZ)",
+   "Datum_vyhlasenia": "Vyhlásené"
+  },
+  "valueMap": {},
+  "risk": true,
+  "special": null
+ },
+ {
+  "key": "pam_unesco",
+  "label": "Svetové kultúrne dedičstvo UNESCO",
+  "category": "Pamiatková ochrana",
+  "provider": "Pamiatkový úrad SR (PAMIS, CC BY 4.0)",
+  "method": "wms_getfeatureinfo",
+  "url": "https://gis.pamiatky.sk/project/f11bc94e12c291e6794b04d66ec0613c/",
+  "params": {
+   "SERVICE": "WMS",
+   "VERSION": "1.3.0",
+   "REQUEST": "GetFeatureInfo",
+   "LAYERS": "pamis_svetove_kulturne_dedicstvo",
+   "QUERY_LAYERS": "pamis_svetove_kulturne_dedicstvo",
+   "CRS": "CRS:84",
+   "BBOX": "{lon_min},{lat_min},{lon_max},{lat_max}",
+   "WIDTH": "101",
+   "HEIGHT": "101",
+   "I": "50",
+   "J": "50",
+   "FILTER_GEOM": "POINT({lon} {lat})",
+   "INFO_FORMAT": "application/json",
+   "FEATURE_COUNT": "5",
+   "WITH_GEOMETRY": "false"
+  },
+  "fields": {
+   "Nazov": "Názov",
+   "Rok_zapisu": "Rok zápisu"
+  },
+  "valueMap": {},
+  "risk": true,
+  "special": null
+ },
+ {
+  "key": "pam_unesco_pasmo",
+  "label": "UNESCO — komponent alebo nárazníková zóna",
+  "category": "Pamiatková ochrana",
+  "provider": "Pamiatkový úrad SR (PAMIS, CC BY 4.0)",
+  "method": "wms_getfeatureinfo",
+  "url": "https://gis.pamiatky.sk/project/f11bc94e12c291e6794b04d66ec0613c/",
+  "params": {
+   "SERVICE": "WMS",
+   "VERSION": "1.3.0",
+   "REQUEST": "GetFeatureInfo",
+   "LAYERS": "pamis_unesco_ochranne_pasma",
+   "QUERY_LAYERS": "pamis_unesco_ochranne_pasma",
+   "CRS": "CRS:84",
+   "BBOX": "{lon_min},{lat_min},{lon_max},{lat_max}",
+   "WIDTH": "101",
+   "HEIGHT": "101",
+   "I": "50",
+   "J": "50",
+   "FILTER_GEOM": "POINT({lon} {lat})",
+   "INFO_FORMAT": "application/json",
+   "FEATURE_COUNT": "5",
+   "WITH_GEOMETRY": "false"
+  },
+  "fields": {
+   "nazov": "Názov",
+   "typ": "Typ (komponent / nárazníková zóna)"
+  },
+  "valueMap": {},
+  "risk": true,
+  "special": null
  }
 ] as ExtDef[];
