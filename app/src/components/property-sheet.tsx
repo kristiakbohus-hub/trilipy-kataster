@@ -794,7 +794,7 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
         {!isClient ? internal?.declForm : null}
       </Sec>
 
-      <Sec id="vlastnictvo" n={num("vlastnictvo")} explain={ex("vlastnictvo")} {...asof("vlastnictvo")} title={tt("vlastnictvo", "Vlastníctvo")} source={<>Časť B LV (ÚGKK SR); nadobudnutia z titulov; finančné údaje firiem z RÚZ.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}</>}>
+      <Sec id="vlastnictvo" n={num("vlastnictvo")} explain={ex("vlastnictvo")} {...asof("vlastnictvo")} title={tt("vlastnictvo", "Vlastníctvo")} source={<>Časť B LV (ÚGKK SR); nadobudnutia z titulov; finančné údaje firiem z RÚZ.{isClient ? " Uvádzajú sa len mená vlastníkov, bez ďalších údajov." : ""}</>}>
         {c.owners.perLv.map((l) => {
           const agg = fact(c, "vlastnici", `lv:${l.lvNo}`);
           return (
@@ -804,6 +804,10 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
                 <ul className="text-xs">{l.owners.slice(0, 40).map((o, i) => (
                   <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5"><span>{o.name.startsWith("—") || !c.dataset ? o.name : <a className="hover:underline" title="Výpis podľa vlastníka — všetko, čo vlastní" href={`/vlastnik?ds=${encodeURIComponent(c.dataset.id)}&lv=${l.lvNo}&o=${ownerKey(o.name)}`}>{o.name}</a>}{o.is_company ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span><span className="tabular-nums text-muted">{o.share ?? ""}</span></li>
                 ))}</ul>
+              ) : isClient && l.owners.length ? (
+                <ul className="text-xs">{l.owners.slice(0, 40).map((o, i) => (
+                  <li key={i} className="border-b border-line/40 py-0.5">{o.name}{o.is_company ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</li>
+                ))}</ul>
               ) : !isClient && c.owners.access !== "full" ? <Muted>Mená vidí len rola s plným prístupom.</Muted> : null}
               <FactsBlock grp="vlastnici" data={agg} />
             </div>
@@ -812,6 +816,7 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
         <SettlementBlock d={d} />
         {c.acquisitions.length ? (<><Sub>Ako a kedy nadobudli</Sub>
           <Table head={["LV", "Spôsob", "Zápisov", "Rok (od – do)"]} rows={c.acquisitions.map((a) => [a.lvNo, ({ inheritance: "dedičstvo", sale: "kúpa", gift: "darovanie", execution: "exekúcia / dražba" } as Record<string, string>)[a.kind] ?? a.kind, a.n, a.firstYear === a.lastYear ? a.firstYear ?? "—" : `${a.firstYear ?? "?"} – ${a.lastYear ?? "?"}`])} /></>) : null}
+        <HistUsers c={c} />
         {c.legalYears.length ? <Grid rows={c.legalYears.flatMap((y) => [
           [`LV ${y.lvNo} — posledná kúpa`, y.sale_max ? String(y.sale_max) : "—"] as [string, string], [`LV ${y.lvNo} — posledné dedičstvo`, y.inh_max ? String(y.inh_max) : "—"] as [string, string]])} /> : null}
         {!isClient && c.firms.length ? (<><Sub>Firmy-vlastníci — finančná sila</Sub>
@@ -1056,7 +1061,7 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
         ]} />
         <p className="text-[10px] leading-snug text-muted">
           List je orientačný podklad z verejných a katastrálnych dát — nie znalecký posudok, právny ani geodetický záver.
-          Údaje „odvodené" sú výpočty appky; „nevieme" znamená, že zdroj chýba, nie že je všetko v poriadku.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}
+          Údaje „odvodené" sú výpočty appky; „nevieme" znamená, že zdroj chýba, nie že je všetko v poriadku.{isClient ? " Uvádzajú sa len mená vlastníkov, bez ďalších údajov." : ""}
           {" "}<a href="/metodika" target="_blank" rel="noopener noreferrer" className="no-print underline">Ako hodnotíme (metodika) ↗</a>
         </p>
       </Sec>
@@ -1197,4 +1202,22 @@ function Open3D({ d }: { d: SheetData }) {
   if (c.main.lat == null || c.main.lng == null) return null;
   return on ? <Terrain3D lat={c.main.lat} lng={c.main.lng} rings={rings} />
     : <button type="button" onClick={() => setOn(true)} className="no-print rounded-md border border-line px-3 py-1.5 text-xs hover:border-ink">Otvoriť 3D prehľad — terén, budovy, slnko počas dňa</button>;
+}
+
+// HISTORICKÝ UŽÍVATEĽ PARCELY (2026-11-13) — SPI tabuľka UZ cez číslo evidenčného listu parcely (evidencia
+// nehnuteľností). Nie je to vlastník a nemusí zodpovedať dnešnému stavu. Len meno (rozhodnutie vlastníka:
+// mená aj pre klientov, bez ďalších údajov) — adresy a rodné čísla z UZ sa na Macu do appky vôbec neposielajú.
+function HistUsers({ c }: { c: SheetData["core"] }) {
+  const rows = c.parcels.filter((p) => p.register === "C").slice(0, 30)
+    .map((p) => ({ p: p.parcel_no, f: fact(c, "uzivatel", `parcel_c:${p.parcel_no}`) }))
+    .filter((x): x is { p: string; f: Record<string, unknown> } => !!x.f);
+  if (!rows.length) return null;
+  return (
+    <>
+      <Sub>Historický užívateľ (SPI — evidencia nehnuteľností)</Sub>
+      <Table head={["Parcela", "Užívateľ", "Typ", "Evidenčný list", "Parciel na EL v k.ú."]}
+        rows={rows.map(({ p, f }) => [p, String(f.meno ?? "—"), String(f.typ ?? "—"), f.el != null ? String(f.el) : "—", f.parciel_na_el != null ? String(f.parciel_na_el) : "—"])} />
+      <Muted>Užívateľ zapísaný k parcele v súbore popisných informácií (pôvodne evidencia nehnuteľností). Nie je to vlastník; údaj je historický a nemusí zodpovedať dnešnému stavu. Pomáha pri vysporiadaní a pri hľadaní pôvodu práv k pozemku.</Muted>
+    </>
+  );
 }

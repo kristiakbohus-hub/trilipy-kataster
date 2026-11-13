@@ -2442,6 +2442,33 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "kind": "text"
     }
   },
+  "uzivatel": {
+    "meno": {
+      "label": "Užívateľ (historický)",
+      "kind": "text",
+      "note": "SPI UZ cez číslo evidenčného listu parcely (pôvodne evidencia nehnuteľností); len meno — bez adresy, rodného priezviska a rodného čísla. Nie je to vlastník."
+    },
+    "typ": {
+      "label": "Typ užívateľa",
+      "kind": "text",
+      "note": "organizácia (IČO alebo právna forma v názve) | fyzická osoba"
+    },
+    "ico": {
+      "label": "IČO užívateľa (organizácia)",
+      "kind": "text",
+      "note": "len pri organizácii"
+    },
+    "el": {
+      "label": "Evidenčný list",
+      "kind": "number",
+      "note": "číslo evidenčného listu v SPI (PA.CEL = UZ.CEL)"
+    },
+    "parciel_na_el": {
+      "label": "Parciel na evidenčnom liste v k.ú.",
+      "kind": "number",
+      "note": "koľko parciel C v tomto k.ú. má toho istého užívateľa — veľký počet = družstvo, štát, podnik"
+    }
+  },
   "vlastnici": {
     "pocet": {
       "label": "Počet zápisov v časti B",

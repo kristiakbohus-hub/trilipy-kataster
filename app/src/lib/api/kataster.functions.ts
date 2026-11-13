@@ -8467,7 +8467,9 @@ export const getPropertyCore = createServerFn({ method: "POST" })
   });
 
 /** Jadro listu — volá ho stránka (rola zo session) aj zostavovač klientskej verzie (vždy bez mien). */
-async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; ref: string; register?: "C" | "E" }, access: OwnerAccess): Promise<PropertyCore> {
+// opts.namesOnly (2026-11-13, rozhodnutie vlastníka „na liste aj pre klientov môžu byť mená, ale bez ďalších údajov“):
+// pri neplnom prístupe aj tak mená vlastníkov — bez podielu a IČO; námietky (suppressed) platia.
+async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; ref: string; register?: "C" | "E" }, access: OwnerAccess, opts?: { namesOnly?: boolean }): Promise<PropertyCore> {
     const fail = (message: string) => ({ ok: false, message } as unknown as PropertyCore);
     // „ext-<kód k.ú.>" = parcela kdekoľvek v SR mimo importovaných k.ú. → ľahký list z verejných služieb ÚGKK
     if (/^ext-\d{6}$/.test(data.datasetId)) return buildExternalCore(data, access);
@@ -8654,7 +8656,8 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
     }
 
     // ——— 4) vlastníci, právny stav, problémy, ceny ———
-    const suppressed = access === "full" ? await suppressedNameSet() : new Set<string>();
+    const namesOnly = access !== "full" && !!opts?.namesOnly;
+    const suppressed = access === "full" || namesOnly ? await suppressedNameSet() : new Set<string>();
     const perLv: PropertyCore["owners"]["perLv"] = [];
     const legal: PropertyCore["legal"] = [];
     const flags: PropertyCore["flags"] = []; const prices: PropertyCore["prices"] = [];
@@ -8662,7 +8665,9 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       const os = await q<{ name: string; share: string | null; is_company: number; ico: string | null }>("SELECT name, share, is_company, ico FROM lv_owners WHERE dataset_id=? AND lv_no=? ORDER BY is_company DESC, name", [ds.id, lv]).catch(() => []);
       const companies = os.filter((o) => o.is_company === 1).length;
       perLv.push({ lvNo: lv, count: os.length, companies, persons: os.length - companies,
-        owners: access === "full" ? os.map((o) => (suppressed.has(normName(o.name)) ? { ...o, name: "— (námietka, nezobrazuje sa)", ico: null } : o)) : [] });
+        owners: access === "full" ? os.map((o) => (suppressed.has(normName(o.name)) ? { ...o, name: "— (námietka, nezobrazuje sa)", ico: null } : o))
+          : namesOnly ? os.map((o) => ({ name: suppressed.has(normName(o.name)) ? "— (námietka, nezobrazuje sa)" : o.name, share: null, is_company: o.is_company, ico: null }))
+          : [] });
       const lt = await q<{ kind: string; txt: string }>("SELECT kind, txt FROM lv_titles WHERE dataset_id=? AND lv_no=? ORDER BY kind DESC, id", [ds.id, lv]).catch(() => []);
       const tit = lt.filter((r) => r.kind === "titul"), tar = lt.filter((r) => r.kind === "tarcha");
       // ťarchy po položkách (0114): štruktúra pre všetkých, pôvodný text len plný prístup
@@ -9284,7 +9289,11 @@ function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid
     snap.photos = Array.isArray(snap.photos) ? (snap.photos as unknown[]).map((p) => asObj(p)).filter((p): p is Record<string, unknown> => !!p && typeof p.src === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(p.src) && (p.src as string).length < 400_000)
       .slice(0, 12).map((p) => ({ name: cut(p.name, 120) ?? "foto", src: p.src as string })) : null;
     const owners = asObj(core.owners);
-    if (owners && Array.isArray(owners.perLv)) owners.perLv = (owners.perLv as Record<string, unknown>[]).map((l) => ({ ...l, owners: [] }));
+    // mená áno, ďalšie údaje nie (rozhodnutie vlastníka 2026-11-13): podiel, IČO a odkazy sa z klientskej snímky vyhodia
+    if (owners && Array.isArray(owners.perLv)) owners.perLv = (owners.perLv as Record<string, unknown>[]).map((l) => ({
+      ...l, owners: Array.isArray(l.owners) ? (l.owners as Record<string, unknown>[]).slice(0, 60)
+        .map((o) => ({ name: typeof o.name === "string" ? o.name.slice(0, 120) : "—", share: null, is_company: o.is_company === 1 ? 1 : 0, ico: null })) : [],
+    }));
     if (owners) owners.access = "summary";
     core.firms = [];
     core.signals = { settlement: [], landsearch: [], za: [], up: [], briefs: [], deal: null, cases: [] };
@@ -9353,7 +9362,7 @@ export const buildClientShare = createServerFn({ method: "POST" })
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; path?: string; title?: string; message?: string }> => {
     if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
-    const core = await buildPropertyCore(data, "summary");
+    const core = await buildPropertyCore(data, "summary", { namesOnly: true });
     if (!core.ok || !core.dataset) return { ok: false, message: core.message ?? "List sa nepodarilo zostaviť." };
     const { lat, lng } = core.main;
     const mp = core.parcels.find((p) => p.parcel_no === core.main.parcelNo && p.register === core.main.register) ?? core.parcels[0];

@@ -225,6 +225,7 @@ export const GROUP_GUIDE: Record<string, { preco: string; ovplyvnuje: string }> 
   mapa: { preco: "katastrálna mapa ukazuje skutočný tvar, výmeru a polohu voči zastavanému územiu", ovplyvnuje: "zastavateľnosť, rozdiely výmery, vecné bremená" },
   bpej: { preco: "kvalita pôdy určuje, či je chránená a koľko stojí jej vyňatie", ovplyvnuje: "odvod za vyňatie, možnosť stavať, cenu" },
   vlastnici: { preco: "počet a typ vlastníkov určujú zložitosť kúpy", ovplyvnuje: "čas a náklady prevodu, predkupné práva" },
+  uzivatel: { preco: "historický užívateľ (družstvo, štát, podnik alebo osoba z evidencie nehnuteľností) napovie, kto pozemok kedysi užíval a kto môže mať k nemu nároky", ovplyvnuje: "vysporiadanie, pozemkové úpravy, reštitúcie, nájomné vzťahy" },
   osm: { preco: "siete a vybavenosť v okolí určujú náklady na prípojky a pohodlie", ovplyvnuje: "náklady na prípojky, ochranné pásma, cenu" },
   obec: { preco: "stav obce drží dlhodobú hodnotu a služby", ovplyvnuje: "dopyt, dane a poplatky, hodnotu" },
   klima: { preco: "klíma určuje náklady na kúrenie a chladenie", ovplyvnuje: "prevádzkové náklady, komfort" },
