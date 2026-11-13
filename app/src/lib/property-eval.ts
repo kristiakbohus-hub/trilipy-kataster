@@ -280,7 +280,7 @@ export function completeness(d: SheetData): { have: number; total: number; missi
     ["parcely a výmery", c.parcels.length > 0],
     ["vlastníci", c.owners.perLv.some((l) => l.count > 0)],
     ["tituly a ťarchy", c.legal.some((l) => l.hasData)],
-    ["ceny zo zmlúv (LV)", c.prices.length > 0],
+    ["ceny zo zmlúv (LV)", c.prices.length > 0 || (c.priceSummary?.n ?? 0) > 0],
     ["porovnateľné predaje", c.comparables.length > 0],
     ["ponuky v okolí", c.nearby.length > 0],
     ["automatický odhad (AVM)", !!d.avm?.estimate_eur],

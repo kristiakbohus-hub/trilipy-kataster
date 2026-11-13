@@ -15,6 +15,7 @@ import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
 import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, NkpBlock, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
+import { anonymizePrices, K_MIN } from "../lib/price-anon";
 
 export type SheetMode = "internal" | "client";
 const LEGAL_LABEL: Record<string, string> = {
@@ -638,7 +639,9 @@ function printCss(title: string, en = false): string {
 }
 
 // ——— hlavný komponent ———
-export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode; declForm?: ReactNode }; onFinInputs?: (p: Partial<FinInputs>) => void }) {
+export function PropertySheet({ d: dIn, mode, internal, onFinInputs }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode; declForm?: ReactNode }; onFinInputs?: (p: Partial<FinInputs>) => void }) {
+  // klientska verzia: ceny zo zmlúv len anonymne (price-anon.ts) — poistka aj pre snímky, ktoré prišli neočistené
+  const d = useMemo(() => (mode === "client" && !dIn.core.anon ? { ...dIn, core: anonymizePrices(JSON.parse(JSON.stringify(dIn.core)) as SheetData["core"]) } : dIn), [dIn, mode]);
   const c = d.core;
   const [finIn, setFinIn] = useState<Partial<FinInputs>>(d.finInputs ?? {});
   const fin = useMemo(() => { try { return financeOf(d, d.fin ?? null, finIn); } catch { return null; } }, [d, finIn]);
@@ -940,17 +943,24 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
           ["Dostupnosť (odhad ÷ ročná hrubá mzda v okrese)", (() => { const w = Number(fact(c, "obec", kuKey)?.mzda_okres_eur ?? 0); const e = c.compStats?.estimateEur ?? d.avm?.estimate_eur ?? null; return w > 0 && e ? `${nf(e / (w * 12), 1)} ročných miezd (mzda ${nf(w)} €/mes.)` : "—"; })()],
         ]} />
         {fin && hedonicOf(d, fin.basis) ? (() => { const h = hedonicOf(d, fin.basis)!; return <Grid rows={[["Upravený odhad (čas, výmera, vzdialenosť)", <span key="h"><b>{eur(h.value)}</b> ({nf(h.ppm2)} €/m², rozpätie {eur(h.low)} – {eur(h.high)})<span className="block text-[10.5px] text-muted">{h.n} predajov prepočítaných na dnešné ceny (trend {nf(h.g, 1)} % ročne), na rozdiel vo výmere a vážených blízkosťou</span></span>]]} />; })() : null}
-        {c.comparables.length ? (<><Sub>Porovnateľné predaje zo zmlúv ({c.compStats?.kind})</Sub>
+        {c.comparables.length && c.anon ? (<><Sub>Porovnateľné predaje zo zmlúv ({c.compStats?.kind}) — anonymne</Sub>
+          <Table head={["Rok", "Výmera (pásmo)", "€/m² (zaokr.)", "Vzdialenosť (cca)"]}
+            rows={c.comparables.map((x) => [x.cas.slice(0, 4) || "—", x.land_m2 ?? x.flat_m2 ? `~${m2(x.land_m2 ?? x.flat_m2)}` : "—", x.ppm2 ? nf(x.ppm2) : "—", x.distM != null ? `~${dist(x.distM)}` : "—"])} />
+          <Muted>Predaje sú anonymné: bez ceny zmluvy, dátumu, katastrálneho územia a parciel, výmera v pásme a poloha zaokrúhlená na ~1 km. Údaj o cene konkrétnej nehnuteľnosti poskytuje kataster len vlastníkovi a zákonom vymedzeným osobám. Zoradené podľa €/m².</Muted></>)
+          : c.comparables.length ? (<div className="no-print"><Sub>Porovnateľné predaje zo zmlúv ({c.compStats?.kind}) — interné</Sub>
           <Table head={["Dátum zmluvy", "K.ú.", "Položky", "Výmera", "Cena v zmluve", "€/m²", "Vzdialenosť"]}
-            rows={c.comparables.map((x) => [date(x.cas), x.ku ?? "—", (x.items ?? "").slice(0, 40), m2(x.land_m2 ?? x.flat_m2), eur(x.cen), x.ppm2 ? nf(x.ppm2) : "—", dist(x.distM)])} /></>)
-          : <Muted>V okrese sme nenašli dosť porovnateľných zmlúv.</Muted>}
+            rows={c.comparables.map((x) => [date(x.cas), x.ku ?? "—", (x.items ?? "").slice(0, 40), m2(x.land_m2 ?? x.flat_m2), eur(x.cen), x.ppm2 ? nf(x.ppm2) : "—", dist(x.distM)])} />
+          <Muted>Interné: zoznam zmlúv s cenou sa netlačí a klient ho v liste dostane len anonymne.</Muted></div>)
+          : <Muted>V okrese nie je dosť porovnateľných zmlúv (pre klienta treba aspoň {K_MIN}).</Muted>}
         <CompsMap d={d} />
         <SubdivisionBlock d={d} fin={fin} />
         {c.market.trend.length ? (<><Sub>Vývoj cien zo zmlúv v okrese ({c.compStats?.kind ?? "rovnaký druh"})</Sub>
           <Table head={["Rok", "Zmlúv", "Medián €/m²", "Medián ceny"]} rows={c.market.trend.map((t) => [t.year, t.n, t.medPpm2 != null ? nf(t.medPpm2) : "—", eur(t.medCen)])} /></>) : null}
         {c.market.kuSales.length ? <Grid rows={[["Predaje rovnakého druhu v tomto k.ú. (zmluvy za rok)", c.market.kuSales.slice(-5).map((k) => `${k.year}: ${k.n}`).join(" · ")]]} /> : null}
-        {c.prices.length ? (<><Sub>Zmluvy s cenou na tomto LV</Sub>
-          <Table head={["Dátum", "LV", "Druh", "Položky", "Cena v zmluve", "€/m²"]} rows={c.prices.map((p) => [date(p.cas), p.lvNo, p.kind, (p.items ?? "").slice(0, 40), eur(p.cen), p.ppm2 ? nf(p.ppm2) : "—"])} /></>) : null}
+        {c.prices.length ? (<div className="no-print"><Sub>Zmluvy s cenou na tomto LV — interné</Sub>
+          <Table head={["Dátum", "LV", "Druh", "Položky", "Cena v zmluve", "€/m²"]} rows={c.prices.map((p) => [date(p.cas), p.lvNo, p.kind, (p.items ?? "").slice(0, 40), eur(p.cen), p.ppm2 ? nf(p.ppm2) : "—"])} />
+          <Muted>Interné: netlačí sa, klient vidí len počet zmlúv a roky.</Muted></div>)
+          : c.priceSummary?.n ? <Grid rows={[["Zmluvy s cenou na tomto LV", `${c.priceSummary.n} (${c.priceSummary.years.join(", ")}) — sumy poskytuje kataster len vlastníkovi a vymedzeným osobám`]]} /> : null}
       </Sec>
 
       <Sec id="predikcia" n={num("predikcia")} explain={ex("predikcia")} {...asof("predikcia")} title={tt("predikcia", "Predikcia hodnoty")} source={<>Trend cien zo zmlúv v katastri (okres), mzdy v okrese (ŠÚ SR), index cien bývania a inflácia (ECB/Eurostat){fin?.market?.hpi ? ` — ${fin.market.hpi.period}` : ""}. Modelový výpočet, nie prísľub ceny.</>}>

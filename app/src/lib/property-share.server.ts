@@ -3,6 +3,7 @@
 // Vracia očistený snapshot uložený pri zdieľaní (bez mien a internej práce); platnosť a zrušenie stráži tabuľka.
 import { bindings } from "./bindings.server";
 import { financeMarketCore } from "./fin-market.server";
+import { anonymizePrices } from "./price-anon";
 
 async function q<T>(sql: string, args: unknown[] = []): Promise<T[]> {
   const { DB } = bindings();
@@ -20,6 +21,8 @@ export async function publicPropertyCore(share: string): Promise<PublicProperty>
   await q("UPDATE property_shares SET views = views + 1, last_view = datetime('now') WHERE token=?", [share]).catch(() => {});
   let snapshot: unknown = null;
   try { snapshot = JSON.parse(r.snapshot); } catch { return { ok: false, message: "List sa nepodarilo načítať." }; }
+  // ceny zo zmlúv vždy anonymne — aj snímky uložené pred 13. 11. 2026, keď sa ešte posielali celé
+  if (snapshot && typeof snapshot === "object") anonymizePrices((snapshot as Record<string, unknown>).core);
   // financie vždy aktuálne: sadzby a ceny sa pri otvorení načítajú znova (verejné trhové údaje, cache 12 h)
   if (snapshot && typeof snapshot === "object") { const fresh = await financeMarketCore().catch(() => null); if (fresh && fresh.rates.length) (snapshot as Record<string, unknown>).fin = fresh; }
   return { ok: true, title: r.title ?? "List nehnuteľnosti", expiresAt: r.expires_at, snapshot };

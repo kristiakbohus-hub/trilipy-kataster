@@ -1,6 +1,7 @@
 // LIST NEHNUTEĽNOSTI — doplnky 2026-11-13: slnko po mesiacoch, profil terénu, časová os, mapa porovnateľných predajov,
 // vzdialenosti k vybavenosti, skóre právneho rizika, potenciál rozparcelovania, postup kúpy s lehotami.
 // Všetko sa počíta v prehliadači z údajov listu (bez ďalších dopytov); funguje rovnako v internej aj klientskej verzii.
+import type { ReactNode } from "react";
 import { fact, mainKey, riskyHit, suitability, zoneOf, type SheetData } from "../lib/property-eval";
 import type { FinResult } from "../lib/finance";
 import { nf, eur, m2, date, dist, Muted, Sub, Grid, Table } from "./ps-ui";
@@ -76,10 +77,12 @@ export function TerrainProfile({ d }: { d: SheetData }) {
 // ——— časová os ———
 export function Timeline({ d, isClient }: { d: SheetData; isClient: boolean }) {
   const c = d.core;
-  const ev: { t: string; what: string; kind: string }[] = [];
+  const ev: { t: string; what: ReactNode; kind: string }[] = [];
   const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "kúpa", gift: "darovanie", execution: "exekúcia / dražba" };
   for (const a of c.acquisitions) { if (a.firstYear) ev.push({ t: String(a.firstYear), what: `LV ${a.lvNo}: ${kindSk[a.kind] ?? a.kind}${a.n > 1 ? ` (${a.n}× zápis${a.lastYear && a.lastYear !== a.firstYear ? ` do ${a.lastYear}` : ""})` : ""}`, kind: "vlastníctvo" }); }
-  for (const p of c.prices) ev.push({ t: p.cas.slice(0, 10), what: `zmluva s cenou ${eur(p.cen)}${p.ppm2 ? ` (${nf(p.ppm2)} €/m²)` : ""} — LV ${p.lvNo}`, kind: "predaj" });
+  // sumy zo zmlúv len v internej verzii na obrazovke (tlač a klient: len že zmluva s cenou existuje)
+  for (const p of c.prices) ev.push({ t: p.cas.slice(0, 10), what: <span key="p">zmluva s cenou<span className="no-print"> {eur(p.cen)}{p.ppm2 ? ` (${nf(p.ppm2)} €/m²)` : ""}</span> — LV {p.lvNo}</span>, kind: "predaj" });
+  if (!c.prices.length) for (const y of c.priceSummary?.years ?? []) ev.push({ t: String(y), what: "zmluva s cenou (suma nie je verejná)", kind: "predaj" });
   for (const f of c.flags) if (f.year) ev.push({ t: String(f.year), what: `${f.label} — LV ${f.lvNo}`, kind: "právo" });
   for (const l of c.listings) {
     if (l.first_seen) ev.push({ t: l.first_seen.slice(0, 10), what: `v inzercii za ${eur(l.history[0]?.price_eur ?? l.price_eur)}`, kind: "inzercia" });
@@ -118,7 +121,7 @@ export function CompsMap({ d }: { d: SheetData }) {
         {pts.map((p) => <g key={p.i}><circle cx={X(p.lng)} cy={Y(p.lat)} r="9" fill="#fff" stroke="#333" strokeWidth="1.2" /><text x={X(p.lng)} y={Y(p.lat) + 3.5} fontSize="9.5" textAnchor="middle" fill="#222" fontWeight="600">{p.i}</text></g>)}
         <g><rect x={X(lng0) - 7} y={Y(lat0) - 7} width="14" height="14" fill="#9c4a40" stroke="#fff" strokeWidth="1.5" /><text x={X(lng0) + 10} y={Y(lat0) + 4} fontSize="10.5" fill="#fff" stroke="#222" strokeWidth="0.35" fontWeight="600">táto nehnuteľnosť</text></g>
       </svg>
-      <figcaption className="text-[10px] text-muted">Čísla = poradie v tabuľke porovnateľných predajov (poloha podľa prvej parcely v zmluve). Letecký snímok © ÚGKK SR.</figcaption>
+      <figcaption className="text-[10px] text-muted">{c.anon ? "Čísla = poradie v tabuľke anonymných predajov; poloha zaokrúhlená na ~1 km." : "Čísla = poradie v tabuľke porovnateľných predajov (poloha podľa prvej parcely v zmluve)."} Letecký snímok © ÚGKK SR.</figcaption>
     </figure>
   );
 }
