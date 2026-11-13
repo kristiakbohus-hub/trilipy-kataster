@@ -61,6 +61,14 @@ export function hedonicBase(c: { comparables?: PropComparable[]; market?: { tren
   return { q25: q(0.25), q50: q(0.5), q75: q(0.75), n: rows.length, g };
 }
 
+/** Jedna zmluva zapísaná na viacerých LV má v lv_prices viac riadkov (rovnaký dátum aj cena) — počíta sa raz,
+ *  inak by „12 predajov" mohla byť jedna zmluva a medián by bol jej presná cena. */
+export function distinctContracts(comps: PropComparable[]): PropComparable[] {
+  const seen = new Set<string>(); const out: PropComparable[] = [];
+  for (const x of comps) { const k = `${String(x.cas ?? "").slice(0, 10)}|${x.cen}`; if (!seen.has(k)) { seen.add(k); out.push(x); } }
+  return out;
+}
+
 const BANDS: [string, number][] = [["do 2 km", 2000], ["2–5 km", 5000], ["5–15 km", 15000], ["nad 15 km", Infinity]];
 function compsAgg(comps: PropComparable[], kind: string | null, okres: string | null): ClientAgg["comps"] {
   if (!comps.length) return null;
@@ -119,7 +127,7 @@ export function clientizeCore<T extends Record<string, unknown>>(core: T): T {
   const cs = isObj(c.compStats) ? c.compStats : null;
 
   // 1) porovnateľné predaje zo zmlúv → agregát + hedonický základ; jednotlivé zmluvy preč
-  const comps = arr<PropComparable>(c.comparables);
+  const comps = distinctContracts(arr<PropComparable>(c.comparables));
   const market = isObj(c.market) ? (c.market as PropertyCore["market"]) : undefined;
   const hr = (h: HedBase | null): HedBase | null => (h ? { q25: r2(h.q25), q50: r2(h.q50), q75: r2(h.q75), n: h.n, g: Math.round(h.g * 1e4) / 1e4 } : null);
   const hed = comps.length
@@ -127,6 +135,14 @@ export function clientizeCore<T extends Record<string, unknown>>(core: T): T {
     : prev?.hedonic ?? { pozemok: null, byt: null };
   const compAgg = comps.length ? compsAgg(comps, typeof cs?.kind === "string" ? cs.kind : null, okres) : prev?.comps ?? null;
   c.comparables = [];
+  if (cs && comps.length) {
+    // súhrn prepočítaný z jedinečných zmlúv (rovnaké zaokrúhlenie a vzorec odhadu ako buildPropertyCore)
+    const ppms = comps.map((x) => x.ppm2).filter((v): v is number => fin(v) && v > 0), cens = comps.map((x) => x.cen).filter((v) => fin(v) && v > 0);
+    const P = (xs: number[], p: number) => { const q = aggQuantile(xs, p, 1); return q == null ? null : Math.round(q); };
+    const basis = fin(cs.basisM2) ? cs.basisM2 : null;
+    cs.n = comps.length; cs.medPpm2 = P(ppms, 0.5); cs.p25 = P(ppms, 0.25); cs.p75 = P(ppms, 0.75); cs.medCen = P(cens, 0.5);
+    cs.estimateEur = (cs.kind === "pozemok" || (cs.kind === "byt" && basis)) && cs.medPpm2 && basis ? Math.round((cs.medPpm2 as number) * basis) : cs.kind !== "pozemok" ? cs.medCen : null;
+  }
   if (cs && !(fin(cs.n) && cs.n >= CLIENT_MIN_N)) { cs.medPpm2 = null; cs.p25 = null; cs.p75 = null; cs.medCen = null; cs.estimateEur = null; }
 
   // 2) zmluvy s cenou na LV tejto nehnuteľnosti → len počet a roky

@@ -112,6 +112,23 @@ describe("agregáty", () => {
   });
 });
 
+describe("jedna zmluva na viacerých LV sa počíta raz", () => {
+  test("12 riadkov jednej zmluvy = 1 predaj → žiadny medián, odhad ani hedonický základ", () => {
+    const c = mkCore(); c.comparables = Array.from({ length: 12 }, () => ({ ...c.comparables[0] }));
+    const o = clientizeCore(c as unknown as Record<string, unknown>) as unknown as PropertyCore;
+    expect(o.clientAgg!.comps).toMatchObject({ n: 1, medPpm2: null, p25: null, p75: null });
+    expect(o.compStats).toMatchObject({ n: 1, medPpm2: null, medCen: null, estimateEur: null });
+    expect(o.clientAgg!.hedonic.pozemok).toBeNull();
+    expect(JSON.stringify(o)).not.toContain("41111");
+  });
+  test("rôzne zmluvy: súhrn a odhad z jedinečných zmlúv", () => {
+    const c = mkCore(); c.comparables = [...c.comparables, { ...c.comparables[0] }, { ...c.comparables[0] }];
+    const o = clientizeCore(c as unknown as Record<string, unknown>) as unknown as PropertyCore;
+    expect(o.clientAgg!.comps!.n).toBe(6);
+    expect(o.compStats).toMatchObject({ n: 6, medPpm2: 58, estimateEur: 58_000 });
+  });
+});
+
 describe("výpočty klientskej verzie", () => {
   test("idempotentné — druhé čistenie (napr. pri vydaní staršej snímky) nič nezmení", () => {
     const once = JSON.stringify(clean());
