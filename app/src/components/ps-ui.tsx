@@ -1,5 +1,8 @@
 // Spoločné stavebné bloky listu nehnuteľnosti (obrazovka aj tlač) — používa property-sheet aj property-finance.
-import type { ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
+
+/** Kapitoly skryté v klientskej verzii (výber kapitol pri zdieľaní). */
+export const HideCtx = createContext<Set<string>>(new Set());
 
 export const nf = (n: number, d = 0) => n.toLocaleString("sk-SK", { maximumFractionDigits: d, minimumFractionDigits: 0 });
 export const eur = (n: number | null | undefined) => (n == null ? "—" : `${nf(Math.round(n))}\u00a0€`);
@@ -29,7 +32,9 @@ export function Explain({ lines }: { lines: string[] }) {
 }
 export function Sec({ id, n, title, source, children, explain, asOf, staleDays }: { id: string; n?: string; title: string; source?: ReactNode; children: ReactNode;
   explain?: string[]; asOf?: string | null; staleDays?: number }) {
+  const hidden = useContext(HideCtx);
   const age = ageDays(asOf);
+  if (hidden.has(id)) return null;
   const stale = age != null && staleDays != null && age > staleDays;
   return (
     <section id={id} className="ps-sec scroll-mt-16 border-t border-line pt-4">

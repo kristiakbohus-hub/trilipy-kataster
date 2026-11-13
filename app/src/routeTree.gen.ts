@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ZiadostiRouteImport } from './routes/ziadosti'
 import { Route as ApiPropertyShareBuildRouteImport } from './routes/api.property-share-build'
 import { Route as ApiExtProbeRouteImport } from './routes/api.ext-probe'
 import { Route as NTokenRRouteImport } from './routes/n.$token'
@@ -195,6 +196,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ZiadostiRoute = ZiadostiRouteImport.update({
+  id: '/ziadosti',
+  path: '/ziadosti',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPropertyShareBuildRoute = ApiPropertyShareBuildRouteImport.update({
@@ -566,6 +572,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/ziadosti': typeof ZiadostiRoute
   '/api/property-share-build': typeof ApiPropertyShareBuildRoute
   '/api/ext-probe': typeof ApiExtProbeRoute
   '/n/$token': typeof NTokenRRoute
@@ -655,6 +662,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/ziadosti': typeof ZiadostiRoute
   '/api/property-share-build': typeof ApiPropertyShareBuildRoute
   '/api/ext-probe': typeof ApiExtProbeRoute
   '/n/$token': typeof NTokenRRoute
@@ -745,6 +753,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/ziadosti': typeof ZiadostiRoute
   '/api/property-share-build': typeof ApiPropertyShareBuildRoute
   '/api/ext-probe': typeof ApiExtProbeRoute
   '/n/$token': typeof NTokenRRoute
@@ -836,6 +845,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/ziadosti'
     | '/api/property-share-build'
     | '/api/ext-probe'
     | '/n/$token'
@@ -925,6 +935,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/ziadosti'
     | '/api/property-share-build'
     | '/api/ext-probe'
     | '/n/$token'
@@ -1014,6 +1025,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/ziadosti'
     | '/api/property-share-build'
     | '/api/ext-probe'
     | '/n/$token'
@@ -1100,6 +1112,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ZiadostiRoute: typeof ZiadostiRoute
   ApiPropertyShareBuildRoute: typeof ApiPropertyShareBuildRoute
   ApiExtProbeRoute: typeof ApiExtProbeRoute
   NTokenRRoute: typeof NTokenRRoute
@@ -1424,6 +1437,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ziadosti': {
+      id: '/ziadosti'
+      path: '/ziadosti'
+      fullPath: '/ziadosti'
+      preLoaderRoute: typeof ZiadostiRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/property-share-build': {
@@ -1807,6 +1827,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ZiadostiRoute: ZiadostiRoute,
   ApiPropertyShareBuildRoute: ApiPropertyShareBuildRoute,
   ApiExtProbeRoute: ApiExtProbeRoute,
   NTokenRRoute: NTokenRRoute,

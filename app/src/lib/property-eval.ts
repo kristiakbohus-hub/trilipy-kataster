@@ -23,6 +23,14 @@ export type SheetData = {
   fin?: FinMarket | null;
   /** zadané vstupy financovania (klientska verzia ich nesie v snapshote) */
   finInputs?: Partial<FinInputs> | null;
+  /** maklér, ktorý list pripravil (zobrazí sa na titulke a v teaseri) */
+  broker?: { name?: string; firma?: string; phone?: string; email?: string } | null;
+  /** poznámka makléra pre klienta */
+  notes?: string | null;
+  /** kapitoly vynechané v klientskej verzii */
+  hide?: string[] | null;
+  /** „teaser" = jednostránková ponuka */
+  variant?: "teaser" | null;
 };
 
 export type LightState = "ok" | "warn" | "bad" | "unknown";

@@ -8737,9 +8737,18 @@ export const getFinanceMarket = createServerFn({ method: "POST" })
 // Klientska snímka listu: pevný zoznam ciest, ktoré sa NIKDY neuložia (mená vlastníkov, firmy-vlastníci, signály
 // scenárov, pracovné záznamy); tituly a ťarchy len ako kódy typu; BPEJ len kódy (texty VÚPOP — súhlas VÚPOP);
 // geometria zóny ÚP sa neukladá (veľká, list ju nepotrebuje).
-function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid" | "toolarge" {
+function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid" | "toolarge" | "phrase" {
     const core = asObj(snap.core);
     if (!core) return "invalid";
+    // maklér, poznámka, výber kapitol (2026-11-13): orezať; zakázaná formulácia v poznámke → odmietnuť
+    const cut = (v: unknown, n: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : undefined);
+    snap.notes = cut(snap.notes, 2000) ?? null;
+    if (snap.notes && phraseIssues([snap.notes as string]).length) return "phrase";
+    const br = asObj(snap.broker);
+    snap.broker = br ? { name: cut(br.name, 80), firma: cut(br.firma, 80), phone: cut(br.phone, 40), email: cut(br.email, 80) } : null;
+    snap.hide = Array.isArray(snap.hide) ? (snap.hide as unknown[]).filter((x): x is string => typeof x === "string" && /^[a-z]{2,20}$/.test(x)).slice(0, 30) : null;
+    snap.client = cut(snap.client, 120) ?? null;
+    if (snap.variant !== "teaser") delete snap.variant;
     const owners = asObj(core.owners);
     if (owners && Array.isArray(owners.perLv)) owners.perLv = (owners.perLv as Record<string, unknown>[]).map((l) => ({ ...l, owners: [] }));
     if (owners) owners.access = "summary";
@@ -8775,6 +8784,7 @@ export const createPropertyShare = createServerFn({ method: "POST" })
     try { snap = JSON.parse(data.snapshot) as Record<string, unknown>; } catch { return { ok: false, message: "Neplatný obsah listu." }; }
     const out = sanitizeShareSnapshot(snap);
     if (out === "invalid") return { ok: false, message: "Neplatný obsah listu." };
+    if (out === "phrase") return { ok: false, message: "Poznámka obsahuje zakázanú formuláciu (sľub alebo tvrdenie nad rámec údajov) — upravte ju." };
     if (out === "toolarge") return { ok: false, message: "List je príliš veľký na zdieľanie (príliš veľa parciel)." };
 
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
@@ -8801,6 +8811,8 @@ export const buildClientShare = createServerFn({ method: "POST" })
   .validator(z.object({
     secret: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt"]), ref: z.string().min(1).max(60),
     register: z.enum(["C", "E"]).optional(), days: z.number().int().min(1).max(60).optional(), client: z.string().max(120).optional(),
+    broker: z.object({ name: z.string().max(80).optional(), firma: z.string().max(80).optional(), phone: z.string().max(40).optional(), email: z.string().max(80).optional() }).optional(),
+    notes: z.string().max(2000).optional(), hide: z.array(z.string().max(20)).max(30).optional(),
     finInputs: z.object({ price: z.number().nullable().optional(), ltv: z.number().min(0).max(0.9).optional(), years: z.number().int().min(5).max(40).optional(), fix: z.number().int().min(1).max(30).optional(), age: z.number().int().min(18).max(80).optional(), adults: z.number().int().min(1).max(6).optional(), children: z.number().int().min(0).max(10).optional(), persons: z.number().int().min(1).max(12).optional(), rentMonthly: z.number().nullable().optional() }).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; path?: string; title?: string; message?: string }> => {
@@ -8833,9 +8845,9 @@ export const buildClientShare = createServerFn({ method: "POST" })
       dev = { regName: reg.name ?? null, proxy: !regUp, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
     }
     const fin = await financeMarketCore().catch(() => null);
-    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null };
+    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null, broker: data.broker ?? null, notes: data.notes ?? null, hide: data.hide ?? null };
     const out = sanitizeShareSnapshot(JSON.parse(JSON.stringify(snap)) as Record<string, unknown>);
-    if (out === "invalid" || out === "toolarge") return { ok: false, message: out === "toolarge" ? "List je príliš veľký." : "Neplatný obsah listu." };
+    if (out === "invalid" || out === "toolarge" || out === "phrase") return { ok: false, message: out === "toolarge" ? "List je príliš veľký." : out === "phrase" ? "Poznámka obsahuje zakázanú formuláciu." : "Neplatný obsah listu." };
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);
     const tok = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
     const exp = (await q<{ e: string }>("SELECT datetime('now', ?) e", [`+${data.days ?? 14} days`]))[0]?.e ?? "";

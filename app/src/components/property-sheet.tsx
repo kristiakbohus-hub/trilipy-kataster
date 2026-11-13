@@ -4,7 +4,8 @@
 // NEZNÁMY stav; každá sekcia uvádza zdroj; formulácie podľa phrases.ts (Property-360 §4).
 import { useMemo, useState, type ReactNode } from "react";
 import { FACT_GROUP_LABEL, FACT_SCHEMA, type FactField } from "../lib/facts-schema";
-import { nf, eur, m2, dist, prettyZone, date, Sec, Muted, Sub, Grid, Table } from "./ps-ui";
+import { nf, eur, m2, dist, prettyZone, date, Sec, Muted, Sub, Grid, Table, HideCtx } from "./ps-ui";
+import { qrMatrix } from "../lib/qr";
 import { financeOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
@@ -367,6 +368,56 @@ function keyFindings(d: SheetData, fin: FinResult | null): string[] {
   return out;
 }
 
+/** QR kód ako SVG (bez externých služieb). */
+export function QrCode({ text, size = 96, label }: { text: string; size?: number; label?: string }) {
+  let m: boolean[][] = [];
+  try { m = qrMatrix(text); } catch { return null; }
+  const n = m.length + 8;
+  const path = m.flatMap((row, y) => row.map((v, x) => (v ? `M${x + 4} ${y + 4}h1v1h-1z` : ""))).join("");
+  return (
+    <figure className="ps-qr inline-flex flex-col items-center gap-0.5">
+      <svg viewBox={`0 0 ${n} ${n}`} width={size} height={size} shapeRendering="crispEdges" role="img" aria-label={label ?? "QR kód odkazu"}><rect width={n} height={n} fill="#fff" /><path d={path} fill="#222" /></svg>
+      {label ? <figcaption className="text-[9px] text-muted">{label}</figcaption> : null}
+    </figure>
+  );
+}
+function shareUrl(): string | null {
+  if (typeof window === "undefined" || !/\/n\/[0-9a-f]{32}/.test(window.location.pathname)) return null;
+  return `${window.location.origin}${window.location.pathname}`;
+}
+function BrokerLine({ d }: { d: SheetData }) {
+  const b = d.broker; if (!b || !(b.name || b.phone || b.email)) return null;
+  return <span className="ps-broker">Pripravil{b.name ? ` ${b.name}` : ""}{b.firma ? ` · ${b.firma}` : ""}{b.phone ? ` · ${b.phone}` : ""}{b.email ? ` · ${b.email}` : ""}</span>;
+}
+
+/** Jednostranový teaser pre prvý kontakt s klientom. */
+function PrintTeaser({ d, fin, lights }: { d: SheetData; fin: FinResult | null; lights: Light[] }) {
+  const c = d.core; const total = c.parcels.reduce((x, p) => x + (p.area_m2 ?? 0), 0); const z = zoneOf(d);
+  const price = fin?.basis.price ?? null; const url = shareUrl();
+  const kpis: [string, string][] = [["Výmera", m2(total)], ["Cena", price ? eur(price) : "na vyžiadanie"], ["Územný plán", z.name ? short(prettyZone(z.name.replace(/ — ÚP z výkresu, orientačné$/, "")) ?? "", 28) : "—"],
+    ["Hypotéka mesačne", fin?.mortgage ? `${eur(fin.mortgage.payment)}` : "—"], ["Vlastné zdroje", fin?.mortgage ? eur(fin.mortgage.ownFunds.total) : "—"], ["Hodnota o 5 rokov", fin?.prediction ? eur(fin.prediction.scenarios[1].values[2]) : "—"]];
+  return (
+    <section className="ps-teaser mx-auto max-w-3xl space-y-4">
+      <div className="flex items-start justify-between"><img src="/tl-logo.png" alt="TRI LIPY" className="h-12 w-auto" /><div className="text-right text-[11px] text-muted"><div className="ps-eyebrow">Ponuka nehnuteľnosti</div><div>{dateLong(d.generatedAt)}</div></div></div>
+      <div className="border-t pt-3" style={{ borderColor: "#333" }}>
+        <div className="ps-eyebrow text-[11px] uppercase tracking-[0.25em] text-muted">{(c.dataset?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "k. ú. ")}{c.dataset?.okres ? ` · okres ${c.dataset.okres}` : ""}</div>
+        <h1 className="ps-teaser-title mt-1 text-2xl font-semibold uppercase tracking-wide">{c.title}</h1>
+        {addressOf(c)?.adresa ? <p className="text-sm text-muted">{String(addressOf(c)?.adresa)}</p> : null}
+      </div>
+      <ParcelSketch d={d} labels="main" />
+      <div className="ps-kpis grid grid-cols-3 border-t border-line">{kpis.map(([k, v]) => <div key={k} className="ps-kpi border-b border-line py-2 pr-2"><div className="ps-kpi-v text-lg font-semibold">{v}</div><div className="ps-kpi-k text-[10px] uppercase tracking-[0.2em] text-muted">{k}</div></div>)}</div>
+      <div className="grid gap-5 sm:grid-cols-[1.6fr_1fr]">
+        <ul className="ps-findings space-y-1 text-[13px]">{keyFindings(d, fin).slice(0, 6).map((t, i) => <li key={i}>{t}</li>)}</ul>
+        <div className="space-y-1 text-[12px]">{lights.map((l) => <div key={l.key} className="flex items-center gap-1.5"><span className="ps-dot inline-block h-2.5 w-2.5 rounded-full" style={{ background: LIGHT_DOT[l.state] }} /><b>{l.label}</b><span className="text-muted">— {LIGHT_WORD[l.state]}</span></div>)}</div>
+      </div>
+      <div className="flex items-end justify-between gap-4 border-t border-line pt-3 text-[11px] text-muted">
+        <div><BrokerLine d={d} /><div className="mt-1">Kompletný list nehnuteľnosti s financovaním, rizikami a predikciou hodnoty je v odkaze. Orientačný podklad — nie znalecký posudok.</div></div>
+        {url ? <QrCode text={url} size={92} label="celý list online" /> : null}
+      </div>
+    </section>
+  );
+}
+
 function PrintCover({ d, lights, isClient, fin }: { d: SheetData; lights: Light[]; isClient: boolean; fin: FinResult | null }) {
   const c = d.core;
   const total = c.parcels.reduce((x, p) => x + (p.area_m2 ?? 0), 0);
@@ -405,8 +456,8 @@ function PrintCover({ d, lights, isClient, fin }: { d: SheetData; lights: Light[
         ))}
       </div>
       <div className="ps-cover-foot">
-        <div>{d.client ? <>Pripravené pre <b>{d.client}</b></> : <>TRI LIPY · kataster a pozemky</>}</div>
-        <div>Dokument {docRef(d)} · údaje katastra k {date(c.dataset?.updated_at)}</div>
+        <div>{d.client ? <>Pripravené pre <b>{d.client}</b></> : <>TRI LIPY · kataster a pozemky</>}<br /><BrokerLine d={d} /></div>
+        <div className="ps-cover-foot-r">{isClient && shareUrl() ? <QrCode text={shareUrl() as string} size={64} label="aktuálna verzia online" /> : null}<span>Dokument {docRef(d)} · údaje katastra k {date(c.dataset?.updated_at)}</span></div>
       </div>
     </section>
   );
@@ -443,6 +494,16 @@ function PrintSummary({ d, lights, isClient, toc, fin }: { d: SheetData; lights:
   );
 }
 
+const TEASER_CSS = `
+@page :first { margin: 12mm 14mm; }
+@media print {
+  .ps-teaser-wrap .ps-teaser { display: block !important; max-width: none !important; }
+  .ps-teaser { font-size: 8.6pt !important; }
+  .ps-teaser .ps-findings li { margin-bottom: 1.2mm; }
+  .ps-teaser-title { font-family: "Josefin Sans", sans-serif !important; font-size: 20pt !important; letter-spacing: .06em; }
+  .ps-teaser .ps-kpi-v { font-family: "Josefin Sans", sans-serif; font-size: 12pt !important; }
+  .ps-teaser svg { max-height: 88mm; }
+}`;
 function printCss(title: string): string {
   return `
 @page { size: A4; margin: 19mm 16mm 18mm 16mm;
@@ -485,7 +546,10 @@ function printCss(title: string): string {
   .ps-light-w { margin-left: auto; font-weight: 400; color: #8a8a8a; letter-spacing: .1em; }
   .ps-light-t { font-size: 6.9pt !important; color: #5a5a5a; margin-top: .8mm; line-height: 1.35; }
   .ps-dot { display: inline-block; width: 2.2mm; height: 2.2mm; border-radius: 50%; flex: none; }
-  .ps-cover-foot { margin-top: auto; padding-top: 4mm; border-top: .5pt solid #d6d6d6; display: flex; justify-content: space-between; font-size: 6.8pt !important; color: #7a7a7a; }
+  .ps-cover-foot { margin-top: auto; padding-top: 4mm; border-top: .5pt solid #d6d6d6; display: flex; justify-content: space-between; align-items: flex-end; font-size: 6.8pt !important; color: #7a7a7a; }
+  .ps-cover-foot-r { display: flex; align-items: flex-end; gap: 4mm; text-align: right; }
+  .ps-broker { color: #4a4a4a; }
+  .ps-qr figcaption { font-size: 5.8pt !important; }
   /* zhrnutie */
   .ps-summary { display: block !important; break-after: page; }
   .ps-sum-cols { display: grid; grid-template-columns: 1.25fr 1fr; gap: 8mm; }
@@ -571,13 +635,19 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
     ["up", "ÚP"], ["limity", "Limity"], ["teren", "Terén a slnko"], ["klima", "Klíma"], ["siete", "Siete"], ["doprava", "Doprava"], ["hodnota", "Hodnota"], ["predikcia", "Predikcia"],
     ["trh", "Trh"], ["financovanie", "Hypotéka"], ["naklady", "Náklady a dane"], ["poistenie", "Poistenie a riziká"], ["investicia", "Výnos a vyjednávanie"], ["obec", "Obec"], ...(isClient ? [] : [["praca", "Práca"] as [string, string]]), ["postup", "Postup kúpy"], ["overit", "Čo overiť"], ["zdroje", "Zdroje"]];
 
-  const navIds = nav.map(([id]) => id);
+  const hideSet = useMemo(() => new Set(isClient ? d.hide ?? [] : []), [d.hide, isClient]);
+  const navF = nav.filter(([id]) => !hideSet.has(id));
+  const navIds = navF.map(([id]) => id);
   const num = (id: string) => String(navIds.indexOf(id) + 1).padStart(2, "0");
-  const toc = nav.map(([id, label]) => [num(id), ({ prehlad: "Prehľad", skladba: "Skladba nehnuteľnosti", vlastnictvo: "Vlastníctvo", pravo: "Právny stav", historia: "Časová os nehnuteľnosti", postup: "Postup kúpy a lehoty", pristup: "Prístup a susedia",
+  const toc = navF.map(([id, label]) => [num(id), ({ prehlad: "Prehľad", skladba: "Skladba nehnuteľnosti", vlastnictvo: "Vlastníctvo", pravo: "Právny stav", historia: "Časová os nehnuteľnosti", postup: "Postup kúpy a lehoty", pristup: "Prístup a susedia",
     up: "Územný plán a zastavateľnosť", limity: "Limity a riziká", teren: "Terén a slnko", klima: "Klíma a stavebné normy", siete: "Siete a energie", doprava: "Doprava a vybavenosť",
     hodnota: "Hodnota", predikcia: "Predikcia hodnoty", trh: "Trh a dopyt", financovanie: "Financovanie a hypotéka", naklady: "Náklady kúpy, vlastníctva a dane", poistenie: "Poistenie a riziká", investicia: "Výnos a vyjednávanie", obec: "Obec a ľudia", praca: "Signály a práca (interné)", overit: "Čo overiť pred kúpou", zdroje: "Zdroje a úplnosť" } as Record<string, string>)[id] ?? label] as [string, string]);
 
+  if (d.variant === "teaser") return (
+    <div className="property-sheet ps-teaser-wrap text-fg"><style>{printCss(c.title) + TEASER_CSS}</style><PrintTeaser d={d} fin={fin} lights={lights} /></div>
+  );
   return (
+    <HideCtx.Provider value={hideSet}>
     <div className="property-sheet mx-auto max-w-4xl space-y-5 text-fg">
       <style>{printCss(c.title)}</style>
       <PrintCover d={d} lights={lights} isClient={isClient} fin={fin} />
@@ -594,8 +664,15 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
       <div className="ps-screen-only space-y-5"><Lights lights={lights} /><Scores d={d} isClient={isClient} /></div>
 
       <nav className="no-print flex flex-wrap gap-1.5 text-xs">
-        {nav.map(([id, label]) => <a key={id} href={`#${id}`} className="rounded border border-line px-2 py-0.5 text-muted hover:border-ink hover:text-fg">{label}</a>)}
+        {navF.map(([id, label]) => <a key={id} href={`#${id}`} className="rounded border border-line px-2 py-0.5 text-muted hover:border-ink hover:text-fg">{label}</a>)}
       </nav>
+
+      {d.notes ? (
+        <Sec id="poznamka" title="Poznámka makléra">
+          <div className="whitespace-pre-line text-[13px] leading-relaxed">{d.notes}</div>
+          <BrokerLine d={d} />
+        </Sec>
+      ) : null}
 
       <Sec id="prehlad" n={num("prehlad")} explain={ex("prehlad")} {...asof("prehlad")} title="Prehľad" source={<>Kataster ÚGKK SR (stav k {date(c.dataset?.updated_at)}); obrysy z katastrálnej mapy (VGI).</>}>
         <div className="ps-screen-only"><ParcelSketch d={d} /></div>
@@ -884,5 +961,6 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
         </p>
       </Sec>
     </div>
+    </HideCtx.Provider>
   );
 }

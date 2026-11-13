@@ -46,6 +46,7 @@ function PropertyPage() {
   const [ready, setReady] = useState(false);
   const [hash, setHash] = useState<string | null>(null);
   const [finIn, setFinIn] = useState<Partial<FinInputs>>({});
+  const [teaser, setTeaser] = useState(false);
   const calibDev = useCalibDev();
 
   useEffect(() => {
@@ -109,10 +110,18 @@ function PropertyPage() {
   }
   return (
     <div className="px-4 py-5 print:p-0">
-      <PropertySheet d={sheet} mode="internal" onFinInputs={setFinIn} internal={{
+      {teaser ? (
+        <div className="space-y-3">
+          <div className="no-print flex gap-2 text-xs"><button onClick={() => setTeaser(false)} className="rounded-md border border-line px-3 py-1.5">← Celý list</button><button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">Tlačiť teaser</button></div>
+          <PropertySheet d={{ ...sheet, variant: "teaser", finInputs: finIn }} mode="client" />
+        </div>
+      ) : null}
+      {!teaser ? <PropertySheet d={sheet} mode="internal" onFinInputs={setFinIn} internal={{
         actions: (
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">Tlačiť / uložiť PDF</button>
+            <button onClick={() => setTeaser(true)} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Teaser (1 strana)</button>
+            <Link to="/ziadosti" search={{ ds: core.dataset!.id, p: mainC ?? undefined, lv: lv != null ? String(lv) : undefined }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Žiadosti (siete, ÚPI)</Link>
             <button onClick={downloadJson} disabled={!ready} className="rounded-md border border-line px-3 py-1.5 hover:border-ink disabled:opacity-50">Stiahnuť JSON</button>
             {lv != null ? <WatchButton subjectType="lv" subjectId={`${core.dataset!.id}:${lv}`} label={core.title} /> : null}
             {lv != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: core.dataset!.id, lvNo: String(lv) }} search={{ typ: "vypis" as const }} className="text-brand underline">Výpis LV {lv}</Link> : null}
@@ -128,7 +137,7 @@ function PropertyPage() {
             <DocumentsPanel datasetId={core.dataset!.id} subjectType="lv" subjectRef={String(lv)} role={role} compact />
           </div>
         ) : null,
-      }} />
+      }} /> : null}
     </div>
   );
 }
