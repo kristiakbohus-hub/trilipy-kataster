@@ -407,12 +407,12 @@ function PrintTeaser({ d, fin, lights }: { d: SheetData; fin: FinResult | null; 
       <ParcelSketch d={d} labels="main" />
       <div className="ps-kpis grid grid-cols-3 border-t border-line">{kpis.map(([k, v]) => <div key={k} className="ps-kpi border-b border-line py-2 pr-2"><div className="ps-kpi-v text-lg font-semibold">{v}</div><div className="ps-kpi-k text-[10px] uppercase tracking-[0.2em] text-muted">{k}</div></div>)}</div>
       <div className="grid gap-5 sm:grid-cols-[1.6fr_1fr]">
-        <ul className="ps-findings space-y-1 text-[13px]">{keyFindings(d, fin).slice(0, 6).map((t, i) => <li key={i}>{t}</li>)}</ul>
+        <ul className="ps-findings space-y-1 text-[13px]">{keyFindings(d, fin).slice(0, 5).map((t, i) => <li key={i}>{t}</li>)}</ul>
         <div className="space-y-1 text-[12px]">{lights.map((l) => <div key={l.key} className="flex items-center gap-1.5"><span className="ps-dot inline-block h-2.5 w-2.5 rounded-full" style={{ background: LIGHT_DOT[l.state] }} /><b>{l.label}</b><span className="text-muted">— {LIGHT_WORD[l.state]}</span></div>)}</div>
       </div>
       <div className="flex items-end justify-between gap-4 border-t border-line pt-3 text-[11px] text-muted">
         <div><BrokerLine d={d} /><div className="mt-1">Kompletný list nehnuteľnosti s financovaním, rizikami a predikciou hodnoty je v odkaze. Orientačný podklad — nie znalecký posudok.</div></div>
-        {url ? <QrCode text={url} size={92} label="celý list online" /> : null}
+        {url ? <QrCode text={url} size={80} label="celý list online" /> : null}
       </div>
     </section>
   );
@@ -457,7 +457,7 @@ function PrintCover({ d, lights, isClient, fin }: { d: SheetData; lights: Light[
       </div>
       <div className="ps-cover-foot">
         <div>{d.client ? <>Pripravené pre <b>{d.client}</b></> : <>TRI LIPY · kataster a pozemky</>}<br /><BrokerLine d={d} /></div>
-        <div className="ps-cover-foot-r">{isClient && shareUrl() ? <QrCode text={shareUrl() as string} size={64} label="aktuálna verzia online" /> : null}<span>Dokument {docRef(d)} · údaje katastra k {date(c.dataset?.updated_at)}</span></div>
+        <div className="ps-cover-foot-r">{isClient && shareUrl() ? <QrCode text={shareUrl() as string} size={54} label="aktuálna verzia online" /> : null}<span>Dokument {docRef(d)} · údaje katastra k {date(c.dataset?.updated_at)}</span></div>
       </div>
     </section>
   );
@@ -502,7 +502,9 @@ const TEASER_CSS = `
   .ps-teaser .ps-findings li { margin-bottom: 1.2mm; }
   .ps-teaser-title { font-family: "Josefin Sans", sans-serif !important; font-size: 20pt !important; letter-spacing: .06em; }
   .ps-teaser .ps-kpi-v { font-family: "Josefin Sans", sans-serif; font-size: 12pt !important; }
-  .ps-teaser svg { max-height: 88mm; }
+  .ps-teaser svg { max-height: 78mm; }
+  .ps-teaser .ps-qr svg { max-height: none; }
+  .ps-teaser { break-inside: avoid; }
 }`;
 function printCss(title: string): string {
   return `
@@ -529,19 +531,19 @@ function printCss(title: string): string {
   .ps-cover-doc { text-align: right; font-size: 7.6pt !important; color: #6f6f6f; line-height: 1.6; }
   .ps-eyebrow { font-family: "Josefin Sans", sans-serif; text-transform: uppercase; letter-spacing: .28em; font-size: 7.4pt !important; color: #8a8a8a; font-weight: 600; }
   .ps-cover-doc .ps-eyebrow { color: #333; margin-bottom: 1mm; }
-  .ps-cover-titles { margin-top: 15mm; padding-top: 6mm; border-top: .7pt solid #333; }
+  .ps-cover-titles { margin-top: 10mm; padding-top: 5mm; border-top: .7pt solid #333; }
   .ps-cover-title { font-family: "Josefin Sans", sans-serif !important; text-transform: uppercase; letter-spacing: .07em; font-weight: 600; font-size: 25pt !important; line-height: 1.12; margin: 3mm 0 0; color: #2b2b2b; text-wrap: balance; }
   .ps-cover-addr { margin-top: 2mm; font-family: "Josefin Sans", sans-serif; letter-spacing: .08em; font-size: 9.5pt !important; color: #4a4a4a; }
   .ps-cover-note { margin-top: 2.5mm; color: #6f6f6f; font-size: 8pt !important; max-width: 150mm; }
-  .ps-cover-map { margin-top: 7mm; }
-  .ps-cover-map svg { border: none !important; border-radius: 0 !important; width: 100%; height: auto; }
+  .ps-cover-map { margin-top: 5mm; }
+  .ps-cover-map svg { border: none !important; border-radius: 0 !important; width: 100%; height: auto; max-height: 84mm; }
   .ps-cover-map figcaption { font-size: 6.2pt !important; color: #9a9a9a; margin-top: 1.2mm; }
-  .ps-kpis { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 7mm; border-top: .5pt solid #d6d6d6; }
+  .ps-kpis { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 5mm; border-top: .5pt solid #d6d6d6; }
   .ps-kpi { padding: 3.2mm 3mm 3.2mm 0; border-bottom: .5pt solid #d6d6d6; }
   .ps-kpi:nth-child(3n+2), .ps-kpi:nth-child(3n) { padding-left: 4mm; border-left: .5pt solid #d6d6d6; }
   .ps-kpi-v { font-family: "Josefin Sans", sans-serif; font-weight: 600; font-size: 13pt !important; letter-spacing: .02em; color: #2b2b2b; line-height: 1.2; font-variant-numeric: tabular-nums; }
   .ps-kpi-k { font-family: "Josefin Sans", sans-serif; text-transform: uppercase; letter-spacing: .2em; font-size: 6.2pt !important; color: #8a8a8a; margin-top: .8mm; }
-  .ps-cover-lights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm 5mm; margin-top: 7mm; }
+  .ps-cover-lights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm 5mm; margin-top: 5mm; }
   .ps-light-h { font-family: "Josefin Sans", sans-serif; text-transform: uppercase; letter-spacing: .14em; font-size: 7pt !important; font-weight: 600; color: #333; display: flex; align-items: center; gap: 1.6mm; }
   .ps-light-w { margin-left: auto; font-weight: 400; color: #8a8a8a; letter-spacing: .1em; }
   .ps-light-t { font-size: 6.9pt !important; color: #5a5a5a; margin-top: .8mm; line-height: 1.35; }
