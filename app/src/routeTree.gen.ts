@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as PozemokZoZahradyRouteImport } from './routes/pozemok-zo-zahrady'
 import { Route as StrategickeParcelyRouteImport } from './routes/strategicke-parcely'
 import { Route as ApiScenarioQueueRouteImport } from './routes/api.scenario-queue'
 import { Route as ObhliadkaRouteImport } from './routes/obhliadka'
@@ -205,6 +206,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PozemokZoZahradyRoute = PozemokZoZahradyRouteImport.update({
+  id: '/pozemok-zo-zahrady',
+  path: '/pozemok-zo-zahrady',
   getParentRoute: () => rootRouteImport,
 } as any)
 const StrategickeParcelyRoute = StrategickeParcelyRouteImport.update({
@@ -626,6 +632,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
   '/api/scenario-queue': typeof ApiScenarioQueueRoute
   '/obhliadka': typeof ObhliadkaRoute
@@ -725,6 +732,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
   '/api/scenario-queue': typeof ApiScenarioQueueRoute
   '/obhliadka': typeof ObhliadkaRoute
@@ -825,6 +833,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
   '/api/scenario-queue': typeof ApiScenarioQueueRoute
   '/obhliadka': typeof ObhliadkaRoute
@@ -926,6 +935,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
     | '/api/scenario-queue'
     | '/obhliadka'
@@ -1025,6 +1035,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
     | '/api/scenario-queue'
     | '/obhliadka'
@@ -1124,6 +1135,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
     | '/api/scenario-queue'
     | '/obhliadka'
@@ -1220,6 +1232,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  PozemokZoZahradyRoute: typeof PozemokZoZahradyRoute
   StrategickeParcelyRoute: typeof StrategickeParcelyRoute
   ApiScenarioQueueRoute: typeof ApiScenarioQueueRoute
   ObhliadkaRoute: typeof ObhliadkaRoute
@@ -1554,6 +1567,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pozemok-zo-zahrady': {
+      id: '/pozemok-zo-zahrady'
+      path: '/pozemok-zo-zahrady'
+      fullPath: '/pozemok-zo-zahrady'
+      preLoaderRoute: typeof PozemokZoZahradyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/strategicke-parcely': {
@@ -2007,6 +2027,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  PozemokZoZahradyRoute: PozemokZoZahradyRoute,
   StrategickeParcelyRoute: StrategickeParcelyRoute,
   ApiScenarioQueueRoute: ApiScenarioQueueRoute,
   ObhliadkaRoute: ObhliadkaRoute,

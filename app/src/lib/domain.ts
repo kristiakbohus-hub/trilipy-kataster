@@ -21,6 +21,7 @@ export type AppPath =
   | "/stavebne-pozemky"
   | "/zdedene-byty"
   | "/strategicke-parcely"
+  | "/pozemok-zo-zahrady"
   | "/poda-na-byvanie"
   | "/import"
   | "/reporty"
