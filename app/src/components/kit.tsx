@@ -183,7 +183,7 @@ export function Disclaimer({ children }: { children: ReactNode }) {
 // kritériách s evidenciou (citácia na KONKRÉTNY zdroj + stupeň overenia, nie len text faktu) +
 // chýbajúce/neoverené polia (uncertainties). json = {criteria, uncertainties} z candidate.py
 // Candidate.to_dict() (staré nasadenia mohli poslať holý zoznam criteria — akceptované oboje).
-type EvidenceItem = { fact: string; source?: string | null; source_type?: string | null; record_id?: string | null; verification?: string | null };
+type EvidenceItem = { fact: string; source?: string | null; source_type?: string | null; record_id?: string | null; verification?: string | null; date?: string | null; version?: string | null };
 type CriterionItem = { key: string; effect: string; outcome: string; evidence?: EvidenceItem[]; note?: string | null };
 type CriteriaBlob = { criteria: CriterionItem[]; uncertainties?: string[] } | CriterionItem[];
 const VERIF_LABEL: Record<string, string> = { FACT: "fakt", DERIVED: "odvodené", INFERENCE: "inferencia", ASSUMPTION: "predpoklad", NOT_VERIFIED: "neoverené" };
@@ -196,6 +196,9 @@ export function CriteriaMatrix({ json }: { json: string | null | undefined }) {
   const uncertainties: string[] = Array.isArray(parsed) ? [] : (parsed.uncertainties ?? []);
   const must = items.filter((c) => c.effect === "MUST" || c.effect === "MUST_NOT");
   if (!must.length) return null;
+  // GOLD-04: pôdorys stavby a miera prekryvu s parcelami (INFO kritérium, nerozhoduje o zaradení)
+  const fpInfo = items.find((c) => c.key === "footprint_overlap")?.evidence?.[0];
+  const stamp = (e?: EvidenceItem) => [e?.date ? `stav k ${e.date}` : "", e?.version ?? ""].filter(Boolean).join(", ");
   const palette: Record<string, string> = { PASS: "#5b7a58", FAIL: "#9c4a40", UNKNOWN: "#9a7b3e" };
   return (
     <div className="mt-3 border-t border-line pt-2">
@@ -217,6 +220,7 @@ export function CriteriaMatrix({ json }: { json: string | null | undefined }) {
                     <span className="italic">
                       {" — "}{ev.source}{ev.record_id ? ` (${ev.record_id})` : ""}
                       {ev.verification ? `, ${VERIF_LABEL[ev.verification] ?? ev.verification.toLowerCase()}` : ""}
+                      {stamp(ev) ? ` · ${stamp(ev)}` : ""}
                     </span>
                   ) : null}
                 </div>
@@ -225,9 +229,16 @@ export function CriteriaMatrix({ json }: { json: string | null | undefined }) {
           );
         })}
       </ul>
+      {fpInfo?.fact ? (
+        <div className="mt-2 text-[11px] text-muted">
+          <span className="text-fg">{critLabel("footprint_overlap")}:</span> {fpInfo.fact}
+          {stamp(fpInfo) ? <span className="italic"> · {stamp(fpInfo)}</span> : null}
+        </div>
+      ) : null}
       {uncertainties.length ? (
         <div className="mt-2 rounded border border-line bg-surface-2/40 px-2 py-1.5 text-[11px] text-muted">
-          <b className="text-fg">Chýbajúce/neoverené:</b> {uncertainties.join("; ")}
+          <b className="text-fg">Chýbajúce/neoverené:</b>{" "}
+          {uncertainties.map((u) => { const [k, ...r] = u.split(": "); return `${critLabel(k)}: ${r.join(": ").replace("NOT VERIFIED", "neoverené").replace("ZDROJ NEDOSTUPNÝ", "zdroj nedostupný")}`; }).join("; ")}
         </div>
       ) : null}
     </div>

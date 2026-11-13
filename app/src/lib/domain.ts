@@ -417,6 +417,9 @@ const CRIT_LABEL: Record<string, string> = {
   cx_historical_holding: "Pozemok leží na historickej pozemkovoknižnej držbe",
   cx_multi_holding: "Pozemok má viacero spoluvlastníckych podielov",
   cx_spf_parcel: "Podiel drží Slovenský pozemkový fond alebo štát",
+  footprint_overlap: "Pôdorys stavby na parcelách (ZBGIS × mapa KN)",
+  sources_available: "Povinné zdroje sú dostupné a načítané úplne",
+  legal_access: "Oprávnenie na spracovanie vlastníckych údajov",
   // zdedené byty (GOLD-ZA)
   qualifying_holding: "Dedičstvo aj iná adresa sedia na tom istom vlastníkovi",
   floor_not_first_or_last: "Byt nie je na prvom ani poslednom podlaží",
