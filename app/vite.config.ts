@@ -23,6 +23,11 @@ export default defineConfig(({ mode }) => {
   const designInspectorEnabled = process.env.HF_DESIGN_INSPECTOR === "1" || mode === "design";
 
   return {
+    // /api/version: commit a čas buildu (deploy-cf.yml posiela BUILD_SHA = github.sha)
+    define: {
+      __BUILD_SHA__: JSON.stringify(process.env.BUILD_SHA ?? "dev"),
+      __BUILD_AT__: JSON.stringify(new Date().toISOString()),
+    },
     resolve: {
       alias: [{ find: /^@higgsfield-ai\/icons(\/.*)?$/, replacement: QUANTA_ICONS_SHIM }],
     },

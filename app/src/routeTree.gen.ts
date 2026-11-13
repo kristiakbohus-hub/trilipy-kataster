@@ -58,6 +58,7 @@ import { Route as ZadanieIdRouteImport } from './routes/zadanie.$id'
 import { Route as ApiBriefQueueRouteImport } from './routes/api.brief-queue'
 import { Route as ApiMarketExportRouteImport } from './routes/api.market-export'
 import { Route as ApiTgDigestRouteImport } from './routes/api.tg-digest'
+import { Route as ApiVersionRouteImport } from './routes/api.version'
 import { Route as ApiIngestLvpartsRouteImport } from './routes/api.ingest-lvparts'
 import { Route as KontrolaRouteImport } from './routes/kontrola'
 import { Route as ZmenyRouteImport } from './routes/zmeny'
@@ -345,6 +346,11 @@ const ApiTgDigestRoute = ApiTgDigestRouteImport.update({
   path: '/api/tg-digest',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiVersionRoute = ApiVersionRouteImport.update({
+  id: '/api/version',
+  path: '/api/version',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiIngestLvpartsRoute = ApiIngestLvpartsRouteImport.update({
   id: '/api/ingest-lvparts',
   path: '/api/ingest-lvparts',
@@ -613,6 +619,7 @@ export interface FileRoutesByFullPath {
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
   '/api/tg-digest': typeof ApiTgDigestRoute
+  '/api/version': typeof ApiVersionRoute
   '/api/ingest-lvparts': typeof ApiIngestLvpartsRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
@@ -705,6 +712,7 @@ export interface FileRoutesByTo {
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
   '/api/tg-digest': typeof ApiTgDigestRoute
+  '/api/version': typeof ApiVersionRoute
   '/api/ingest-lvparts': typeof ApiIngestLvpartsRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
@@ -798,6 +806,7 @@ export interface FileRoutesById {
   '/api/brief-queue': typeof ApiBriefQueueRoute
   '/api/market-export': typeof ApiMarketExportRoute
   '/api/tg-digest': typeof ApiTgDigestRoute
+  '/api/version': typeof ApiVersionRoute
   '/api/ingest-lvparts': typeof ApiIngestLvpartsRoute
   '/zmeny': typeof ZmenyRoute
   '/kontrola': typeof KontrolaRoute
@@ -892,6 +901,7 @@ export interface FileRouteTypes {
     | '/api/brief-queue'
     | '/api/market-export'
     | '/api/tg-digest'
+    | '/api/version'
     | '/api/ingest-lvparts'
     | '/zmeny'
     | '/kontrola'
@@ -984,6 +994,7 @@ export interface FileRouteTypes {
     | '/api/brief-queue'
     | '/api/market-export'
     | '/api/tg-digest'
+    | '/api/version'
     | '/api/ingest-lvparts'
     | '/zmeny'
     | '/kontrola'
@@ -1076,6 +1087,7 @@ export interface FileRouteTypes {
     | '/api/brief-queue'
     | '/api/market-export'
     | '/api/tg-digest'
+    | '/api/version'
     | '/api/ingest-lvparts'
     | '/zmeny'
     | '/kontrola'
@@ -1165,6 +1177,7 @@ export interface RootRouteChildren {
   ApiBriefQueueRoute: typeof ApiBriefQueueRoute
   ApiMarketExportRoute: typeof ApiMarketExportRoute
   ApiTgDigestRoute: typeof ApiTgDigestRoute
+  ApiVersionRoute: typeof ApiVersionRoute
   ApiIngestLvpartsRoute: typeof ApiIngestLvpartsRoute
   ZmenyRoute: typeof ZmenyRoute
   KontrolaRoute: typeof KontrolaRoute
@@ -1668,6 +1681,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTgDigestRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/version': {
+      id: '/api/version'
+      path: '/api/version'
+      fullPath: '/api/version'
+      preLoaderRoute: typeof ApiVersionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/ingest-lvparts': {
       id: '/api/ingest-lvparts'
       path: '/api/ingest-lvparts'
@@ -1896,6 +1916,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiBriefQueueRoute: ApiBriefQueueRoute,
   ApiMarketExportRoute: ApiMarketExportRoute,
   ApiTgDigestRoute: ApiTgDigestRoute,
+  ApiVersionRoute: ApiVersionRoute,
   ApiIngestLvpartsRoute: ApiIngestLvpartsRoute,
   ZmenyRoute: ZmenyRoute,
   KontrolaRoute: KontrolaRoute,

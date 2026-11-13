@@ -1,9 +1,9 @@
 name: Template CI
 
+# 2026-11-13: repo je súkromný (Actions minúty sa rátajú). Plný build s tsc a testami robí deploy-cf.yml
+# pri každom pushi, preto tento duplicitný beh len ručne alebo pri pull requeste.
 on:
-  push:
-    branches:
-      - main
+  pull_request:
   workflow_dispatch:
 
 jobs:

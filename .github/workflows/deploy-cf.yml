@@ -19,6 +19,8 @@ jobs:
       - name: Install deps
         run: bun install
       - name: Build (SSR Worker + assets)
+        env:
+          BUILD_SHA: ${{ github.sha }}
         run: |
           set +e
           bun run build > build.out 2>&1
@@ -48,5 +50,18 @@ jobs:
       - name: Deploy Worker
         run: bunx wrangler deploy --config wrangler.cf.jsonc
         env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # Repo je súkromný → Mac nečíta stav z GitHub API. Chybu buildu/migrácie zapíšeme do KV appky,
+      # /api/version ju vráti s x-alert-secret (deploy_wait na Macu). Úspech = /api/version ukáže nový sha.
+      - name: Report failure to app KV
+        if: failure()
+        continue-on-error: true
+        run: |
+          msg=$( (grep -hE "error TS|error during build|Transform failed|Error:|\.tsx?[:(]" build.out 2>/dev/null | head -40; tail -25 mig.out 2>/dev/null) | sed 's/\x1b\[[0-9;]*m//g' | tail -c 6000)
+          json=$(python3 -c 'import json,sys,os; print(json.dumps({"sha":os.environ["GITHUB_SHA"],"at":os.environ.get("NOW",""),"msg":sys.stdin.read()}))' <<< "$msg")
+          bunx wrangler kv key put "build:last_fail" "$json" --namespace-id 6cf426515df54988b48980352ed07c1e --remote
+        env:
+          NOW: ${{ github.event.head_commit.timestamp }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
