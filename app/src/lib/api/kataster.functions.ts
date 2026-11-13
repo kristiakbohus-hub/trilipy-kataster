@@ -3632,7 +3632,7 @@ function secretEq(a: string | undefined | null, b: string | undefined | null): b
 //   • scope "mac" (všetko ostatné: importy, scenáre, zálohy…) — LEN kľúč Macu. V D1 je iba jeho SHA-256
 //     (market_meta.ingest_secret_sha256, migrácia 0116), samotný kľúč je len v 25_SAVED_ALERTS/alerts_cron.json na Macu.
 // Kým hash v D1 nie je, platí prechodne alert_secret všade (nasadenie samo nič nerozbije).
-async function sha256Hex(s: string): Promise<string> {
+async function sha256HexFull(s: string): Promise<string> {   // celý hash (sha256Hex vyššie ho skracuje na 16 znakov)
   const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
   return Array.from(new Uint8Array(h), (b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -3642,7 +3642,7 @@ async function ingestSecretOk(secret: string | undefined | null, scope: "mac" | 
     "SELECT key, value FROM market_meta WHERE key IN ('alert_secret','ingest_secret_sha256')").catch(() => []);
   const m = new Map(rows.map((r): [string, string] => [r.key, r.value]));
   const macHash = m.get("ingest_secret_sha256");
-  if (macHash && secretEq(await sha256Hex(secret), macHash)) return true;
+  if (macHash && secretEq(await sha256HexFull(secret), macHash)) return true;
   if (!macHash || scope === "cloud") return secretEq(secret, m.get("alert_secret"));
   return false;
 }
