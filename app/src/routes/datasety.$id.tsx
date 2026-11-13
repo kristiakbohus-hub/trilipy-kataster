@@ -135,7 +135,7 @@ function DatasetDetail() {
                       <td className="px-4 py-2 text-muted">{p.use_type}</td>
                       <td className="px-4 py-2 tabular-nums text-muted">{p.lv_no}</td>
                       <td className="px-4 py-2">
-                        <span style={{ color: QUALITY_META[p.geometry_quality].color }}>{QUALITY_META[p.geometry_quality].label}</span>
+                        <span style={{ color: QUALITY_META[p.geometry_quality]?.color }}>{QUALITY_META[p.geometry_quality]?.label ?? (p.geometry_quality || "neuvedená")}</span>
                       </td>
                     </tr>
                   );

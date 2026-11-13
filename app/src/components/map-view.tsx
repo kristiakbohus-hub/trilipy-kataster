@@ -2400,7 +2400,7 @@ export function MapView({
                 </>
               );
             })()}
-            <Row k="Geometria" v={<span style={{ color: QUALITY_META[identified.geometry_quality].color }}>{QUALITY_META[identified.geometry_quality].label}</span>} />
+            <Row k="Geometria" v={<span style={{ color: QUALITY_META[identified.geometry_quality]?.color }}>{QUALITY_META[identified.geometry_quality]?.label ?? (identified.geometry_quality || "neuvedená")}</span>} />
           </dl>
           <div className="mt-3 border-t border-line pt-2 text-xs">
             <div className="mb-1 font-medium text-fg">LV a vlastníci</div>
