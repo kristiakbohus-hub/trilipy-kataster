@@ -22,6 +22,8 @@ export function applySecurityHeaders(response: Response): Response {
       "font-src 'self' data: https://fonts.gstatic.com; " +
       "img-src 'self' data: https:; media-src 'self' https:; " +
       "connect-src 'self' https:; " +
+      // MapLibre (3D prehľad v liste) spúšťa web workery z blob: — bez toho by sa mapa nevykreslila.
+      "worker-src 'self' blob:; " +
       "base-uri 'self'; form-action 'self'",
   );
   headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');

@@ -258,6 +258,7 @@ export const EN_DICT: Record<string, string> = {
 "Vlastníci s veľmi starým zápisom": "Owners with very old records",
 "Pohľad z ulice (Street View) ↗": "Street View ↗",
 "Google Mapy ↗": "Google Maps ↗",
+"Otvoriť 3D prehľad — terén, budovy, slnko počas dňa": "Open 3D view — terrain, buildings, sun through the day",
 "Lomové body hranice": "Boundary break points",
 "Stiahnuť všetky lomové body (CSV)": "Download all break points (CSV)",
 "Bod": "Point",

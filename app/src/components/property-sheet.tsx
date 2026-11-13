@@ -17,6 +17,7 @@ import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, NkpBlock, OkolieBlo
 import { ownerKey } from "../lib/domain";
 import { wgsToSjtskKn } from "../lib/sjtsk";
 import { GROUP_GUIDE } from "../lib/sheet-guide";
+import { Terrain3D } from "./terrain3d";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -886,6 +887,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
       </Sec>
 
       <Sec id="teren" n={num("teren")} explain={ex("teren")} {...asof("teren")} title={tt("teren", "Terén a slnko")} source="Digitálny model reliéfu DMR 5.0 (ÚGKK SR, CC BY 4.0); poloha slnka (výpočet NOAA) s horizontom z terénu.">
+        <Open3D d={d} />
         {teren ? <FactsBlock grp="teren" data={teren} skip={["profil", "dom_bod"]} /> : <Muted>Terén pre parcelu zatiaľ nie je spočítaný.</Muted>}
         <TerrainProfile d={d} />
         {mk && fact(c, "slnko", mk) ? (<><Sub>Slnko</Sub>
@@ -1180,4 +1182,15 @@ function BreakPoints({ parcels, isClient }: { parcels: SheetData["core"]["parcel
       <button type="button" onClick={csv} className="no-print mt-1 rounded-md border border-line px-3 py-1 text-xs hover:border-ink">Stiahnuť všetky lomové body (CSV)</button>
     </>
   );
+}
+
+
+// 3D prehľad (terén, budovy, slnko) — načíta sa až na kliknutie (MapLibre je samostatný balík)
+function Open3D({ d }: { d: SheetData }) {
+  const [on, setOn] = useState(false);
+  const c = d.core;
+  const rings = c.parcels.filter((p) => p.geometry_json).slice(0, 40).flatMap((p) => ringsOf(p.geometry_json));
+  if (c.main.lat == null || c.main.lng == null) return null;
+  return on ? <Terrain3D lat={c.main.lat} lng={c.main.lng} rings={rings} />
+    : <button type="button" onClick={() => setOn(true)} className="no-print rounded-md border border-line px-3 py-1.5 text-xs hover:border-ink">Otvoriť 3D prehľad — terén, budovy, slnko počas dňa</button>;
 }
