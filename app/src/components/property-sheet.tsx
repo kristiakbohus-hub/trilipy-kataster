@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FACT_GROUP_LABEL, FACT_SCHEMA, type FactField } from "../lib/facts-schema";
 import { nf, eur, m2, dist, prettyZone, date, Sec, Muted, Sub, Grid, Table, HideCtx, LangCtx } from "./ps-ui";
 import { EN_LIGHT, EN_TITLES, EN_UI, EN_WORD, enExplain, enFindings } from "../lib/i18n-en";
-import { translateDom } from "../lib/i18n-en-dict";
+import { enText, translateDom } from "../lib/i18n-en-dict";
 import { qrMatrix } from "../lib/qr";
 import { DecisionBody, PermitsBody, SettlementBlock } from "./property-decision";
 import { DeclarationBlock } from "./property-decl";
@@ -682,12 +682,12 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
     hodnota: "Hodnota", predikcia: "Predikcia hodnoty", trh: "Trh a dopyt", financovanie: "Financovanie a hypotéka", naklady: "Náklady kúpy, vlastníctva a dane", poistenie: "Poistenie a riziká", investicia: "Výnos a vyjednávanie", obec: "Obec a ľudia", praca: "Signály a práca (interné)", overit: "Čo overiť pred kúpou", zdroje: "Zdroje a úplnosť" } as Record<string, string>)[id] ?? label] as [string, string]);
 
   if (d.variant === "teaser") return (
-    <div ref={rootRef} className="property-sheet ps-teaser-wrap text-fg"><style>{printCss(c.title) + TEASER_CSS}</style><PrintTeaser d={d} fin={fin} lights={lights} /></div>
+    <div ref={rootRef} className="property-sheet ps-teaser-wrap text-fg"><style>{printCss(d.lang === "en" ? enText(c.title) : c.title, d.lang === "en") + TEASER_CSS}</style><PrintTeaser d={d} fin={fin} lights={lights} /></div>
   );
   return (
     <LangCtx.Provider value={en ? "en" : "sk"}><HideCtx.Provider value={hideSet}>
     <div ref={rootRef} className="property-sheet mx-auto max-w-4xl space-y-5 text-fg">
-      <style>{printCss(c.title, en)}</style>
+      <style>{printCss(en ? enText(c.title) : c.title, en)}</style>
       <PrintCover d={d} lights={lights} isClient={isClient} fin={fin} en={en} />
       <PrintSummary d={d} lights={lights} isClient={isClient} toc={toc} fin={fin} en={en} />
 
