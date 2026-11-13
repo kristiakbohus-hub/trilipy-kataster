@@ -177,7 +177,7 @@ function Gate() {
   // Verejná ponuka pre klienta (/p/<token>, bod 10): bez prihlásenia a bez menu appky. Dáta ide z /api/offer,
   // ktoré stráži platnosť odkazu; všetko ostatné ostáva za prihlásením.
   const path = useRouterState({ select: (st) => st.location.pathname });
-  if (path.startsWith("/p/") || path.startsWith("/n/")) return <Outlet />;   // + klientsky list nehnuteľnosti (/n/<token>)
+  if (path.startsWith("/p/") || path.startsWith("/n/") || path === "/metodika") return <Outlet />;   // + klientsky list (/n/<token>) a verejná metodika
   if (authed === null) return <Splash />;
   if (!authed) return <LoginScreen />;
   return (

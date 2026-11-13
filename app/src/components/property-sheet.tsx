@@ -1039,6 +1039,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
         <p className="text-[10px] leading-snug text-muted">
           List je orientačný podklad z verejných a katastrálnych dát — nie znalecký posudok, právny ani geodetický záver.
           Údaje „odvodené" sú výpočty appky; „nevieme" znamená, že zdroj chýba, nie že je všetko v poriadku.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}
+          {" "}<a href="/metodika" target="_blank" rel="noopener noreferrer" className="no-print underline">Ako hodnotíme (metodika) ↗</a>
         </p>
       </Sec>
     </div>

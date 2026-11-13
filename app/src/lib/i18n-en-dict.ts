@@ -258,6 +258,7 @@ export const EN_DICT: Record<string, string> = {
 "Vlastníci s veľmi starým zápisom": "Owners with very old records",
 "Pohľad z ulice (Street View) ↗": "Street View ↗",
 "Google Mapy ↗": "Google Maps ↗",
+"Ako hodnotíme (metodika) ↗": "How we assess (methodology, Slovak) ↗",
 "ZBGIS kataster ↗": "ZBGIS cadastral map ↗",
 "Otvoriť na mape →": "Open on map →",
 "Pôdorys stavby na parcelách (ZBGIS × mapa KN)": "Building footprint on parcels (ZBGIS × cadastral map)",
