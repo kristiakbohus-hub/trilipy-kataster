@@ -5,18 +5,44 @@
 export type Ring = [number, number][];
 
 export function wgsToSjtsk(lat: number, lon: number): { X: number; Y: number } {
-  let a = 6378137.0, f = 1 / 298.257223563, e2 = f * (2 - f);
-  let phi = (lat * Math.PI) / 180, lam = (lon * Math.PI) / 180;
-  let N = a / Math.sqrt(1 - e2 * Math.sin(phi) ** 2);
-  const X = N * Math.cos(phi) * Math.cos(lam), Y = N * Math.cos(phi) * Math.sin(lam), Z = N * (1 - e2) * Math.sin(phi);
+  const [X, Y, Z] = wgsCart(lat, lon);
   const sec = (v: number) => ((v / 3600) * Math.PI) / 180;
   const rx = sec(-4.99821), ry = sec(-1.58676), rz = sec(-5.2611), s = 1 - 3.543e-6;
   const X2 = -570.69 + s * (X - rz * Y + ry * Z), Y2 = -85.69 + s * (rz * X + Y - rx * Z), Z2 = -462.84 + s * (-ry * X + rx * Y + Z);
-  a = 6377397.155; f = 1 / 299.1528128; e2 = f * (2 - f);
+  return krovak(...besselGeod(X2, Y2, Z2));
+}
+
+/** WGS84 → S-JTSK presne ako mapa KN v appke: inverzia transformácie EPSG:4836 „S-JTSK to WGS 84 (4)",
+ *  ktorou Mac (36_SPI_INGEST/vgi_geom.py) prepočítal obrysy parciel z VGI. Vráti pôvodné súradnice
+ *  katastrálnej mapy (Y, X kladné) — rozdiel len zo zaokrúhlenia uložených WGS84 (~0,1 m). */
+export function wgsToSjtskKn(lat: number, lon: number): { X: number; Y: number } {
+  const [X, Y, Z] = wgsCart(lat, lon);
+  const sec = (v: number) => ((v / 3600) * Math.PI) / 180;
+  const rx = sec(7.786), ry = sec(4.398), rz = sec(4.103);
+  // dopredu (position vector): W = T + R·B, R = [[1,-rz,ry],[rz,1,-rx],[-ry,rx,1]] → späť B = Rᵀ·(W − T)
+  const dx = X - 485, dy = Y - 169.5, dz = Z - 483.8;
+  const X2 = dx + rz * dy - ry * dz, Y2 = -rz * dx + dy + rx * dz, Z2 = ry * dx - rx * dy + dz;
+  return krovak(...besselGeod(X2, Y2, Z2));
+}
+
+function wgsCart(lat: number, lon: number): [number, number, number] {
+  const a = 6378137.0, f = 1 / 298.257223563, e2 = f * (2 - f);
+  const phi = (lat * Math.PI) / 180, lam = (lon * Math.PI) / 180;
+  const N = a / Math.sqrt(1 - e2 * Math.sin(phi) ** 2);
+  return [N * Math.cos(phi) * Math.cos(lam), N * Math.cos(phi) * Math.sin(lam), N * (1 - e2) * Math.sin(phi)];
+}
+
+function besselGeod(X2: number, Y2: number, Z2: number): [number, number] {
+  const a = 6377397.155, f = 1 / 299.1528128, e2 = f * (2 - f);
   const p = Math.hypot(X2, Y2);
-  lam = Math.atan2(Y2, X2);
-  phi = Math.atan2(Z2, p * (1 - e2));
+  const lam = Math.atan2(Y2, X2);
+  let phi = Math.atan2(Z2, p * (1 - e2)), N = a;
   for (let i = 0; i < 10; i++) { N = a / Math.sqrt(1 - e2 * Math.sin(phi) ** 2); phi = Math.atan2(Z2 + e2 * N * Math.sin(phi), p); }
+  return [phi, lam];
+}
+
+function krovak(phi: number, lam: number): { X: number; Y: number } {
+  const a = 6377397.155, f = 1 / 299.1528128, e2 = f * (2 - f);
   const e = Math.sqrt(e2), s45 = Math.PI / 4, fi0 = (49.5 * Math.PI) / 180;
   const alfa = Math.sqrt(1 + (e2 * Math.cos(fi0) ** 4) / (1 - e2));
   const uq = ((59 + 42 / 60 + 42.69689 / 3600) * Math.PI) / 180;

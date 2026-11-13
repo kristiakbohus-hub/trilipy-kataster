@@ -15,6 +15,7 @@ import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
 import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, NkpBlock, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { ownerKey } from "../lib/domain";
+import { wgsToSjtskKn } from "../lib/sjtsk";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -772,6 +773,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
             isClient ? "" : <a key="l" href={`/nehnutelnost?ds=${encodeURIComponent(c.dataset?.id ?? "")}&byt=${encodeURIComponent(f.ref)}`} className="text-brand underline">list bytu</a>])} />
           {c.flats.length > 120 ? <Muted>… a ďalších {c.flats.length - 120}.</Muted> : null}</>) : null}
         {mk && fact(c, "mapa", mk) ? (<><Sub>Z katastrálnej mapy</Sub><FactsBlock grp="mapa" data={fact(c, "mapa", mk)} /></>) : null}
+        <BreakPoints parcels={c.parcels} isClient={isClient} />
         {mk && fact(c, "bpej", mk) ? (<><Sub>Pôda (BPEJ)</Sub><FactsBlock grp="bpej" data={fact(c, "bpej", mk)} /></>)
           : mainParcel?.bpej ? <Grid rows={[["BPEJ", mainParcel.bpej], ["Skupina kvality", mainParcel.bpej_skupina != null ? String(mainParcel.bpej_skupina) : "—"], ["Odvod za vyňatie (odhad)", mainParcel.odnatie_eur != null ? eur(mainParcel.odnatie_eur) : "—"]]} /> : null}
       </Sec>
@@ -1126,5 +1128,50 @@ function TarchyItems({ items, isClient }: { items: NonNullable<SheetData["core"]
         );
       })}
     </div>
+  );
+}
+
+
+// ——— Lomové body hranice parciel (zadanie vlastníka 2026-11-13): S-JTSK aj WGS84. Obrysy sú z katastrálnej
+// mapy (VGI), v appke uložené vo WGS84; S-JTSK sa vracia presnou inverziou transformácie, ktorou vznikli
+// (wgsToSjtskKn, odchýlka od mapy KN do ~0,1 m). Informatívne — vytyčovanie hraníc robí geodet.
+function BreakPoints({ parcels, isClient }: { parcels: SheetData["core"]["parcels"]; isClient: boolean }) {
+  const list = parcels.filter((p) => p.geometry_json).slice(0, 25).map((p) => ({
+    p, rings: ringsOf(p.geometry_json).map((r) => (r.length > 1 && r[0][0] === r[r.length - 1][0] && r[0][1] === r[r.length - 1][1] ? r.slice(0, -1) : r)),
+  })).filter((x) => x.rings.length);
+  if (!list.length) return null;
+  const nf2 = (v: number) => v.toLocaleString("sk-SK", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const nf6 = (v: number) => v.toLocaleString("sk-SK", { minimumFractionDigits: 6, maximumFractionDigits: 6 });
+  const rowsOf = (x: (typeof list)[number]) => x.rings.flatMap((r, ri) => r.map(([lng, lat], i) => {
+    const s = wgsToSjtskKn(lat, lng);
+    return { bod: x.rings.length > 1 ? `${ri + 1}.${i + 1}` : String(i + 1), Y: s.Y, X: s.X, lat, lng };
+  }));
+  const total = list.reduce((s, x) => s + rowsOf(x).length, 0);
+  const csv = () => {
+    const lines = ["\ufeffParcela;Bod;Y (S-JTSK);X (S-JTSK);Zemepisná šírka (WGS84);Zemepisná dĺžka (WGS84)"];
+    for (const x of list) for (const r of rowsOf(x)) lines.push([`${x.p.register === "E" ? "E " : ""}${x.p.parcel_no}`, r.bod, r.Y.toFixed(2).replace(".", ","), r.X.toFixed(2).replace(".", ","), r.lat.toFixed(7).replace(".", ","), r.lng.toFixed(7).replace(".", ",")].join(";"));
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([lines.join("\r\n")], { type: "text/csv;charset=utf-8" }));
+    a.download = `lomove-body-${list[0].p.parcel_no.replace(/[^0-9a-z]+/gi, "-")}.csv`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  };
+  const shown = list.filter((_, i) => i < (isClient ? 4 : 10));
+  return (
+    <>
+      <Sub>Lomové body hranice</Sub>
+      <Muted>Súradnice bodov obrysu z katastrálnej mapy: S-JTSK (Y, X v metroch, ako v katastri) a WGS84 (GPS). Informatívne — hranice v teréne vytyčuje geodet podľa geometrického plánu; presnosť bodov závisí od kvality mapy KN. Spolu {total} bodov{list.length > shown.length ? `; vypísané prvé ${shown.length} parcely, ostatné v exporte` : ""}.</Muted>
+      {shown.map((x) => {
+        const rows = rowsOf(x);
+        return (
+          <div key={`${x.p.register}${x.p.parcel_no}`} className="break-inside-avoid">
+            <div className="mt-1 text-xs font-medium text-fg">Parcela {x.p.register === "E" ? "E " : "C "}{x.p.parcel_no} — {rows.length} bodov</div>
+            <Table head={["Bod", "Y (S-JTSK)", "X (S-JTSK)", "Šírka (WGS84)", "Dĺžka (WGS84)"]}
+              rows={rows.slice(0, 60).map((r) => [r.bod, nf2(r.Y), nf2(r.X), `${nf6(r.lat)}°`, `${nf6(r.lng)}°`])} />
+            {rows.length > 60 ? <Muted>… ďalších {rows.length - 60} bodov v exporte.</Muted> : null}
+          </div>
+        );
+      })}
+      <button type="button" onClick={csv} className="no-print mt-1 rounded-md border border-line px-3 py-1 text-xs hover:border-ink">Stiahnuť všetky lomové body (CSV)</button>
+    </>
   );
 }
