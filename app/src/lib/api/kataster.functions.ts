@@ -8713,6 +8713,45 @@ export const getPropertyExt = createServerFn({ method: "POST" })
     const r = await extAll(data.lat, data.lng, !!data.refresh);
     return { ok: true, ...r };
   });
+// ——— TIENENIE A VÝŠKA OKOLITEJ ZÁSTAVBY (2026-11-13) — DMP 1.0 (povrch: budovy, stromy) − DMR 5.0 (terén), WMS GetFeatureInfo.
+// 16 smerov × 4 vzdialenosti (12/25/45/80 m) → uhol prekážky v každom smere (horizont z budov a stromov); výšky objektov
+// v okruhu 25 m. Cache 60 dní (povrch sa mení zriedka). Workers Paid: ~85 dopytov na jedno spočítanie.
+export type ShadeResult = { az: number[]; objAngle: number[]; heights: { n: number; med: number | null; max: number | null }; center: number | null; ground: number | null; asOf: string };
+async function shadingCore(lat: number, lng: number, refresh = false): Promise<ShadeResult | null> {
+  const key = `shade:${lat.toFixed(4)}:${lng.toFixed(4)}`;
+  const c = await regCacheRead(key, refresh, 60 * 24 * 3600).catch(() => null);
+  if (c) return c.payload as ShadeResult;
+  const def = EXT_DEFS.find((d) => d.special === "dmp"); if (!def) return null;
+  const gfi = (la: number, lo: number, dmr = false) => extFetch(extUrl(def, la, lo, dmr ? def.url.replace("/el_dsm/", "/el/") : undefined))
+    .then((j) => { const v = dig(j, "features.0.properties.GRAY_INDEX"); return typeof v === "number" && v > 0 ? v : null; });
+  const kx = 111320 * Math.cos((lat * Math.PI) / 180), ky = 110540;
+  const AZ = Array.from({ length: 16 }, (_, i) => i * 22.5), DIST = [12, 25, 45, 80];
+  const pts: { az: number; d: number; la: number; lo: number }[] = [];
+  for (const az of AZ) for (const d of DIST) pts.push({ az, d, la: lat + (d * Math.cos((az * Math.PI) / 180)) / ky, lo: lng + (d * Math.sin((az * Math.PI) / 180)) / kx });
+  const ground = await gfi(lat, lng, true); const centerS = await gfi(lat, lng);
+  if (ground == null) return null;
+  const surf: (number | null)[] = new Array(pts.length).fill(null);
+  for (let i = 0; i < pts.length; i += 16) {
+    const part = await Promise.all(pts.slice(i, i + 16).map((p) => gfi(p.la, p.lo)));
+    part.forEach((v, j) => { surf[i + j] = v; });
+  }
+  const ring = pts.map((p, i) => ({ p, i })).filter(({ p }) => p.d === 25);
+  const ringGround = await Promise.all(ring.map(({ p }) => gfi(p.la, p.lo, true)));
+  const eye = ground + 1.5;   // okno prízemia / stred záhrady
+  const objAngle = AZ.map((az) => Math.max(0, ...pts.map((p, i) => ({ p, v: surf[i] })).filter(({ p }) => p.az === az).map(({ p, v }) => (v == null ? 0 : Math.max(0, (Math.atan2(v - eye, p.d) * 180) / Math.PI)))));
+  const hs = ring.map(({ i }, k) => (surf[i] != null && ringGround[k] != null ? (surf[i] as number) - (ringGround[k] as number) : null)).filter((h): h is number => h != null && h > 2).sort((a, b) => a - b);
+  const out: ShadeResult = { az: AZ, objAngle: objAngle.map((a) => Math.round(a * 10) / 10), heights: { n: hs.length, med: hs.length ? Math.round(hs[Math.floor(hs.length / 2)] * 10) / 10 : null, max: hs.length ? Math.round(hs[hs.length - 1] * 10) / 10 : null },
+    center: centerS != null ? Math.round((centerS - ground) * 10) / 10 : null, ground: Math.round(ground * 10) / 10, asOf: new Date().toISOString().slice(0, 10) };
+  if (surf.filter((v) => v != null).length >= pts.length / 2) await regCacheWrite(key, "shade", out).catch(() => {});
+  return out;
+}
+export const getShading = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), lat: z.number(), lng: z.number(), refresh: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; shade: ShadeResult | null }> => {
+    if (!(await requireUser(data.token))) return { ok: false, shade: null };
+    return { ok: true, shade: await shadingCore(data.lat, data.lng, !!data.refresh).catch(() => null) };
+  });
+
 /** Diagnostika dosiahnuteľnosti registrov zo siete Cloudflare (Mac skript s alert_secret). Verejné dáta, bez cache. */
 export const probeExt = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), lat: z.number(), lng: z.number() }))
@@ -8845,7 +8884,8 @@ export const buildClientShare = createServerFn({ method: "POST" })
       dev = { regName: reg.name ?? null, proxy: !regUp, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
     }
     const fin = await financeMarketCore().catch(() => null);
-    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null, broker: data.broker ?? null, notes: data.notes ?? null, hide: data.hide ?? null };
+    const shade = lat != null && lng != null ? await shadingCore(lat, lng).catch(() => null) : null;
+    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, shade, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null, broker: data.broker ?? null, notes: data.notes ?? null, hide: data.hide ?? null };
     const out = sanitizeShareSnapshot(JSON.parse(JSON.stringify(snap)) as Record<string, unknown>);
     if (out === "invalid" || out === "toolarge" || out === "phrase") return { ok: false, message: out === "toolarge" ? "List je príliš veľký." : out === "phrase" ? "Poznámka obsahuje zakázanú formuláciu." : "Neplatný obsah listu." };
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);

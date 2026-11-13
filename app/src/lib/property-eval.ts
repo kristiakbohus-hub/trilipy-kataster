@@ -1,7 +1,7 @@
 // LIST NEHNUTEĽNOSTI — vyhodnotenie (semafor, kontrolný zoznam „čo overiť pred kúpou", úplnosť). Čisté funkcie
 // nad dátami listu; rovnaké pre internú aj klientsku verziu. Zásada z kontraktu Property-360 §4: chýbajúci údaj
 // je NEZNÁMY stav, nikdy „v poriadku". Formulácie prechádzajú phrase-guardom v builde.
-import type { PropertyCore, LimitsResult, AvmResult } from "./api/kataster.functions";
+import type { PropertyCore, LimitsResult, AvmResult, ShadeResult } from "./api/kataster.functions";
 import type { FinInputs, FinMarket } from "./finance";
 
 export type ExtHit = { key: string; label: string; category: string; status: "ok" | "hit" | "none" | "error"; value: string | null; detail?: string | null; attribution: string; url?: string | null; risk?: boolean };
@@ -29,6 +29,8 @@ export type SheetData = {
   notes?: string | null;
   /** kapitoly vynechané v klientskej verzii */
   hide?: string[] | null;
+  /** tienenie z budov a stromov (DMP 1.0) — horizont objektov v 16 smeroch, výšky okolia */
+  shade?: ShadeResult | null;
   /** „teaser" = jednostránková ponuka */
   variant?: "teaser" | null;
 };

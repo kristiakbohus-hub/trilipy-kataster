@@ -9,7 +9,7 @@ import { qrMatrix } from "../lib/qr";
 import { financeOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, PurchaseSteps, RentalsTable, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock } from "./property-extra";
+import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, PurchaseSteps, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -251,7 +251,7 @@ function sunPath(lat: number, declDeg: number): [number, number][] {
   }
   return out.sort((a, b) => a[0] - b[0]);
 }
-function HorizonChart({ hor, lat }: { hor: unknown; lat: number | null }) {
+function HorizonChart({ hor, lat, shade }: { hor: unknown; lat: number | null; shade?: SheetData["shade"] }) {
   if (!Array.isArray(hor) || hor.length < 8 || lat == null) return null;
   const n = hor.length, step = 360 / n;
   const H = hor.map((v) => (typeof v === "number" ? v / 2 : 0));          // 0,5° jednotky → stupne
@@ -272,7 +272,8 @@ function HorizonChart({ hor, lat }: { hor: unknown; lat: number | null }) {
           <text x={X(mid[0])} y={Y(mid[1]) - 4} fontSize="9" textAnchor="middle" fill={col}>{label}</text></g>;
       })}
       <polygon points={[`${X(x0)},${Y(0)}`, ...horPts.map(([az, al]) => `${X(az).toFixed(1)},${Y(al).toFixed(1)}`), `${X(x1)},${Y(0)}`].join(" ")} fill="rgba(85,96,79,.35)" stroke="#55604f" />
-      <text x={W - 32} y={14} fontSize="9" textAnchor="end" fill="#555">sivá = terén (horizont), čiary = dráha slnka</text>
+      {shade ? <polyline points={Array.from({ length: 49 }, (_, k) => x0 + (k * (x1 - x0)) / 48).map((az) => `${X(az).toFixed(1)},${Y(objAt(shade, az)).toFixed(1)}`).join(" ")} fill="none" stroke="#333" strokeWidth="1.2" strokeDasharray="3 2" /> : null}
+      <text x={W - 32} y={14} fontSize="9" textAnchor="end" fill="#555">sivá = terén (horizont){shade ? ", prerušovaná = budovy a stromy" : ""}, čiary = dráha slnka</text>
     </svg>
   );
 }
@@ -808,9 +809,10 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
         {teren ? <FactsBlock grp="teren" data={teren} skip={["profil", "dom_bod"]} /> : <Muted>Terén pre parcelu zatiaľ nie je spočítaný.</Muted>}
         <TerrainProfile d={d} />
         {mk && fact(c, "slnko", mk) ? (<><Sub>Slnko</Sub>
-          <HorizonChart hor={fact(c, "slnko", mk)?.hor} lat={c.main.lat} />
+          <HorizonChart hor={fact(c, "slnko", mk)?.hor} lat={c.main.lat} shade={d.shade ?? null} />
           <FactsBlock grp="slnko" data={fact(c, "slnko", mk)} skip={["hor"]} />
-          <Sub>Slnko po mesiacoch</Sub><MonthlySun d={d} /></>) : null}
+          <Sub>Slnko po mesiacoch</Sub><MonthlySun d={d} />
+          {d.shade ? <><Sub>Okolité budovy a stromy (tienenie)</Sub><ShadeBlock d={d} /></> : null}</>) : null}
       </Sec>
 
       <Sec id="klima" n={num("klima")} explain={ex("klima")} {...asof("klima")} title="Klíma a stavebné normy" source={<>{c.factMeta.klima?.source ?? "NASA POWER, PVGIS (EÚ JRC)"}; normy STN EN (národné prílohy).</>}>

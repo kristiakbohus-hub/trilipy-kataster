@@ -6,7 +6,13 @@ import type { FinResult } from "../lib/finance";
 import { nf, eur, m2, date, dist, Muted, Sub, Grid, Table } from "./ps-ui";
 
 // ——— slnko po mesiacoch (21. deň mesiaca, horizont z terénu) ———
-function sunHours(lat: number, decl: number, hor: number[]): { day: number; sun: number } {
+/** Uhol prekážky (budovy, stromy) v danom azimute z tienenia DMP — lineárna interpolácia medzi 16 smermi. */
+export function objAt(shade: SheetData["shade"], az: number): number {
+  if (!shade || !shade.objAngle.length) return 0;
+  const n = shade.objAngle.length, step = 360 / n, i = Math.floor(((az % 360) + 360) % 360 / step), f = (((az % 360) + 360) % 360 - i * step) / step;
+  return shade.objAngle[i % n] * (1 - f) + shade.objAngle[(i + 1) % n] * f;
+}
+function sunHours(lat: number, decl: number, hor: number[], shade?: SheetData["shade"]): { day: number; sun: number } {
   const r = Math.PI / 180, f = lat * r, dl = decl * r; const n = hor.length, step = 360 / n;
   let day = 0, sun = 0;
   for (let h = -180; h < 180; h += 1) {          // krok 1° hodinového uhla = 4 minúty
@@ -15,7 +21,7 @@ function sunHours(lat: number, decl: number, hor: number[]): { day: number; sun:
     if (alt <= 0) continue;
     day += 4;
     const az = (Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(f) - Math.tan(dl) * Math.cos(f)) / r + 180 + 360) % 360;
-    const hz = (hor[Math.round(az / step) % n] ?? 0) / 2;
+    const hz = Math.max((hor[Math.round(az / step) % n] ?? 0) / 2, shade ? objAt(shade, az) : 0);
     if (alt > hz) sun += 4;
   }
   return { day: day / 60, sun: sun / 60 };
@@ -27,6 +33,7 @@ export function MonthlySun({ d }: { d: SheetData }) {
   const hor = Array.isArray(s?.hor) ? (s?.hor as number[]) : null; const lat = d.core.main.lat;
   if (!hor || hor.length < 8 || lat == null) return null;
   const rows = DECL.map((dc) => sunHours(lat, dc, hor));
+  const rowsObj = d.shade ? DECL.map((dc) => sunHours(lat, dc, hor, d.shade)) : null;
   const max = Math.max(...rows.map((x) => x.day));
   return (
     <div className="space-y-1">
@@ -34,12 +41,13 @@ export function MonthlySun({ d }: { d: SheetData }) {
         {rows.map((x, i) => (
           <div key={i} className="relative flex h-full flex-col justify-end" title={`${MES[i]}: ${nf(x.sun, 1)} h slnka z ${nf(x.day, 1)} h dňa`}>
             <span className="block w-full" style={{ height: `${(x.day / max) * 100}%`, background: "#e6e6e6" }} />
-            <span className="absolute bottom-0 block w-full" style={{ height: `${(x.sun / max) * 100}%`, background: "#c29434" }} />
+            <span className="absolute bottom-0 block w-full" style={{ height: `${(x.sun / max) * 100}%`, background: rowsObj ? "#e3c88d" : "#c29434" }} />
+            {rowsObj ? <span className="absolute bottom-0 block w-full" style={{ height: `${(rowsObj[i].sun / max) * 100}%`, background: "#c29434" }} /> : null}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-12 gap-1 text-center text-[10px] text-muted">{rows.map((x, i) => <span key={i}>{MES[i]}<br /><b className="font-medium text-fg/80">{nf(x.sun, 1)}</b></span>)}</div>
-      <Muted>Hodiny priameho slnka v strede pozemku 21. dňa každého mesiaca (žltá) z celkovej dĺžky dňa (sivá) — tieň okolitého terénu je započítaný, budovy a stromy nie.</Muted>
+      <div className="grid grid-cols-12 gap-1 text-center text-[10px] text-muted">{rows.map((x, i) => <span key={i}>{MES[i]}<br /><b className="font-medium text-fg/80">{nf(rowsObj ? rowsObj[i].sun : x.sun, 1)}</b></span>)}</div>
+      <Muted>Hodiny priameho slnka v strede pozemku 21. dňa každého mesiaca (sýta žltá){rowsObj ? " — s tieňom terénu aj okolitých budov a stromov (svetlá žltá = len terén)" : " — s tieňom terénu; budovy a stromy nie sú započítané"}; sivá = dĺžka dňa.</Muted>
     </div>
   );
 }
@@ -238,5 +246,19 @@ export function TrafficNoiseBlock({ d }: { d: SheetData }) {
         ["Orientačný hluk pri pozemku", <b key="l">~{t.lden} dB (Lden) — {t.level}</b>]]} />
       <Muted>Odhad bez protihlukových stien, budov a terénu medzi cestou a pozemkom. Svetová zdravotnícka organizácia odporúča pre cestnú dopravu menej ako 53 dB; vyhláška 549/2007 pripúšťa pri cestách v obytnom území 60 dB cez deň a 50 dB v noci. Presné hodnoty majú strategické hlukové mapy a meranie.</Muted>
     </>
+  );
+}
+
+// ——— okolité budovy a stromy (DMP 1.0) ———
+export function ShadeBlock({ d }: { d: SheetData }) {
+  const sh = d.shade; if (!sh) return null;
+  const worst = sh.az.map((az, i) => [az, sh.objAngle[i]] as [number, number]).filter(([az]) => az >= 90 && az <= 270).sort((a, b) => b[1] - a[1])[0];
+  const dir = (az: number) => ["S", "SSV", "SV", "VSV", "V", "VJV", "JV", "JJV", "J", "JJZ", "JZ", "ZJZ", "Z", "ZSZ", "SZ", "SSZ"][Math.round(az / 22.5) % 16];
+  return (
+    <Grid rows={[
+      ["Budovy a stromy do 25 m (výška nad terénom)", sh.heights.n ? `medián ${nf(sh.heights.med ?? 0, 1)} m, najvyššie ${nf(sh.heights.max ?? 0, 1)} m (${sh.heights.n} z 16 bodov)` : "bez vysokých objektov"],
+      ["V strede pozemku", sh.center != null && sh.center > 1.5 ? `objekt ~${nf(sh.center, 1)} m nad terénom` : "voľná plocha"],
+      ["Najvyššia prekážka na južnej strane", worst && worst[1] > 2 ? `${dir(worst[0])}: ${nf(worst[1], 0)}° nad obzorom` : "bez výraznej prekážky"],
+    ]} />
   );
 }

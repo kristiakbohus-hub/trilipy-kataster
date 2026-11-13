@@ -6,7 +6,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   esknIdentify, getDatasets, getLocalityMedian, getParcelAccessibility, getParcelLimits, getParcelZone, getPropertyCore,
-  getFinanceMarket, getPropertyExt, getUpDocs, type PropertyCore,
+  getFinanceMarket, getPropertyExt, getShading, getUpDocs, type PropertyCore,
 } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { useRole } from "../lib/role-context";
@@ -41,7 +41,7 @@ function PropertyPage() {
   const kind = s.byt ? "byt" : s.sc ? "stavba" : s.lv ? "lv" : s.p ? "parcela" : null;
   const ref = s.byt ?? s.sc ?? s.lv ?? s.p ?? null;
   const [core, setCore] = useState<PropertyCore | null>(null);
-  const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null, fin: null });
+  const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null, fin: null, shade: null });
   const [rawZone, setRawZone] = useState<Awaited<ReturnType<typeof getParcelZone>>>(null);
   const [ready, setReady] = useState(false);
   const [hash, setHash] = useState<string | null>(null);
@@ -67,6 +67,7 @@ function PropertyPage() {
       jobs.push(getParcelZone({ data: { datasetId: core.dataset!.id, lat, lng } }).then((z) => { setRawZone(z); patch({ zone: z as SheetData["zone"] }); }).catch(() => {}));
       jobs.push(esknIdentify({ data: { lat, lng } }).then((r) => patch({ avm: r.avm ?? null })).catch(() => {}));
       jobs.push(getPropertyExt({ data: { token, lat, lng, datasetId: core.dataset!.id } }).then((r) => patch({ ext: r.ok ? r.items : null })).catch(() => {}));
+      jobs.push(getShading({ data: { token, lat, lng } }).then((r) => patch({ shade: r.shade })).catch(() => {}));
     }
     jobs.push(getFinanceMarket({ data: { token } }).then((r) => patch({ fin: r.market })).catch(() => {}));
     jobs.push(getUpDocs({ data: { datasetId: core.dataset!.id } }).then((d) => patch({ upDocs: d.map((x) => ({ id: x.id, title: x.title, url: x.url, kind: x.kind })) })).catch(() => {}));
