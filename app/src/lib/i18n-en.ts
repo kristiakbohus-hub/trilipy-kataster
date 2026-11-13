@@ -8,7 +8,7 @@ export const EN_TITLES: Record<string, string> = {
   up: "Zoning plan and buildability", limity: "Constraints and risks", teren: "Terrain and sunlight", klima: "Climate and building codes", siete: "Utilities and energy",
   doprava: "Transport and amenities", hodnota: "Value", predikcia: "Value forecast", trh: "Market and demand", financovanie: "Financing and mortgage",
   naklady: "Purchase, ownership costs and taxes", poistenie: "Insurance and risks", investicia: "Yield and negotiation", obec: "Municipality and people",
-  praca: "Internal signals", postup: "Purchase process and deadlines", overit: "What to verify before purchase", zdroje: "Sources and completeness", poznamka: "Agent's note",
+  praca: "Internal signals", udaje: "Seller's information", povolenia: "Permits and timing", rozhodnutie: "Decision and scenarios", postup: "Purchase process and deadlines", overit: "What to verify before purchase", zdroje: "Sources and completeness", poznamka: "Agent's note",
 };
 export const EN_LIGHT: Record<string, string> = { pravo: "Legal status", pristup: "Access", limity: "Constraints and risks", up: "Zoning plan", siete: "Utilities", cena: "Price" };
 export const EN_WORD: Record<Light["state"], string> = { ok: "fine", warn: "attention", bad: "risk", unknown: "unknown" };

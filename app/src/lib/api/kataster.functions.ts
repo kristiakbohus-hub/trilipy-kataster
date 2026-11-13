@@ -8761,6 +8761,33 @@ export const probeExt = createServerFn({ method: "POST" })
     return { ok: true, items: await Promise.all(EXT_DEFS.map((d) => extRun(d, data.lat, data.lng))) };
   });
 
+// ——— ÚDAJE OD PREDÁVAJÚCEHO (2026-11-13) — energetický certifikát, povolenia, rekonštrukcie, vady, príslušenstvo,
+// byt: správca a fond opráv, pozemok: nájom. Kľúč = LV (celok) alebo byt. Bez osobných údajov (mená a kontakty sa neukladajú).
+export type Declaration = Record<string, string | number | boolean | null>;
+const DECL_KEYS = ["ec_trieda", "ec_typ", "ec_potreba_kwh", "ec_platnost", "ec_vynimka", "sp_rok", "kol_rok", "povolenia", "rekonstrukcie", "vady", "spory",
+  "prislusenstvo", "energie", "internet", "kurenie", "byt_spravca", "byt_fond_mes", "byt_zalohy_mes", "byt_opravy", "byt_dlhy", "poz_najom_do", "poz_najomca_typ",
+  "poz_pripojky", "poz_oplotenie", "poz_studna", "dovod_predaja", "uvolnenie", "poznamka"] as const;
+export const getDeclaration = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), subjectType: z.enum(["lv", "flat", "parcel_c", "parcel_e", "building"]), subjectRef: z.string().max(60) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; decl: string | null; updatedAt: string | null }> => {
+    if (!(await requireUser(data.token))) return { ok: false, decl: null, updatedAt: null };
+    const r = (await q<{ data_json: string; updated_at: string }>("SELECT data_json, updated_at FROM property_declarations WHERE dataset_id=? AND subject_type=? AND subject_ref=?", [data.datasetId, data.subjectType, data.subjectRef]).catch(() => []))[0];
+    return { ok: true, decl: r?.data_json ?? null, updatedAt: r?.updated_at ?? null };
+  });
+export const saveDeclaration = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), subjectType: z.enum(["lv", "flat", "parcel_c", "parcel_e", "building"]), subjectRef: z.string().max(60), decl: z.record(z.string(), z.union([z.string().max(1500), z.number(), z.boolean(), z.null()])) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u || !canExport(u.role as Role)) return { ok: false, message: "Bez oprávnenia." };
+    const clean: Declaration = {};
+    for (const k of DECL_KEYS) { const v = data.decl[k]; if (v !== undefined && v !== "" && v !== null) clean[k] = typeof v === "string" ? v.trim().slice(0, 1500) : v; }
+    if (Object.values(clean).some((v) => typeof v === "string" && phraseIssues([v]).length)) return { ok: false, message: "Text obsahuje zakázanú formuláciu (sľub alebo tvrdenie nad rámec údajov)." };
+    await q("INSERT INTO property_declarations (dataset_id, subject_type, subject_ref, data_json, updated_by, updated_at) VALUES (?,?,?,?,?,datetime('now')) ON CONFLICT(dataset_id, subject_type, subject_ref) DO UPDATE SET data_json=excluded.data_json, updated_by=excluded.updated_by, updated_at=excluded.updated_at",
+      [data.datasetId, data.subjectType, data.subjectRef, JSON.stringify(clean), u.name || u.email]);
+    await logAudit("property.declaration", u.role, `Údaje od predávajúceho ${data.subjectType} ${data.subjectRef}`, data.datasetId);
+    return { ok: true };
+  });
+
 /** Trhové údaje pre financie listu (ECB/Eurostat živo + verejné sadzby bánk z nočného zberu), cache 12 h. */
 export const getFinanceMarket = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string(), refresh: z.boolean().optional() }))
@@ -8787,6 +8814,8 @@ function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid
     snap.broker = br ? { name: cut(br.name, 80), firma: cut(br.firma, 80), phone: cut(br.phone, 40), email: cut(br.email, 80) } : null;
     snap.hide = Array.isArray(snap.hide) ? (snap.hide as unknown[]).filter((x): x is string => typeof x === "string" && /^[a-z]{2,20}$/.test(x)).slice(0, 30) : null;
     snap.client = cut(snap.client, 120) ?? null;
+    const dc = asObj(snap.decl);
+    snap.decl = dc ? Object.fromEntries(Object.entries(dc).filter(([k, v]) => (DECL_KEYS as readonly string[]).includes(k) && (typeof v === "string" || typeof v === "number" || typeof v === "boolean")).map(([k, v]) => [k, typeof v === "string" ? v.slice(0, 1500) : v])) : null;
     if (snap.variant !== "teaser") delete snap.variant;
     if (snap.lang !== "en") snap.lang = "sk";
     snap.photos = Array.isArray(snap.photos) ? (snap.photos as unknown[]).map((p) => asObj(p)).filter((p): p is Record<string, unknown> => !!p && typeof p.src === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(p.src) && (p.src as string).length < 400_000)
@@ -8886,9 +8915,10 @@ export const buildClientShare = createServerFn({ method: "POST" })
       const r = developmentCalc(areaC, reg, { ...DEV_DEFAULTS, predajEurM2: medPoz ?? DEV_DEFAULTS.predajEurM2 });
       dev = { regName: reg.name ?? null, proxy: !regUp, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
     }
+    const declRow = (await q<{ data_json: string }>("SELECT data_json FROM property_declarations WHERE dataset_id=? AND subject_type=? AND subject_ref=?", [core.dataset.id, core.kind === "byt" ? "flat" : "lv", core.kind === "byt" ? (core.main.flat ?? "") : String(core.main.lvNo ?? core.lvs[0] ?? "")]).catch(() => []))[0];
     const fin = await financeMarketCore().catch(() => null);
     const shade = lat != null && lng != null ? await shadingCore(lat, lng).catch(() => null) : null;
-    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, shade, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null, broker: data.broker ?? null, notes: data.notes ?? null, hide: data.hide ?? null, lang: data.lang ?? "sk" };
+    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, shade, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null, decl: declRow ? (JSON.parse(declRow.data_json) as Declaration) : null, broker: data.broker ?? null, notes: data.notes ?? null, hide: data.hide ?? null, lang: data.lang ?? "sk" };
     const out = sanitizeShareSnapshot(JSON.parse(JSON.stringify(snap)) as Record<string, unknown>);
     if (out === "invalid" || out === "toolarge" || out === "phrase") return { ok: false, message: out === "toolarge" ? "List je príliš veľký." : out === "phrase" ? "Poznámka obsahuje zakázanú formuláciu." : "Neplatný obsah listu." };
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);

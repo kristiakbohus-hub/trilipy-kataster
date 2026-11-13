@@ -8,7 +8,7 @@ import { zoneOf, type SheetData } from "../lib/property-eval";
 import { phraseIssues } from "../lib/phrases";
 import { loadPhotos } from "../lib/photos";
 
-const CHAPTERS: [string, string][] = [["vlastnictvo", "Vlastníctvo"], ["pravo", "Právny stav"], ["historia", "Časová os"], ["limity", "Limity a riziká"], ["teren", "Terén a slnko"], ["klima", "Klíma a normy"],
+const CHAPTERS: [string, string][] = [["udaje", "Od predávajúceho"], ["povolenia", "Povolenia"], ["rozhodnutie", "Rozhodnutie (pre kupujúceho)"], ["vlastnictvo", "Vlastníctvo"], ["pravo", "Právny stav"], ["historia", "Časová os"], ["limity", "Limity a riziká"], ["teren", "Terén a slnko"], ["klima", "Klíma a normy"],
   ["siete", "Siete"], ["doprava", "Doprava"], ["hodnota", "Hodnota"], ["predikcia", "Predikcia"], ["trh", "Trh"], ["financovanie", "Hypotéka"], ["naklady", "Náklady a dane"],
   ["poistenie", "Poistenie"], ["investicia", "Výnos a vyjednávanie"], ["obec", "Obec"], ["postup", "Postup kúpy"]];
 type Broker = { name?: string; firma?: string; phone?: string; email?: string };
@@ -24,6 +24,8 @@ export function shareChecks(sheet: SheetData, notes: string): { warn: string[]; 
   if (!sheet.fin) warn.push("trhové sadzby sa nenačítali — hypotéka použije predvolenú sadzbu");
   if (!sheet.ext) warn.push("úradné registre (geológia, voda, príroda) sa ešte nenačítali");
   if (c.legal.some((l) => !l.hasData)) warn.push("časť B/C niektorého LV nemáme");
+  if ((c.buildings.length || c.kind === "byt") && !sheet.decl?.ec_trieda) warn.push("chýba trieda energetického certifikátu — pri predaji budovy alebo bytu musí byť v inzeráte (zákon 555/2005)");
+  if ((sheet.photos?.length ?? 0) < 4) warn.push("menej ako 4 fotky — kvalitné fotografie (ideálne 20+ v online galérii) zvyšujú šancu predaja");
   const block = phraseIssues([notes]).map((i) => `poznámka: „${i.sample}“ — ${i.claim} (použite: ${i.use})`);
   return { warn, block };
 }
@@ -40,7 +42,7 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
   const [client, setClient] = useState("");
   const [notes, setNotes] = useState("");
   const [broker, setBroker] = useState<Broker>({});
-  const [hide, setHide] = useState<string[]>([]);
+  const [hide, setHide] = useState<string[]>(["rozhodnutie"]);   // verdikt kúpiť/nekúpiť je pre kupujúceho — pri predajnom dokumente predvolene vynechaný
   const [days, setDays] = useState(30);
   const [withPhotos, setWithPhotos] = useState(true);
   const [lang, setLang] = useState<"sk" | "en">("sk");

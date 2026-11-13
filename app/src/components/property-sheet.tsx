@@ -7,6 +7,8 @@ import { FACT_GROUP_LABEL, FACT_SCHEMA, type FactField } from "../lib/facts-sche
 import { nf, eur, m2, dist, prettyZone, date, Sec, Muted, Sub, Grid, Table, HideCtx, LangCtx } from "./ps-ui";
 import { EN_LIGHT, EN_TITLES, EN_UI, EN_WORD, enExplain, enFindings } from "../lib/i18n-en";
 import { qrMatrix } from "../lib/qr";
+import { DecisionBody, PermitsBody, SettlementBlock } from "./property-decision";
+import { DeclarationBlock } from "./property-decl";
 import { financeOf, hedonicOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
@@ -155,6 +157,18 @@ export function ParcelSketch({ d, labels = "all" }: { d: SheetData; labels?: "al
           stroke="#fff" strokeWidth={isMain(p.parcel_no, p.register) ? 3 : 1.1} strokeDasharray={isMain(p.parcel_no, p.register) ? undefined : "4 2"}
           style={{ filter: isMain(p.parcel_no, p.register) ? "drop-shadow(0 0 1.5px rgba(0,0,0,.9))" : undefined }} />
       )))}
+      {(() => {
+        // vzorový dom 12 × 10 m na najrovnejšom mieste (DMR 5.0, odstup 2 m), len pri pozemku bez stavby
+        if (d.core.buildings.length) return null;
+        const t = fact(d.core, "teren", mainKey(d.core) ?? ""); const bod = Array.isArray(t?.dom_bod) ? (t?.dom_bod as number[]) : null;
+        if (!bod || bod.length < 2) return null;
+        const az = typeof t?.profil_az === "number" ? ((t.profil_az as number) * Math.PI) / 180 : 0;
+        const ux = Math.sin(az), uy = Math.cos(az), vx = Math.cos(az), vy = -Math.sin(az);
+        const corner = (a: number, b: number): [number, number] => [bod[1] + (a * ux + b * vx) / kx, bod[0] + (a * uy + b * vy) / ky];
+        const pts = [corner(-6, -5), corner(6, -5), corner(6, 5), corner(-6, 5)].map(P).join(" ");
+        const [cx, cy] = P(corner(0, 0)).split(",").map(Number);
+        return <g><polygon points={pts} fill="rgba(194,148,52,.55)" stroke="#fff" strokeWidth="1.2" /><text x={cx} y={cy - 12} fontSize="9.5" textAnchor="middle" fill="#fff" stroke="#222" strokeWidth="0.3">vzorový dom 12 × 10 m</text></g>;
+      })()}
       {ps.length <= 30 ? ps.filter((p) => labels === "all" || isMain(p.parcel_no, p.register)).map((p) => {
         const r = ringsOf(p.geometry_json)[0]; if (!r) return null;
         const cx = r.reduce((s, c) => s + c[0], 0) / r.length, cy = r.reduce((s, c) => s + c[1], 0) / r.length;
@@ -611,7 +625,7 @@ function printCss(title: string, en = false): string {
 }
 
 // ——— hlavný komponent ———
-export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode }; onFinInputs?: (p: Partial<FinInputs>) => void }) {
+export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode; declForm?: ReactNode }; onFinInputs?: (p: Partial<FinInputs>) => void }) {
   const c = d.core;
   const [finIn, setFinIn] = useState<Partial<FinInputs>>(d.finInputs ?? {});
   const fin = useMemo(() => { try { return financeOf(d, d.fin ?? null, finIn); } catch { return null; } }, [d, finIn]);
@@ -640,15 +654,15 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
   const mainParcel = c.parcels.find((p) => p.parcel_no === c.main.parcelNo && p.register === c.main.register) ?? c.parcels[0];
   const totalArea = c.parcels.reduce((s, p) => s + (p.area_m2 ?? 0), 0);
   const flatsByLv = Object.entries(c.facts.byty ?? {}).filter(([k]) => k.startsWith("flat:"));
-  const nav: [string, string][] = [["prehlad", "Prehľad"], ["skladba", "Skladba"], ["vlastnictvo", "Vlastníctvo"], ["pravo", "Právny stav"], ["historia", "Časová os"], ["pristup", "Prístup"],
-    ["up", "ÚP"], ["limity", "Limity"], ["teren", "Terén a slnko"], ["klima", "Klíma"], ["siete", "Siete"], ["doprava", "Doprava"], ["hodnota", "Hodnota"], ["predikcia", "Predikcia"],
-    ["trh", "Trh"], ["financovanie", "Hypotéka"], ["naklady", "Náklady a dane"], ["poistenie", "Poistenie a riziká"], ["investicia", "Výnos a vyjednávanie"], ["obec", "Obec"], ...(isClient ? [] : [["praca", "Práca"] as [string, string]]), ["postup", "Postup kúpy"], ["overit", "Čo overiť"], ["zdroje", "Zdroje"]];
+  const nav: [string, string][] = [["prehlad", "Prehľad"], ["skladba", "Skladba"], ["udaje", "Od predávajúceho"], ["vlastnictvo", "Vlastníctvo"], ["pravo", "Právny stav"], ["historia", "Časová os"], ["pristup", "Prístup"],
+    ["up", "ÚP"], ["povolenia", "Povolenia"], ["limity", "Limity"], ["teren", "Terén a slnko"], ["klima", "Klíma"], ["siete", "Siete"], ["doprava", "Doprava"], ["hodnota", "Hodnota"], ["predikcia", "Predikcia"],
+    ["trh", "Trh"], ["financovanie", "Hypotéka"], ["naklady", "Náklady a dane"], ["poistenie", "Poistenie a riziká"], ["investicia", "Výnos a vyjednávanie"], ["rozhodnutie", "Rozhodnutie"], ["obec", "Obec"], ...(isClient ? [] : [["praca", "Práca"] as [string, string]]), ["postup", "Postup kúpy"], ["overit", "Čo overiť"], ["zdroje", "Zdroje"]];
 
   const hideSet = useMemo(() => new Set(isClient ? d.hide ?? [] : []), [d.hide, isClient]);
   const navF = nav.filter(([id]) => !hideSet.has(id));
   const navIds = navF.map(([id]) => id);
   const num = (id: string) => String(navIds.indexOf(id) + 1).padStart(2, "0");
-  const toc = navF.map(([id, label]) => [num(id), en ? EN_TITLES[id] ?? label : ({ prehlad: "Prehľad", skladba: "Skladba nehnuteľnosti", vlastnictvo: "Vlastníctvo", pravo: "Právny stav", historia: "Časová os nehnuteľnosti", postup: "Postup kúpy a lehoty", pristup: "Prístup a susedia",
+  const toc = navF.map(([id, label]) => [num(id), en ? EN_TITLES[id] ?? label : ({ prehlad: "Prehľad", skladba: "Skladba nehnuteľnosti", vlastnictvo: "Vlastníctvo", pravo: "Právny stav", udaje: "Údaje od predávajúceho", povolenia: "Povolenia a čas", rozhodnutie: "Rozhodnutie a scenáre využitia", historia: "Časová os nehnuteľnosti", postup: "Postup kúpy a lehoty", pristup: "Prístup a susedia",
     up: "Územný plán a zastavateľnosť", limity: "Limity a riziká", teren: "Terén a slnko", klima: "Klíma a stavebné normy", siete: "Siete a energie", doprava: "Doprava a vybavenosť",
     hodnota: "Hodnota", predikcia: "Predikcia hodnoty", trh: "Trh a dopyt", financovanie: "Financovanie a hypotéka", naklady: "Náklady kúpy, vlastníctva a dane", poistenie: "Poistenie a riziká", investicia: "Výnos a vyjednávanie", obec: "Obec a ľudia", praca: "Signály a práca (interné)", overit: "Čo overiť pred kúpou", zdroje: "Zdroje a úplnosť" } as Record<string, string>)[id] ?? label] as [string, string]);
 
@@ -724,6 +738,11 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
           : mainParcel?.bpej ? <Grid rows={[["BPEJ", mainParcel.bpej], ["Skupina kvality", mainParcel.bpej_skupina != null ? String(mainParcel.bpej_skupina) : "—"], ["Odvod za vyňatie (odhad)", mainParcel.odnatie_eur != null ? eur(mainParcel.odnatie_eur) : "—"]]} /> : null}
       </Sec>
 
+      <Sec id="udaje" n={num("udaje")} explain={en ? [] : ["Informácie, ktoré pozná len predávajúci: energetický certifikát (jeho trieda musí byť v inzeráte), povolenia a kolaudácia, rekonštrukcie, známe vady, čo zostáva v cene a pri byte fond opráv. Kupujúcemu šetria čas a predchádzajú sporom."]} title={tt("udaje", "Údaje od predávajúceho")} source="Vyhlásenie predávajúceho (zadané maklérom); energetický certifikát podľa zákona 555/2005 Z. z.">
+        <DeclarationBlock d={d} />
+        {!isClient ? internal?.declForm : null}
+      </Sec>
+
       <Sec id="vlastnictvo" n={num("vlastnictvo")} explain={ex("vlastnictvo")} {...asof("vlastnictvo")} title={tt("vlastnictvo", "Vlastníctvo")} source={<>Časť B LV (ÚGKK SR); nadobudnutia z titulov; finančné údaje firiem z RÚZ.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}</>}>
         {c.owners.perLv.map((l) => {
           const agg = fact(c, "vlastnici", `lv:${l.lvNo}`);
@@ -739,6 +758,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
             </div>
           );
         })}
+        <SettlementBlock d={d} />
         {c.acquisitions.length ? (<><Sub>Ako a kedy nadobudli</Sub>
           <Table head={["LV", "Spôsob", "Zápisov", "Rok (od – do)"]} rows={c.acquisitions.map((a) => [a.lvNo, ({ inheritance: "dedičstvo", sale: "kúpa", gift: "darovanie", execution: "exekúcia / dražba" } as Record<string, string>)[a.kind] ?? a.kind, a.n, a.firstYear === a.lastYear ? a.firstYear ?? "—" : `${a.firstYear ?? "?"} – ${a.lastYear ?? "?"}`])} /></>) : null}
         {c.legalYears.length ? <Grid rows={c.legalYears.flatMap((y) => [
@@ -800,6 +820,10 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
           <ul className="text-xs">{[...c.obec.upChanges.map((x) => ({ ...x, relevance: "up" })), ...c.obec.changes].slice(0, 8).map((x, i) => (
             <li key={i} className="border-b border-line/40 py-0.5">{date(x.detected_at)} · {x.url ? <a href={x.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{x.title ?? "oznámenie"}</a> : x.title ?? "oznámenie"}{x.change ? <span className="text-muted"> · {x.change}</span> : null}</li>
           ))}</ul></>) : null}
+      </Sec>
+
+      <Sec id="povolenia" n={num("povolenia")} explain={en ? [] : ["Čo bude treba pred stavbou: štúdie a vyjadrenia podľa toho, čo sme našli pri pozemku, a koľko to orientačne potrvá podľa nového stavebného zákona."]} title={tt("povolenia", "Povolenia a čas")} source="Stavebný zákon 25/2025 Z. z. v znení novely 243/2026 Z. z.; náklady a lehoty štúdií — odhad z praxe.">
+        <PermitsBody d={d} />
       </Sec>
 
       <Sec id="limity" n={num("limity")} explain={ex("limity")} {...asof("limity")} title={tt("limity", "Limity a riziká")} source={<>Úradné registre: {[...new Set([...(d.limits?.items ?? []).map((h) => h.attribution), ...(d.ext ?? []).map((e) => e.attribution)])].join(", ") || "—"}. Bez prieniku = v použitej vrstve a dostupnom pokrytí sa nič nenašlo.</>}>
@@ -929,6 +953,10 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
 
       <Sec id="investicia" n={num("investicia")} explain={ex("investicia")} {...asof("investicia")} title={tt("investicia", "Výnos a vyjednávanie")} source="Nájmy a ponuky z verejnej inzercie (denný zber), náklady z tohto listu, regulatív ÚP a náklady výstavby; dane zjednodušene. Nie investičné poradenstvo.">
         {fin ? <InvestBody fin={fin} d={d} /> : <Muted>—</Muted>}
+      </Sec>
+
+      <Sec id="rozhodnutie" n={num("rozhodnutie")} explain={en ? [] : ["Zhrnutie pre rozhodnutie: čo bráni kúpe, aké využitie dáva najvyššiu hodnotu a koľko najviac sa oplatí zaplatiť. Scenáre ukazujú hodnotu pozemku dnes pri rôznom využití."]} title={tt("rozhodnutie", "Rozhodnutie a scenáre využitia")} source="Výpočty z údajov listu (porovnateľné predaje, regulatív ÚP, náklady a ceny — parametre upraviteľné); Monte Carlo 2 000 simulácií. Modelový výpočet, nie investičné poradenstvo.">
+        <DecisionBody d={d} fin={fin} isClient={isClient} />
       </Sec>
 
       <Sec id="obec" n={num("obec")} explain={ex("obec")} {...asof("obec")} title={tt("obec", "Obec a ľudia")} source={<>{c.factMeta.obec?.source ?? "Štatistický úrad SR, ÚPSVR, MV SR"}.</>}>

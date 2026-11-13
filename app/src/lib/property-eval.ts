@@ -35,6 +35,8 @@ export type SheetData = {
   photos?: { name: string; src: string }[] | null;
   /** jazyk klientskej verzie (en = anglická titulka, zhrnutie, kapitoly a vysvetlenia) */
   lang?: "sk" | "en" | null;
+  /** údaje od predávajúceho (energetický certifikát, povolenia, rekonštrukcie, vady, byt, pozemok) */
+  decl?: Record<string, string | number | boolean | null> | null;
   /** „teaser" = jednostránková ponuka */
   variant?: "teaser" | null;
 };

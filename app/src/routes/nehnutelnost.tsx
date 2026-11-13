@@ -6,7 +6,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   esknIdentify, getDatasets, getLocalityMedian, getParcelAccessibility, getParcelLimits, getParcelZone, getPropertyCore,
-  getFinanceMarket, getPropertyExt, getShading, getUpDocs, type PropertyCore,
+  getDeclaration, getFinanceMarket, getPropertyExt, getShading, getUpDocs, type PropertyCore,
 } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { useRole } from "../lib/role-context";
@@ -20,6 +20,7 @@ import { PropertyShareBox } from "../components/property-share";
 import type { SheetData } from "../lib/property-eval";
 import type { FinInputs } from "../lib/finance";
 import { loadPhotos } from "../lib/photos";
+import { DeclarationForm } from "../components/property-decl";
 
 type Search = { ds?: string; p?: string; reg?: "C" | "E"; lv?: string; sc?: string; byt?: string };
 export const Route = createFileRoute("/nehnutelnost")({
@@ -42,7 +43,7 @@ function PropertyPage() {
   const kind = s.byt ? "byt" : s.sc ? "stavba" : s.lv ? "lv" : s.p ? "parcela" : null;
   const ref = s.byt ?? s.sc ?? s.lv ?? s.p ?? null;
   const [core, setCore] = useState<PropertyCore | null>(null);
-  const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null, fin: null, shade: null, photos: null });
+  const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null, fin: null, shade: null, photos: null, decl: null });
   const [rawZone, setRawZone] = useState<Awaited<ReturnType<typeof getParcelZone>>>(null);
   const [ready, setReady] = useState(false);
   const [hash, setHash] = useState<string | null>(null);
@@ -70,6 +71,8 @@ function PropertyPage() {
       jobs.push(getPropertyExt({ data: { token, lat, lng, datasetId: core.dataset!.id } }).then((r) => patch({ ext: r.ok ? r.items : null })).catch(() => {}));
       jobs.push(getShading({ data: { token, lat, lng } }).then((r) => patch({ shade: r.shade })).catch(() => {}));
     }
+    jobs.push(getDeclaration({ data: { token, datasetId: core.dataset!.id, subjectType: core.kind === "byt" ? "flat" : "lv", subjectRef: core.kind === "byt" ? core.main.flat ?? "" : String(core.main.lvNo ?? core.lvs[0] ?? "") } })
+      .then((r) => { if (r.decl) { try { patch({ decl: JSON.parse(r.decl) as Record<string, string | number | boolean | null> }); } catch { /* */ } } }).catch(() => {}));
     jobs.push(loadPhotos(core.dataset!.id, core.main.lvNo ?? core.lvs[0] ?? null).then((photos) => patch({ photos })).catch(() => {}));
     jobs.push(getFinanceMarket({ data: { token } }).then((r) => patch({ fin: r.market })).catch(() => {}));
     jobs.push(getUpDocs({ data: { datasetId: core.dataset!.id } }).then((d) => patch({ upDocs: d.map((x) => ({ id: x.id, title: x.title, url: x.url, kind: x.kind })) })).catch(() => {}));
@@ -135,6 +138,7 @@ function PropertyPage() {
             <div className="w-full"><PropertyShareBox sheet={{ ...sheet, finInputs: finIn }} ready={ready} /></div>
           </div>
         ),
+        declForm: <DeclarationForm d={sheet} token={token} onSaved={(decl) => setEnv((e) => ({ ...e, decl }))} />,
         buyers: mainC ? <BuyersSection datasetId={core.dataset!.id} parcelNo={mainC} token={token} kuName={(core.dataset?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "") || null} areaM2={core.parcels.reduce((t, x) => t + (x.area_m2 ?? 0), 0) || null} /> : null,
         work: lv != null ? (
           <div className="no-print space-y-3">

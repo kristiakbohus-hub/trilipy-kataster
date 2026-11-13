@@ -212,6 +212,7 @@ export function PurchaseSteps({ d, fin }: { d: SheetData; fin: FinResult | null 
   if (fin?.mortgage && fin.inputs.ltv > 0) steps.push(["Financovanie", "žiadosť o úver, znalecký posudok, schválenie bankou, úverová a záložná zmluva", "2–5 týždňov"]);
   steps.push(["Zmluvy", "rezervačná alebo zmluva o budúcej zmluve, kúpna zmluva, úschova kúpnej ceny (notár / advokát / banka)", "1–2 týždne"]);
   steps.push(["Vklad do katastra", `návrh na vklad (${fin ? "50 € elektronicky" : "poplatok podľa sadzobníka"}); kataster rozhodne do 30 dní, v zrýchlenom konaní do 15 dní`, "15–30 dní"]);
+  steps.push(["Zmluva a nový Občiansky zákonník", "zmluvy uzavreté pred 1. 7. 2027 sa riadia doterajším Občianskym zákonníkom; od 1. 7. 2027 platí nový (jednotná 3-ročná premlčacia lehota, zmeny v dedení) — pri dlhších zmluvách o budúcej zmluve to zohľadniť", "—"]);
   steps.push(["Po kúpe", "uvoľnenie peňazí z úschovy, priznanie k dani z nehnuteľností do 31. januára nasledujúceho roka, prepis energií, poistenie", "do 30 dní / 31. 1."]);
   return <Table head={["Krok", "Čo treba urobiť", "Lehota"]} rows={steps.map((s, i) => [<b key="k" className="font-medium">{String(i + 1).padStart(2, "0")} {s[0]}</b>, s[1], s[2]])} />;
 }
