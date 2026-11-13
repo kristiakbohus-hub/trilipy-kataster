@@ -8,7 +8,7 @@ import { nf, eur, m2, dist, prettyZone, date, Sec, Muted, Sub, Grid, Table } fro
 import { financeOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
+import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
 const LEGAL_LABEL: Record<string, string> = {
@@ -390,6 +390,7 @@ function PrintCover({ d, lights, isClient, fin }: { d: SheetData; lights: Light[
       <div className="ps-cover-titles">
         <div className="ps-eyebrow">{(c.dataset?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "k. ú. ")}{c.dataset?.okres ? ` · okres ${c.dataset.okres}` : ""}</div>
         <h1 className="ps-cover-title">{c.title}</h1>
+        {addressOf(c)?.adresa ? <p className="ps-cover-addr">{String(addressOf(c)?.adresa)}{addressOf(c)?.presna === false ? " (najbližšia adresa)" : ""}</p> : null}
         {c.celokNote ? <p className="ps-cover-note">{c.celokNote}</p> : null}
       </div>
       <div className="ps-cover-map"><ParcelSketch d={d} labels="main" /></div>
@@ -468,6 +469,7 @@ function printCss(title: string): string {
   .ps-cover-doc .ps-eyebrow { color: #333; margin-bottom: 1mm; }
   .ps-cover-titles { margin-top: 15mm; padding-top: 6mm; border-top: .7pt solid #333; }
   .ps-cover-title { font-family: "Josefin Sans", sans-serif !important; text-transform: uppercase; letter-spacing: .07em; font-weight: 600; font-size: 25pt !important; line-height: 1.12; margin: 3mm 0 0; color: #2b2b2b; text-wrap: balance; }
+  .ps-cover-addr { margin-top: 2mm; font-family: "Josefin Sans", sans-serif; letter-spacing: .08em; font-size: 9.5pt !important; color: #4a4a4a; }
   .ps-cover-note { margin-top: 2.5mm; color: #6f6f6f; font-size: 8pt !important; max-width: 150mm; }
   .ps-cover-map { margin-top: 7mm; }
   .ps-cover-map svg { border: none !important; border-radius: 0 !important; width: 100%; height: auto; }
@@ -598,6 +600,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
         <div className="ps-screen-only"><ParcelSketch d={d} /></div>
         {c.main.lat != null && c.main.lng != null ? <HistoricMap lat={c.main.lat} lng={c.main.lng} /> : null}
         <Grid rows={[
+          ["Adresa", addressOf(c)?.adresa ? `${String(addressOf(c)?.adresa)}${addressOf(c)?.presna === false ? ` (najbližšia adresa, ${String(addressOf(c)?.vzdialenost_m ?? "?")} m)` : ""}` : "—"],
           ["Katastrálne územie", c.dataset?.ku_name ?? "—"], ["Okres", c.dataset?.okres ?? "—"],
           ["Počet parciel", String(c.parcels.length)], ["Výmera spolu", m2(totalArea)],
           ["Stavby", c.buildings.length ? String(c.buildings.length) : "—"], ["List(y) vlastníctva", c.lvs.join(", ") || "—"],
@@ -752,6 +755,8 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
           <Sub>Prístupová cesta</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_ROAD} />
           <Sub>Vybavenosť (vzdušnou čiarou)</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_AMEN} />
         </>) : null}
+        {addressOf(c)?.skola_zs ? (<><Sub>Spádová základná škola</Sub><Grid rows={[["Škola podľa školského obvodu", `${String(addressOf(c)?.skola_zs)}${addressOf(c)?.skola_zs_adresa ? ` — ${String(addressOf(c)?.skola_zs_adresa)}` : ""}`],
+          ["Ďalšie školy v obvode ulice", Array.isArray(addressOf(c)?.skola_zs_ine) ? (addressOf(c)?.skola_zs_ine as string[]).join(", ") : "—"], ["Poznámka", String(addressOf(c)?.skola_pozn ?? "—")], ["Podľa", String(addressOf(c)?.skola_vzn ?? "—")]]} /></>) : null}
         {!d.access && !(mk && fact(c, "osm", mk)) ? <Muted>Dostupnosť sa nepodarilo načítať.</Muted> : null}
         {c.main.lat != null && c.main.lng != null ? (
           <p className="text-xs text-muted">Hodnotenie škôl v okolí: <a href={`https://skoly.ineko.sk/prehlad?typ_id=ZS&max_vzdialenost=10&center_x=${c.main.lng}&center_y=${c.main.lat}`} target="_blank" rel="noopener noreferrer" className="text-brand underline">INEKO (ZŠ do 10 km)</a>
@@ -811,6 +816,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
 
       <Sec id="naklady" n={num("naklady")} explain={ex("naklady")} {...asof("naklady")} title="Náklady kúpy, vlastníctva a dane" source="Zákon 145/1995 (vklad), zákon 582/2004 a VZN obce (daň z nehnuteľností, odpad), zákon 595/2003 (daň z príjmov), zákon 222/2004 (DPH); cenníky služieb a správcov sietí — orientačne.">
         {fin ? <CostsBody fin={fin} /> : <Muted>—</Muted>}
+        {fact(c, "vzn", kuKey) ? (<><Sub>Sadzby obce (VZN)</Sub><FactsBlock grp="vzn" data={fact(c, "vzn", kuKey)} skip={["obec"]} />{fact(c, "vzn", kuKey)?.overene === false ? <Muted>Platné znenie VZN sme nevedeli overiť (na webe obce je návrh alebo staršie znenie) — sadzby over na obecnom úrade.</Muted> : null}</>) : <Muted>Sadzby dane a poplatku za odpad z VZN obce zatiaľ nemáme.</Muted>}
       </Sec>
 
       <Sec id="poistenie" n={num("poistenie")} explain={ex("poistenie")} {...asof("poistenie")} title="Poistenie a riziká" source="Riziká z úradných registrov v tomto liste (záplavy, zosuvy, radón, seizmicita STN EN 1998, kriminalita MV SR, hasiči OSM); náklady obnovy stavby a sadzby poistného — modelový odhad.">

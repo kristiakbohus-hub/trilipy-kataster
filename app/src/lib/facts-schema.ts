@@ -3,6 +3,68 @@
 // Keď kľúč v schéme chýba, list ho zobrazí s ľudsky upraveným názvom kľúča (nič sa nestratí).
 export type FactField = { label: string; unit?: string | null; kind?: string; note?: string };
 export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
+  "adresa": {
+    "adresa": {
+      "label": "Adresa",
+      "kind": "text",
+      "note": "Register adries MV SR; pri pozemku bez stavby najbližší adresný bod do 80 m"
+    },
+    "ulica": {
+      "label": "Ulica",
+      "kind": "text"
+    },
+    "supisne": {
+      "label": "Súpisné číslo",
+      "kind": "text"
+    },
+    "orientacne": {
+      "label": "Orientačné číslo",
+      "kind": "text"
+    },
+    "psc": {
+      "label": "PSČ",
+      "kind": "text"
+    },
+    "cast_obce": {
+      "label": "Časť obce",
+      "kind": "text"
+    },
+    "presna": {
+      "label": "Adresa stavby (presná)",
+      "kind": "bool",
+      "note": "áno = adresa stavby na parcele; nie = najbližšia adresa v okolí"
+    },
+    "vzdialenost_m": {
+      "label": "Vzdialenosť k adrese",
+      "unit": "m",
+      "kind": "num"
+    },
+    "vchody": {
+      "label": "Vchody (orientačné čísla)",
+      "kind": "list"
+    },
+    "skola_zs": {
+      "label": "Spádová základná škola",
+      "kind": "text",
+      "note": "podľa VZN obce o školských obvodoch"
+    },
+    "skola_zs_adresa": {
+      "label": "Adresa spádovej ZŠ",
+      "kind": "text"
+    },
+    "skola_zs_ine": {
+      "label": "Ďalšie ZŠ v obvode ulice",
+      "kind": "list"
+    },
+    "skola_pozn": {
+      "label": "Poznámka k obvodu",
+      "kind": "text"
+    },
+    "skola_vzn": {
+      "label": "VZN o školských obvodoch",
+      "kind": "text"
+    }
+  },
   "bpej": {
     "kod": {
       "label": "Kód BPEJ",
@@ -2401,11 +2463,83 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "kind": "list",
       "note": "[{druh: dedičstvo | kúpa | darovanie | exekúcia/dražba | ROEP | zámena | reštitúcia/navrátenie | pozemkové úpravy | vyporiadanie BSM… | iné, n: počet vlastníkov, rok: najnovší rok}]"
     }
+  },
+  "vzn": {
+    "obec": {
+      "label": "Obec",
+      "kind": "text"
+    },
+    "overene": {
+      "label": "Overené z platného VZN",
+      "kind": "bool"
+    },
+    "dan": {
+      "label": "Daň z nehnuteľností (VZN)"
+    },
+    "vzn": {
+      "label": "VZN",
+      "kind": "text"
+    },
+    "ucinnost": {
+      "label": "Účinnosť",
+      "kind": "date"
+    },
+    "url": {
+      "label": "Dokument",
+      "kind": "url"
+    },
+    "pozemky_pct": {
+      "label": "Sadzby dane z pozemkov",
+      "unit": "%",
+      "kind": "obj"
+    },
+    "hodnota_pozemku_eur_m2": {
+      "label": "Hodnota pozemku podľa VZN",
+      "unit": "€/m²",
+      "kind": "obj"
+    },
+    "stavby_eur_m2": {
+      "label": "Sadzby dane zo stavieb",
+      "unit": "€/m²",
+      "kind": "obj"
+    },
+    "priplatok_podlazie_eur_m2": {
+      "label": "Príplatok za podlažie",
+      "unit": "€/m²",
+      "kind": "num"
+    },
+    "byty_eur_m2": {
+      "label": "Daň z bytov",
+      "unit": "€/m²",
+      "kind": "num"
+    },
+    "nebytove_eur_m2": {
+      "label": "Daň z nebytových priestorov",
+      "unit": "€/m²",
+      "kind": "num"
+    },
+    "poznamky": {
+      "label": "Poznámky",
+      "kind": "text"
+    },
+    "odpad": {
+      "label": "Poplatok za odpad (VZN)"
+    },
+    "eur_osoba_rok": {
+      "label": "Poplatok na osobu",
+      "unit": "€/rok",
+      "kind": "num"
+    },
+    "chata_eur_rok": {
+      "label": "Poplatok za chatu / nebývajúci",
+      "unit": "€/rok",
+      "kind": "num"
+    }
   }
 };
 
 export const FACT_GROUP_LABEL: Record<string, string> = {
   teren: "Terén", slnko: "Slnko a svetlo", stavby: "Stavby", byty: "Byty a nebytové priestory", pristup: "Prístup z cesty",
   susedia: "Susedné parcely", mapa: "Z katastrálnej mapy", bpej: "Pôda (BPEJ)", vlastnici: "Vlastníci — súhrn",
-  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci", up: "Územný plán z výkresu",
+  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci", up: "Územný plán z výkresu", adresa: "Adresa a spádová škola", vzn: "Dane a poplatky obce (VZN)", financie: "Sadzby bánk",
 };

@@ -55,6 +55,14 @@ export function riskyHit(e: ExtHit): boolean {
 export function fact(core: PropertyCore, grp: string, subject: string): Record<string, unknown> | null {
   return parseFact(core.facts?.[grp]?.[subject]);
 }
+/** Adresa celku: adresa hlavnej parcely, inak prvej stavby (Register adries MV SR). */
+export function addressOf(core: PropertyCore): Record<string, unknown> | null {
+  const mk = mainKey(core);
+  const a = mk ? fact(core, "adresa", mk) : null;
+  if (a) return a;
+  const b = Object.entries(core.facts.adresa ?? {}).find(([k]) => k.startsWith("building:"));
+  return b ? parseFact(b[1]) : null;
+}
 export function mainKey(core: PropertyCore): string | null {
   return core.main.parcelNo ? `${core.main.register === "E" ? "parcel_e" : "parcel_c"}:${core.main.parcelNo}` : null;
 }
