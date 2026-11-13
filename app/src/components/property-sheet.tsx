@@ -13,10 +13,11 @@ import { DeclarationBlock } from "./property-decl";
 import { financeOf, hedonicOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, NkpBlock, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
+import { AmenityChart, CompsAggBlock, CompsMap, LegalRiskBlock, ListingAggBlock, LvPricesAgg, NearbyAggBlock, MonthlySun, NkpBlock, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { ownerKey } from "../lib/domain";
 import { wgsToSjtskKn } from "../lib/sjtsk";
 import { GROUP_GUIDE } from "../lib/sheet-guide";
+import { clientView } from "../lib/share-client";
 import { Terrain3D } from "./terrain3d";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
@@ -647,7 +648,10 @@ function printCss(title: string, en = false): string {
 }
 
 // ——— hlavný komponent ———
-export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode; declForm?: ReactNode }; onFinInputs?: (p: Partial<FinInputs>) => void }) {
+export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode; declForm?: ReactNode }; onFinInputs?: (p: Partial<FinInputs>) => void }) {
+  // klientska verzia: bez údajov o tretích osobách (jednotlivé zmluvy, inzeráty, LV susedov) — server snímku čistí
+  // už pri uložení aj vydaní; tu sa očistí aj náhľad z internej stránky (share-client.ts)
+  const d = useMemo(() => (mode === "client" ? clientView(d0) : d0), [d0, mode]);
   const c = d.core;
   const [finIn, setFinIn] = useState<Partial<FinInputs>>(d.finInputs ?? {});
   const fin = useMemo(() => { try { return financeOf(d, d.fin ?? null, finIn); } catch { return null; } }, [d, finIn]);
@@ -955,14 +959,14 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
         {c.comparables.length ? (<><Sub>Porovnateľné predaje zo zmlúv ({c.compStats?.kind})</Sub>
           <Table head={["Dátum zmluvy", "K.ú.", "Položky", "Výmera", "Cena v zmluve", "€/m²", "Vzdialenosť"]}
             rows={c.comparables.map((x) => [date(x.cas), x.ku ?? "—", (x.items ?? "").slice(0, 40), m2(x.land_m2 ?? x.flat_m2), eur(x.cen), x.ppm2 ? nf(x.ppm2) : "—", dist(x.distM)])} /></>)
-          : <Muted>V okrese sme nenašli dosť porovnateľných zmlúv.</Muted>}
+          : c.clientAgg?.comps ? <CompsAggBlock d={d} /> : <Muted>V okrese sme nenašli dosť porovnateľných zmlúv.</Muted>}
         <CompsMap d={d} />
         <SubdivisionBlock d={d} fin={fin} />
         {c.market.trend.length ? (<><Sub>Vývoj cien zo zmlúv v okrese ({c.compStats?.kind ?? "rovnaký druh"})</Sub>
           <Table head={["Rok", "Zmlúv", "Medián €/m²", "Medián ceny"]} rows={c.market.trend.map((t) => [t.year, t.n, t.medPpm2 != null ? nf(t.medPpm2) : "—", eur(t.medCen)])} /></>) : null}
         {c.market.kuSales.length ? <Grid rows={[["Predaje rovnakého druhu v tomto k.ú. (zmluvy za rok)", c.market.kuSales.slice(-5).map((k) => `${k.year}: ${k.n}`).join(" · ")]]} /> : null}
         {c.prices.length ? (<><Sub>Zmluvy s cenou na tomto LV</Sub>
-          <Table head={["Dátum", "LV", "Druh", "Položky", "Cena v zmluve", "€/m²"]} rows={c.prices.map((p) => [date(p.cas), p.lvNo, p.kind, (p.items ?? "").slice(0, 40), eur(p.cen), p.ppm2 ? nf(p.ppm2) : "—"])} /></>) : null}
+          <Table head={["Dátum", "LV", "Druh", "Položky", "Cena v zmluve", "€/m²"]} rows={c.prices.map((p) => [date(p.cas), p.lvNo, p.kind, (p.items ?? "").slice(0, 40), eur(p.cen), p.ppm2 ? nf(p.ppm2) : "—"])} /></>) : <LvPricesAgg d={d} />}
       </Sec>
 
       <Sec id="predikcia" n={num("predikcia")} explain={ex("predikcia")} {...asof("predikcia")} title={tt("predikcia", "Predikcia hodnoty")} source={<>Trend cien zo zmlúv v katastri (okres), mzdy v okrese (ŠÚ SR), index cien bývania a inflácia (ECB/Eurostat){fin?.market?.hpi ? ` — ${fin.market.hpi.period}` : ""}. Modelový výpočet, nie prísľub ceny.</>}>
@@ -970,7 +974,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
       </Sec>
 
       <Sec id="trh" n={num("trh")} explain={ex("trh")} {...asof("trh")} title={tt("trh", "Trh a dopyt")} source="Verejná inzercia (denný zber), satelitné snímky Copernicus (nová zástavba), Centrálny register zmlúv.">
-        {c.listings.length ? (<><Sub>Pravdepodobne táto nehnuteľnosť v inzercii (priradené podľa výmery a polohy — overiť)</Sub>
+        {c.clientSafe ? <ListingAggBlock d={d} /> : c.listings.length ? (<><Sub>Pravdepodobne táto nehnuteľnosť v inzercii (priradené podľa výmery a polohy — overiť)</Sub>
           <Table head={["Inzerát", "Cena", "€/m²", "Od", "Naposledy", "Vývoj ceny", "Istota"]} rows={c.listings.map((l) => [
             l.url ? <a key="u" href={l.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{(l.title ?? "inzerát").slice(0, 40)}</a> : l.title ?? "inzerát",
             eur(l.price_eur), l.ppm2 ? nf(l.ppm2) : "—", date(l.first_seen), l.removed ? "stiahnutý" : date(l.last_seen),
@@ -978,7 +982,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
         {c.nearby.length ? (<><Sub>Ponuky rovnakého typu v okolí</Sub>
           <Table head={["Inzerát", "Vzdialenosť", "Výmera", "Cena", "€/m²", "Naposledy"]} rows={c.nearby.map((l) => [
             l.url ? <a key="u" href={l.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{(l.title ?? "inzerát").slice(0, 44)}</a> : l.title ?? "inzerát",
-            dist(l.distM), m2(l.area_m2), eur(l.price_eur), l.ppm2 ? nf(l.ppm2) : "—", date(l.last_seen)])} /></>) : <Muted>V okolí nie sú aktívne ponuky rovnakého typu.</Muted>}
+            dist(l.distM), m2(l.area_m2), eur(l.price_eur), l.ppm2 ? nf(l.ppm2) : "—", date(l.last_seen)])} /></>) : c.clientAgg?.nearby ? <NearbyAggBlock d={d} /> : <Muted>V okolí nie sú aktívne ponuky rovnakého typu.</Muted>}
         <RentalsTable d={d} />
         <Grid rows={[
           ["Nová zástavba v k.ú. (satelit)", c.construction.ku?.new_ha != null ? `${nf(c.construction.ku.new_ha, 1)} ha za ${c.construction.ku.period ?? "2018–2024"}` : "—"],

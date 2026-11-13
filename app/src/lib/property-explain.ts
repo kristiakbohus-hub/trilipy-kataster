@@ -32,7 +32,8 @@ export function explain(id: string, d: SheetData, fin: FinResult | null): string
       const n = c.owners.perLv.reduce((s, l) => s + l.count, 0);
       out.push(n <= 1 ? "Nehnuteľnosť má jedného vlastníka — rokovanie aj podpis zmluvy sú najjednoduchšie." : `Nehnuteľnosť má ${n} vlastníkov. Na predaj celku musia podpísať všetci; ak predáva len jeden svoj podiel, ostatní spoluvlastníci majú zo zákona predkupné právo.`);
       const inh = Math.max(0, ...c.legalYears.map((y) => y.inh_max ?? 0));
-      if (inh) out.push(`Posledné dedičstvo je zapísané v roku ${inh}. Dedičia často chcú nehnuteľnosť predať rýchlo a bez starostí — to býva priestor na dohodu.`);
+      // klientska verzia: bez úvah o osobnej situácii predávajúceho (share-client.ts)
+      if (inh && !c.clientSafe) out.push(`Posledné dedičstvo je zapísané v roku ${inh}. Dedičia často chcú nehnuteľnosť predať rýchlo a bez starostí — to býva priestor na dohodu.`);
       break;
     }
     case "pravo": {

@@ -26,6 +26,7 @@ import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEF
 import { EXT_DEFS, type ExtDef } from "../ext-sources";
 import { financeMarketCore } from "../fin-market.server";
 import type { FinMarket } from "../finance";
+import { clientizeCore, type ClientAgg } from "../share-client";
 
 const roleSchema = z.enum([
   "admin",
@@ -8400,6 +8401,9 @@ export type PropertyCore = {
     freePlots: { landsearch: number; up: number };
     buildingMix: { druh: string; n: number }[];
   };
+  /** klientska verzia (share-client.ts): jednotlivé zmluvy, inzeráty a LV susedov sú nahradené agregátmi */
+  clientSafe?: boolean;
+  clientAgg?: ClientAgg;
 };
 
 /** Insolvenčný register REPLIK (od 1. 10. 2025 nahradil Register úpadcov) — LEN IČO právnických osôb, cache 14 dní. */
@@ -9271,6 +9275,8 @@ function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid
     }
     const zn = asObj(snap.zone);
     if (zn) delete zn.geometry_json;
+    // údaje o tretích osobách (jednotlivé zmluvy s cenou, inzeráty, LV susedov, daň predávajúceho) → agregáty
+    clientizeCore(core);
     let out = JSON.stringify(snap);
     if (out.length > 1_800_000 && Array.isArray(core.parcels)) {
       core.parcels = (core.parcels as Record<string, unknown>[]).map((p, i) => (i < 30 ? p : { ...p, geometry_json: null }));

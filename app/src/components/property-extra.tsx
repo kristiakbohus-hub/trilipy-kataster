@@ -4,6 +4,7 @@
 import { fact, mainKey, riskyHit, suitability, zoneOf, type SheetData } from "../lib/property-eval";
 import type { FinResult } from "../lib/finance";
 import { nf, eur, m2, date, dist, Muted, Sub, Grid, Table } from "./ps-ui";
+import { CLIENT_MIN_N } from "../lib/share-client";
 
 // ——— slnko po mesiacoch (21. deň mesiaca, horizont z terénu) ———
 /** Uhol prekážky (budovy, stromy) v danom azimute z tienenia DMP — lineárna interpolácia medzi 16 smermi. */
@@ -82,6 +83,8 @@ export function Timeline({ d, isClient }: { d: SheetData; isClient: boolean }) {
   for (const p of c.prices) ev.push({ t: p.cas.slice(0, 10), what: `zmluva s cenou ${eur(p.cen)}${p.ppm2 ? ` (${nf(p.ppm2)} €/m²)` : ""} — LV ${p.lvNo}`, kind: "predaj" });
   for (const f of c.flags) if (f.year) ev.push({ t: String(f.year), what: `${f.label} — LV ${f.lvNo}`, kind: "právo" });
   for (const l of c.listings) {
+    // klientska verzia: jeden súhrnný záznam bez histórie jednotlivých inzerátov
+    if (c.clientSafe) { if (l.first_seen) ev.push({ t: l.first_seen.slice(0, 10), what: `v inzercii${l.price_eur ? ` (aktuálna ponuková cena ${eur(l.price_eur)})` : ""}`, kind: "inzercia" }); continue; }
     if (l.first_seen) ev.push({ t: l.first_seen.slice(0, 10), what: `v inzercii za ${eur(l.history[0]?.price_eur ?? l.price_eur)}`, kind: "inzercia" });
     const h = l.history; for (let i = 1; i < h.length; i++) if (h[i].price_eur !== h[i - 1].price_eur && h[i].price_eur) ev.push({ t: h[i].day.slice(0, 10), what: `zmena ceny na ${eur(h[i].price_eur)}`, kind: "inzercia" });
     if (l.removed && l.last_seen) ev.push({ t: l.last_seen.slice(0, 10), what: "inzerát stiahnutý", kind: "inzercia" });
@@ -121,6 +124,52 @@ export function CompsMap({ d }: { d: SheetData }) {
       <figcaption className="text-[10px] text-muted">Čísla = poradie v tabuľke porovnateľných predajov (poloha podľa prvej parcely v zmluve). Letecký snímok © ÚGKK SR.</figcaption>
     </figure>
   );
+}
+
+// ——— klientska verzia: súhrn namiesto jednotlivých zmlúv a inzerátov (share-client.ts) ———
+const yrs = (a: number | null, b: number | null) => (a == null ? "—" : a === b || b == null ? String(a) : `${a}–${b}`);
+const ppmTxt = (v: number | null) => (v == null ? "—" : `${nf(v, v < 10 ? 2 : 0)}\u00a0€/m²`);
+export function CompsAggBlock({ d }: { d: SheetData }) {
+  const a = d.core.clientAgg?.comps; if (!a) return null;
+  return (<><Sub>{`Porovnateľné predaje zo zmlúv — súhrn${a.kind ? ` (${a.kind})` : ""}`}</Sub>
+    <Grid rows={[
+      ["Počet predajov", nf(a.n)],
+      ["Okres", a.okres ?? "—"],
+      ["Obdobie zmlúv", yrs(a.yearFrom, a.yearTo)],
+      ["Medián €/m²", ppmTxt(a.medPpm2)],
+      ["Rozpätie €/m² (25.–75. percentil)", a.p25 != null && a.p75 != null ? `${ppmTxt(a.p25)} – ${ppmTxt(a.p75)}` : "—"],
+      ["Podľa vzdialenosti od nehnuteľnosti", a.bands.length ? a.bands.map((b) => `${b.label}: ${b.n}${b.medPpm2 != null ? ` (medián ${ppmTxt(b.medPpm2)})` : ""}`).join(" · ") : "—"],
+    ]} />
+    <Muted>{`Uvádzame len súhrn zo zmlúv zapísaných v katastri — bez čísel parciel, dátumov a cien jednotlivých zmlúv. Medián a rozpätie počítame najmenej z ${CLIENT_MIN_N} zmlúv.`}</Muted></>);
+}
+export function LvPricesAgg({ d }: { d: SheetData }) {
+  const a = d.core.clientAgg?.lvPrices; if (!a || d.core.prices.length) return null;
+  return <Grid rows={[["Zmluvy s cenou na LV tejto nehnuteľnosti", `${nf(a.n)} (${yrs(a.yearFrom, a.yearTo)}) — ceny jednotlivých zmlúv v tejto verzii neuvádzame`]]} />;
+}
+export function ListingAggBlock({ d }: { d: SheetData }) {
+  const a = d.core.clientAgg?.listing; const l = d.core.listings[0]; if (!a || !l) return null;
+  const days = l.first_seen ? Math.round((Date.now() - new Date(l.first_seen).getTime()) / 864e5) : null;
+  const h = l.history; const cut = h.length > 1 && h[0].price_eur && h[h.length - 1].price_eur ? Math.round((1 - (h[h.length - 1].price_eur as number) / (h[0].price_eur as number)) * 1000) / 10 : null;
+  return (<><Sub>Pravdepodobne táto nehnuteľnosť v inzercii (priradené podľa výmery a polohy — overiť)</Sub>
+    <Grid rows={[
+      ["Počet inzerátov", `${nf(a.n)}${a.active !== a.n ? ` (aktívne ${nf(a.active)})` : ""}`],
+      ["Ponuková cena (medián aktívnych)", l.price_eur != null ? eur(l.price_eur) : "inzerát už nie je aktívny"],
+      ["Ponuková cena za m² (medián)", ppmTxt(l.ppm2)],
+      ["V inzercii", days != null && !l.removed ? `${nf(days)} dní` : "—"],
+      ["Zmena ponukovej ceny", cut != null ? `${cut > 0 ? "−" : "+"}${nf(Math.abs(cut), 1)} %` : "—"],
+    ]} /></>);
+}
+export function NearbyAggBlock({ d }: { d: SheetData }) {
+  const a = d.core.clientAgg?.nearby; if (!a) return null;
+  return (<><Sub>Ponuky rovnakého typu v okolí — súhrn</Sub>
+    <Grid rows={[
+      ["Počet ponúk", `${nf(a.n)}${a.maxDistM != null ? ` (do ${dist(a.maxDistM)})` : ""}`],
+      ["Medián ponukovej ceny", a.medPrice != null ? eur(a.medPrice) : "—"],
+      ["Medián €/m²", ppmTxt(a.medPpm2)],
+      ["Rozpätie €/m² (25.–75. percentil)", a.p25Ppm2 != null && a.p75Ppm2 != null ? `${ppmTxt(a.p25Ppm2)} – ${ppmTxt(a.p75Ppm2)}` : "—"],
+      ["Medián výmery", a.medArea != null ? m2(a.medArea) : "—"],
+    ]} />
+    <Muted>{`Z verejnej inzercie uvádzame len počty a mediány (najmenej z ${CLIENT_MIN_N} ponúk), nie jednotlivé inzeráty.`}</Muted></>);
 }
 
 // ——— vzdialenosti k vybavenosti ———
@@ -220,7 +269,11 @@ export function PurchaseSteps({ d, fin }: { d: SheetData; fin: FinResult | null 
 }
 
 export function RentalsTable({ d }: { d: SheetData }) {
-  const r = d.core.rentals ?? []; if (!r.length) return null;
+  const r = d.core.rentals ?? []; const ra = d.core.clientAgg?.rentals;
+  if (!r.length && ra) return (<><Sub>Ponuky na prenájom v okolí (posledných 180 dní)</Sub>
+    <Grid rows={[["Počet ponúk", nf(ra.n)], ["Medián mesačného nájmu", ra.medRent != null ? eur(ra.medRent) : "—"], ["Medián nájmu za m²", ra.medPpm2 != null ? `${nf(ra.medPpm2, 1)}\u00a0€/m²` : "—"], ["Medián výmery", ra.medArea != null ? m2(ra.medArea) : "—"]]} />
+    {ra.n < CLIENT_MIN_N ? <Muted>{`Pri menej ako ${CLIENT_MIN_N} ponukách mediány neuvádzame.`}</Muted> : null}</>);
+  if (!r.length) return null;
   return (<><Sub>Ponuky na prenájom v okolí (posledných 180 dní)</Sub>
     <Table head={["Inzerát", "Vzdialenosť", "Výmera", "Nájom", "€/m²"]} rows={r.map((l) => [
       l.url ? <a key="u" href={l.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{(l.title ?? "inzerát").slice(0, 44)}</a> : l.title ?? "inzerát",

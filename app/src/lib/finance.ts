@@ -6,6 +6,7 @@ import type { SheetData } from "./property-eval";
 import { fact, mainKey } from "./property-eval";
 import { FIN, type FinParams } from "./fin-params";
 import { DEV_DEFAULTS } from "./development";
+import { hedonicBase } from "./share-client";
 
 export type FinMarket = {
   asOf: string;
@@ -267,7 +268,9 @@ export function costsOf(d: SheetData, b: Basis, inp: FinInputs, insurance: Insur
   const lastAcq = Math.max(0, ...c.legalYears.map((y) => Math.max(y.sale_max ?? 0, y.gift_max ?? 0)));
   const lastInh = Math.max(0, ...c.legalYears.map((y) => y.inh_max ?? 0));
   let saleTax: CostsResult["saleTax"] = { text: "Rok nadobudnutia nepoznáme — over na výpise z LV (časť B, tituly).", exemptFrom: null };
-  if (lastAcq || lastInh) {
+  // klientska verzia: daňovú situáciu predávajúceho (z roku nadobudnutia) neodhadujeme — údaj o tretej osobe
+  if (c.clientSafe) saleTax = { text: "Daň z príjmu z predaja platí predávajúci podľa svojej situácie (fyzická osoba je spravidla oslobodená po 5 rokoch od nadobudnutia) — v tejto verzii ju neodhadujeme.", exemptFrom: null };
+  else if (lastAcq || lastInh) {
     const y = Math.max(lastAcq, lastInh);
     const from = y + FIN.dane.oslobodenieRoky;
     saleTax = from <= nowY
@@ -459,10 +462,13 @@ export type InvestResult = { rent: number | null; rentFrom: string; gross: numbe
 export function investOf(d: SheetData, b: Basis, inp: FinInputs, costs: CostsResult, mort: MortgageResult | null, pred: PredictionResult | null): InvestResult {
   const c = d.core; const price = b.price;
   const loc = (c.rentals ?? []).map((l) => l.ppm2).filter((x): x is number => x != null && x > 1 && x < 40).sort((a, b2) => a - b2);
-  const locM2 = loc.length >= 3 ? loc[Math.floor(loc.length / 2)] : null;
+  // klientska verzia má namiesto jednotlivých ponúk nájmu len medián (share-client.ts)
+  const ra = !loc.length ? c.clientAgg?.rentals ?? null : null;
+  const locM2 = loc.length >= 3 ? loc[Math.floor(loc.length / 2)] : ra?.finPpm2 ?? null;
+  const locN = loc.length || ra?.finN || 0;
   const rentM2 = locM2 ?? c.market.rent?.rentM2 ?? null;
   const rent = inp.rentMonthly ?? (rentM2 && b.floorM2 && b.kind !== "pozemok" ? r0(rentM2 * b.floorM2) : null);
-  const rentFrom = inp.rentMonthly ? "zadaný nájom" : rent ? `${locM2 ? `medián ${loc.length} ponúk nájmu v okolí` : "medián ponúk nájmu v okrese"} ${r2(rentM2 ?? 0)} €/m² × ${r0(b.floorM2 ?? 0)} m²` : "nájom pre tento typ nemáme";
+  const rentFrom = inp.rentMonthly ? "zadaný nájom" : rent ? `${locM2 ? `medián ${locN} ponúk nájmu v okolí` : "medián ponúk nájmu v okrese"} ${r2(rentM2 ?? 0)} €/m² × ${r0(b.floorM2 ?? 0)} m²` : "nájom pre tento typ nemáme";
   let gross: number | null = null, net: number | null = null, netIncome: number | null = null, coc: number | null = null, cf: number | null = null, irr10: number | null = null, payback: number | null = null;
   const vac = FIN.investicia.neobsadenostMes;
   if (rent && price) {
@@ -521,7 +527,7 @@ export function investOf(d: SheetData, b: Basis, inp: FinInputs, costs: CostsRes
     const tarN = c.legal.reduce((s, l) => s + l.tarchyCount, 0); if (tarN) { args.push(`${tarN}× ťarcha na LV — treba vyplatiť a vymazať (náklad a riziko predávajúceho)`); k -= 0.01; }
     if (costs.saleTax.exemptFrom && costs.saleTax.exemptFrom > new Date().getFullYear()) args.push(`predávajúci by teraz platil daň z predaja (oslobodenie od ${costs.saleTax.exemptFrom}) — počíta s vyššou cenou`);
     const owners = c.owners.perLv.reduce((s, l) => s + l.count, 0); if (owners >= 3) { args.push(`${owners} spoluvlastníkov — rýchla dohoda a istota platby sú pre nich hodnota`); k -= 0.02; }
-    const inh = Math.max(0, ...c.legalYears.map((y) => y.inh_max ?? 0)); if (inh && new Date().getFullYear() - inh <= 3) args.push(`nedávne dedičstvo (${inh}) — dedičia často preferujú rýchly predaj`);
+    const inh = c.clientSafe ? 0 : Math.max(0, ...c.legalYears.map((y) => y.inh_max ?? 0)); if (inh && new Date().getFullYear() - inh <= 3) args.push(`nedávne dedičstvo (${inh}) — dedičia často preferujú rýchly predaj`);
     if (mort?.blockers.length) { args.push(`prekážky financovania (${mort.blockers.length}) znižujú okruh kupujúcich`); k -= 0.02; }
     const base = est ? Math.min(ask, est * 1.02) : ask;
     offer = { low: r0((base * Math.max(0.82, k - 0.04)) / 500) * 500, high: r0((base * Math.max(0.86, k)) / 500) * 500, args };
@@ -563,20 +569,10 @@ export function sensitivityOf(d: SheetData, m: FinMarket | null, partial: Partia
 export function hedonicOf(d: SheetData, b: Basis): { ppm2: number; low: number; high: number; value: number; n: number; g: number } | null {
   const c = d.core; const area = b.kind === "byt" ? b.floorM2 : b.landM2;
   if (!area) return null;
-  const tr = c.market.trend.filter((t) => t.medPpm2 && t.n >= 4).sort((x, y) => x.year - y.year).slice(-6);
-  let g = 0.04;
-  if (tr.length >= 3) { const a0 = tr[0], a1 = tr[tr.length - 1]; g = Math.max(-0.03, Math.min(0.08, Math.pow((a1.medPpm2 as number) / (a0.medPpm2 as number), 1 / Math.max(1, a1.year - a0.year)) - 1)); }
-  const now = Date.now();
-  const rows = c.comparables.map((x) => {
-    const a = b.kind === "byt" ? x.flat_m2 : x.land_m2; if (!x.ppm2 || !a) return null;
-    const yrs = Math.max(0, (now - Date.parse(x.cas)) / 3.156e10);
-    const adj = x.ppm2 * Math.pow(1 + g, yrs) * Math.pow(area / a, -0.2);
-    const w = (1 / (1 + (x.distM ?? 5000) / 1000)) * (1 / (1 + yrs / 3));
-    return { v: adj, w };
-  }).filter((x): x is { v: number; w: number } => !!x && Number.isFinite(x.v) && x.v > 0).sort((p, q) => p.v - q.v);
-  if (rows.length < 3) return null;
-  const tot = rows.reduce((s, x) => s + x.w, 0);
-  const q = (p: number) => { let acc = 0; for (const x of rows) { acc += x.w; if (acc >= p * tot) return x.v; } return rows[rows.length - 1].v; };
-  const ppm2 = q(0.5);
-  return { ppm2: r0(ppm2), low: r0(q(0.25) * area), high: r0(q(0.75) * area), value: r0((ppm2 * area) / 100) * 100, n: rows.length, g: r2(g * 100) };
+  // klientska verzia nemá jednotlivé zmluvy — len hedonický základ spočítaný na serveri (share-client.ts)
+  const hb = c.comparables.length ? hedonicBase(c, b.kind === "byt") : (b.kind === "byt" ? c.clientAgg?.hedonic.byt : c.clientAgg?.hedonic.pozemok) ?? null;
+  if (!hb) return null;
+  const k = Math.pow(area, -0.2);
+  const ppm2 = hb.q50 * k;
+  return { ppm2: r0(ppm2), low: r0(hb.q25 * k * area), high: r0(hb.q75 * k * area), value: r0((ppm2 * area) / 100) * 100, n: hb.n, g: r2(hb.g * 100) };
 }
