@@ -8788,6 +8788,7 @@ function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid
     snap.hide = Array.isArray(snap.hide) ? (snap.hide as unknown[]).filter((x): x is string => typeof x === "string" && /^[a-z]{2,20}$/.test(x)).slice(0, 30) : null;
     snap.client = cut(snap.client, 120) ?? null;
     if (snap.variant !== "teaser") delete snap.variant;
+    if (snap.lang !== "en") snap.lang = "sk";
     snap.photos = Array.isArray(snap.photos) ? (snap.photos as unknown[]).map((p) => asObj(p)).filter((p): p is Record<string, unknown> => !!p && typeof p.src === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(p.src) && (p.src as string).length < 400_000)
       .slice(0, 4).map((p) => ({ name: cut(p.name, 120) ?? "foto", src: p.src as string })) : null;
     const owners = asObj(core.owners);
@@ -8853,7 +8854,7 @@ export const buildClientShare = createServerFn({ method: "POST" })
     secret: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt"]), ref: z.string().min(1).max(60),
     register: z.enum(["C", "E"]).optional(), days: z.number().int().min(1).max(60).optional(), client: z.string().max(120).optional(),
     broker: z.object({ name: z.string().max(80).optional(), firma: z.string().max(80).optional(), phone: z.string().max(40).optional(), email: z.string().max(80).optional() }).optional(),
-    notes: z.string().max(2000).optional(), hide: z.array(z.string().max(20)).max(30).optional(),
+    notes: z.string().max(2000).optional(), hide: z.array(z.string().max(20)).max(30).optional(), lang: z.enum(["sk", "en"]).optional(),
     finInputs: z.object({ price: z.number().nullable().optional(), ltv: z.number().min(0).max(0.9).optional(), years: z.number().int().min(5).max(40).optional(), fix: z.number().int().min(1).max(30).optional(), age: z.number().int().min(18).max(80).optional(), adults: z.number().int().min(1).max(6).optional(), children: z.number().int().min(0).max(10).optional(), persons: z.number().int().min(1).max(12).optional(), rentMonthly: z.number().nullable().optional() }).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; path?: string; title?: string; message?: string }> => {
@@ -8887,7 +8888,7 @@ export const buildClientShare = createServerFn({ method: "POST" })
     }
     const fin = await financeMarketCore().catch(() => null);
     const shade = lat != null && lng != null ? await shadingCore(lat, lng).catch(() => null) : null;
-    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, shade, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null, broker: data.broker ?? null, notes: data.notes ?? null, hide: data.hide ?? null };
+    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, shade, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null, broker: data.broker ?? null, notes: data.notes ?? null, hide: data.hide ?? null, lang: data.lang ?? "sk" };
     const out = sanitizeShareSnapshot(JSON.parse(JSON.stringify(snap)) as Record<string, unknown>);
     if (out === "invalid" || out === "toolarge" || out === "phrase") return { ok: false, message: out === "toolarge" ? "List je príliš veľký." : out === "phrase" ? "Poznámka obsahuje zakázanú formuláciu." : "Neplatný obsah listu." };
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);

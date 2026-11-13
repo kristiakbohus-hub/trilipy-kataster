@@ -549,3 +549,26 @@ export function sensitivityOf(d: SheetData, m: FinMarket | null, partial: Partia
   }
   return out;
 }
+
+/** Hedonický odhad: porovnateľné predaje upravené na dnešné ceny (trend okresu), rozdiel vo výmere (pružnosť −0,2)
+ *  a vážené blízkosťou a čerstvosťou. Výsledok €/m² (vážený medián) a rozpätie (vážený 25.–75. percentil). */
+export function hedonicOf(d: SheetData, b: Basis): { ppm2: number; low: number; high: number; value: number; n: number; g: number } | null {
+  const c = d.core; const area = b.kind === "byt" ? b.floorM2 : b.landM2;
+  if (!area) return null;
+  const tr = c.market.trend.filter((t) => t.medPpm2 && t.n >= 4).sort((x, y) => x.year - y.year).slice(-6);
+  let g = 0.04;
+  if (tr.length >= 3) { const a0 = tr[0], a1 = tr[tr.length - 1]; g = Math.max(-0.03, Math.min(0.08, Math.pow((a1.medPpm2 as number) / (a0.medPpm2 as number), 1 / Math.max(1, a1.year - a0.year)) - 1)); }
+  const now = Date.now();
+  const rows = c.comparables.map((x) => {
+    const a = b.kind === "byt" ? x.flat_m2 : x.land_m2; if (!x.ppm2 || !a) return null;
+    const yrs = Math.max(0, (now - Date.parse(x.cas)) / 3.156e10);
+    const adj = x.ppm2 * Math.pow(1 + g, yrs) * Math.pow(area / a, -0.2);
+    const w = (1 / (1 + (x.distM ?? 5000) / 1000)) * (1 / (1 + yrs / 3));
+    return { v: adj, w };
+  }).filter((x): x is { v: number; w: number } => !!x && Number.isFinite(x.v) && x.v > 0).sort((p, q) => p.v - q.v);
+  if (rows.length < 3) return null;
+  const tot = rows.reduce((s, x) => s + x.w, 0);
+  const q = (p: number) => { let acc = 0; for (const x of rows) { acc += x.w; if (acc >= p * tot) return x.v; } return rows[rows.length - 1].v; };
+  const ppm2 = q(0.5);
+  return { ppm2: r0(ppm2), low: r0(q(0.25) * area), high: r0(q(0.75) * area), value: r0((ppm2 * area) / 100) * 100, n: rows.length, g: r2(g * 100) };
+}

@@ -3,6 +3,8 @@ import { createContext, useContext, type ReactNode } from "react";
 
 /** Kapitoly skryté v klientskej verzii (výber kapitol pri zdieľaní). */
 export const HideCtx = createContext<Set<string>>(new Set());
+/** Jazyk listu (sk / en). */
+export const LangCtx = createContext<"sk" | "en">("sk");
 
 export const nf = (n: number, d = 0) => n.toLocaleString("sk-SK", { maximumFractionDigits: d, minimumFractionDigits: 0 });
 export const eur = (n: number | null | undefined) => (n == null ? "—" : `${nf(Math.round(n))}\u00a0€`);
@@ -22,10 +24,11 @@ export function ageDays(iso: string | null | undefined, now = Date.now()): numbe
 }
 /** „Čo to pre vás znamená" — vysvetlenie pre laika na začiatku kapitoly. */
 export function Explain({ lines }: { lines: string[] }) {
+  const lang = useContext(LangCtx);
   if (!lines.length) return null;
   return (
     <div className="ps-explain rounded-md border border-line/70 bg-surface-2/60 px-3 py-2">
-      <div className="ps-explain-h mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">Čo to pre vás znamená</div>
+      <div className="ps-explain-h mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted">{lang === "en" ? "What this means for you" : "Čo to pre vás znamená"}</div>
       {lines.map((t, i) => <p key={i} className="text-[13px] leading-relaxed text-fg/90">{t}</p>)}
     </div>
   );

@@ -33,6 +33,8 @@ export type SheetData = {
   shade?: ShadeResult | null;
   /** fotografie (zmenšené JPEG data URL, max 4) — z obhliadky / dokumentov LV */
   photos?: { name: string; src: string }[] | null;
+  /** jazyk klientskej verzie (en = anglická titulka, zhrnutie, kapitoly a vysvetlenia) */
+  lang?: "sk" | "en" | null;
   /** „teaser" = jednostránková ponuka */
   variant?: "teaser" | null;
 };

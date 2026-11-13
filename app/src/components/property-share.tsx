@@ -43,6 +43,7 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
   const [hide, setHide] = useState<string[]>([]);
   const [days, setDays] = useState(30);
   const [withPhotos, setWithPhotos] = useState(true);
+  const [lang, setLang] = useState<"sk" | "en">("sk");
   useEffect(() => { setBroker(loadBroker()); }, []);
   const load = () => { if (token && ds) listPropertyShares({ data: { token, datasetId: ds, kind, ref } }).then((r) => setRows(r.rows)).catch(() => {}); };
   useEffect(load, [token, ds, kind, ref]);
@@ -53,7 +54,7 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
     try { localStorage.setItem("tl-broker", JSON.stringify(broker)); } catch { /* bez úložiska */ }
     try {
       const photos = withPhotos ? (sheet.photos?.length ? sheet.photos : await loadPhotos(ds, c.main.lvNo ?? c.lvs[0] ?? null)) : [];
-      const snap: SheetData = { ...sheet, client: client.trim() || sheet.client || null, notes: notes.trim() || null, broker, hide, photos };
+      const snap: SheetData = { ...sheet, client: client.trim() || sheet.client || null, notes: notes.trim() || null, broker, hide, photos, lang };
       const r = await createPropertyShare({ data: { token, datasetId: ds, kind, ref, title: c.title, snapshot: JSON.stringify(snap), days } });
       if (r.ok && r.path) {
         const url = `${window.location.origin}${r.path}`;
@@ -76,6 +77,7 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
       {open ? (
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
           <label className="text-muted">Pre klienta<input className={inp} value={client} maxLength={120} onChange={(e) => setClient(e.target.value)} placeholder="meno alebo firma klienta" /></label>
+          <label className="text-muted">Jazyk<select className={inp} value={lang} onChange={(e) => setLang(e.target.value === "en" ? "en" : "sk")}><option value="sk">slovenčina</option><option value="en">angličtina (titulka, zhrnutie, kapitoly, vysvetlenia)</option></select></label>
           <label className="text-muted">Platnosť odkazu (dni)<select className={inp} value={days} onChange={(e) => setDays(Number(e.target.value))}>{[7, 14, 30, 60].map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
           <label className="text-muted">Maklér — meno<input className={inp} value={broker.name ?? ""} maxLength={80} onChange={(e) => setBroker({ ...broker, name: e.target.value })} /></label>
           <label className="text-muted">Firma<input className={inp} value={broker.firma ?? ""} maxLength={80} onChange={(e) => setBroker({ ...broker, firma: e.target.value })} /></label>
