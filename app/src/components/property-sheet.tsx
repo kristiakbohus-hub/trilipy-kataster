@@ -48,7 +48,7 @@ function fmtVal(v: unknown, f?: FactField): ReactNode {
   const unit = f?.unit && f.unit !== "MM-DD" ? `\u00a0${f.unit}` : "";
   if (typeof v === "boolean") return v ? "áno" : "nie";
   if (typeof v === "number") {
-    if (Number.isInteger(v) && /\brok|year|\bLV\b|list vlastníctva|súpisn|číslo|kód/i.test(f?.label ?? "")) return `${v}${unit}`;
+    if (Number.isInteger(v) && /\brok\b|\broku\b|\byear\b|\bLV\b|list vlastníctva|súpisn|číslo|kód/i.test(f?.label ?? "")) return `${v}${unit}`;
     if (f?.unit === "m" && Math.abs(v) >= 1000) return `${nf(v / 1000, 1)}\u00a0km`;
     return `${nf(v, Math.abs(v) < 10 ? 2 : Math.abs(v) < 100 ? 1 : 0)}${unit}`;
   }
