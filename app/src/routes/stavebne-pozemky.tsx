@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { getLandsearchBrowse, type LandsearchRow } from "../lib/api/kataster.functions";
+import { getLandsearchBrowse, getScenarioVariantRows, type LandsearchRow, type ScenarioVariant } from "../lib/api/kataster.functions";
+import { ScenarioSwitches, variantRowSnake } from "../components/scenario-switches";
 import { m2, parseAccessTimes, durationSk, reasonSk, decSk, kuLabel, plural, zoneUnknown, zoneLabel } from "../lib/domain";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
@@ -35,12 +36,21 @@ function LandPage() {
   const [rows, setRows] = useState<LandsearchRow[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // PREPÍNAČE (0117) — GOLD-BU = profil bývania; variant počíta Mac, mená vlastníkov v ňom nie sú
+  const [variantId, setVariantId] = useState<number | null>(null);
+  const [variant, setVariant] = useState<ScenarioVariant | null>(null);
   useEffect(() => {
     setLoading(true);
+    if (purpose === "residential" && variantId && variant?.status === "done") {
+      getScenarioVariantRows({ data: { variantId } })
+        .then((r) => setRows((JSON.parse(r.rowsJson) as Record<string, unknown>[]).map(variantRowSnake) as unknown as LandsearchRow[]))
+        .catch(() => setRows([])).finally(() => setLoading(false));
+      return;
+    }
     getLandsearchBrowse({ data: { purpose, role, token: token ?? undefined } })
       .then(setRows)
       .finally(() => setLoading(false));
-  }, [purpose, role, token]);
+  }, [purpose, role, token, variantId, variant?.status]);
 
   const katastre = useMemo(() => {
     const m = new Map<string, string>();
@@ -74,6 +84,10 @@ function LandPage() {
           enginu (GOLD-LI/GOLD-BU), nie právny posudok.
         </p>
       </div>
+
+      {purpose === "residential" ? (
+        <ScenarioSwitches scenario="BU" selected={variantId} onSelect={(id, v) => { setVariantId(id); setVariant(v); }} />
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label="Vyhovuje (MATCH)" value={nMatch} />

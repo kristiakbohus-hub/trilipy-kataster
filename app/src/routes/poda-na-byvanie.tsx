@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createDeal, getUPCases, type UPRow } from "../lib/api/kataster.functions";
+import { createDeal, getScenarioVariantRows, getUPCases, type ScenarioVariant, type UPRow } from "../lib/api/kataster.functions";
+import { ScenarioSwitches, variantRowSnake } from "../components/scenario-switches";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -21,9 +22,19 @@ function UpzonedFarmlandPage() {
   const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [rows, setRows] = useState<UPRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // PREPÍNAČE (0117): null = predvolený beh (up_cases); inak hotový variant z Macu
+  const [variantId, setVariantId] = useState<number | null>(null);
+  const [variant, setVariant] = useState<ScenarioVariant | null>(null);
   const reload = useCallback(() => {
+    setLoading(true);
+    if (variantId && variant?.status === "done") {
+      getScenarioVariantRows({ data: { variantId } })
+        .then((r) => setRows((JSON.parse(r.rowsJson) as Record<string, unknown>[]).map(variantRowSnake) as unknown as UPRow[]))
+        .catch(() => setRows([])).finally(() => setLoading(false));
+      return;
+    }
     getUPCases({ data: {} }).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
-  }, []);
+  }, [variantId, variant?.status]);
   useEffect(() => { reload(); }, [reload]);
   const [kuFilter, setKuFilter] = useState("");
   const [cls, setCls] = useState<"MATCH" | "PROVISIONAL">("MATCH");
@@ -71,6 +82,8 @@ function UpzonedFarmlandPage() {
           z poľnohospodárskeho fondu — najlacnejšie hore. Signál na preskúmanie, nie právny posudok.
         </p>
       </div>
+
+      <ScenarioSwitches scenario="UP" selected={variantId} onSelect={(id, v) => { setVariantId(id); setVariant(v); }} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Kandidáti (MATCH)" value={nMatch} />

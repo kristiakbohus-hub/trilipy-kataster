@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { createDeal, getSettlementCases, type SettlementRow } from "../lib/api/kataster.functions";
+import { createDeal, getScenarioVariantRows, getSettlementCases, type ScenarioVariant, type SettlementRow } from "../lib/api/kataster.functions";
+import { ScenarioSwitches, variantRowSnake } from "../components/scenario-switches";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { kuLabel, eur, m2, parcelLabel } from "../lib/domain";
 import { useRole } from "../lib/role-context";
@@ -47,9 +48,19 @@ function SettlementPage() {
   const { token } = useAuth();   // rolu overuje server zo session, nie z localStorage
   const [rows, setRows] = useState<SettlementRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // PREPÍNAČE (0117): null = predvolený beh (settlement_cases); inak hotový variant z Macu
+  const [variantId, setVariantId] = useState<number | null>(null);
+  const [variant, setVariant] = useState<ScenarioVariant | null>(null);
   const reload = useCallback(() => {
+    setLoading(true);
+    if (variantId && variant?.status === "done") {
+      getScenarioVariantRows({ data: { variantId } })
+        .then((r) => setRows((JSON.parse(r.rowsJson) as Record<string, unknown>[]).map(variantRowSnake) as unknown as SettlementRow[]))
+        .catch(() => setRows([])).finally(() => setLoading(false));
+      return;
+    }
     getSettlementCases({ data: {} }).then(setRows).catch(() => setRows([])).finally(() => setLoading(false));
-  }, []);
+  }, [variantId, variant?.status]);
   useEffect(() => { reload(); }, [reload]);
   const [kuFilter, setKuFilter] = useState<string>("");
   const [cls, setCls] = useState<"MATCH" | "PROVISIONAL">("MATCH");
@@ -107,6 +118,8 @@ function SettlementPage() {
           nie o právny záver o (ne)vysporiadaní.
         </p>
       </div>
+
+      <ScenarioSwitches scenario="GOLD04" selected={variantId} onSelect={(id, v) => { setVariantId(id); setVariant(v); }} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Kandidáti (MATCH)" value={nMatch} />

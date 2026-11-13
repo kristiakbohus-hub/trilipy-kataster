@@ -166,3 +166,15 @@ export function ScenarioSwitches({ scenario, selected, onSelect, onVariants }: {
     </Card>
   );
 }
+
+/** Riadok variantu (tvar push skriptu z Macu, camelCase) → tvar riadku karty z D1 (snake_case) + dataset/k.ú. zo servera. */
+export function variantRowSnake(r: Record<string, unknown>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(r)) {
+    if (k.startsWith("_")) continue;
+    out[k.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase()] = typeof v === "boolean" ? (v ? 1 : 0) : v;
+  }
+  out.dataset_id = r._datasetId ?? null;
+  if (r._kuName) out.ku_name = r._kuName;
+  return out;
+}
