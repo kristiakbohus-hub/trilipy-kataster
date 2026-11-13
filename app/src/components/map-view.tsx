@@ -1303,7 +1303,7 @@ export function MapView({
                   alt={r.name}
                   draggable={false}
                   style={{
-                    position: "absolute", left: 0, top: 0, width: iw, height: ih, transformOrigin: "0 0",
+                    position: "absolute", left: 0, top: 0, width: iw, height: ih, maxWidth: "none", maxHeight: "none", transformOrigin: "0 0",
                     transform: `${dragT ? dragT + " " : ""}${rasterMatrix(t, view!.X, view!.Y, res, size.w, size.h)}`,
                     opacity: r.opacity, userSelect: "none", pointerEvents: "none",
                   }}
@@ -1327,7 +1327,7 @@ export function MapView({
                 alt={r.name}
                 draggable={false}
                 style={{
-                  position: "absolute", left: 0, top: 0, width: iw, height: ih, transformOrigin: "0 0",
+                  position: "absolute", left: 0, top: 0, width: iw, height: ih, maxWidth: "none", maxHeight: "none", transformOrigin: "0 0",
                   transform: `${dragT ? dragT + " " : ""}${rasterMatrix(t, view!.X, view!.Y, res, size.w, size.h)}`,
                   opacity: 1, userSelect: "none", pointerEvents: "none",
                 }}
