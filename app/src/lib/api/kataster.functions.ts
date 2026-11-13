@@ -26,6 +26,7 @@ import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEF
 import { EXT_DEFS, type ExtDef } from "../ext-sources";
 import { financeMarketCore } from "../fin-market.server";
 import type { FinMarket } from "../finance";
+import { clientizeCore, type ClientAgg } from "../share-client";
 
 const roleSchema = z.enum([
   "admin",
@@ -1222,10 +1223,12 @@ export const ingestChanges = createServerFn({ method: "POST" })
     if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
-    const stmt = DB.prepare("INSERT INTO change_log (dataset_id,lv_no,parcel_no,entity,field,old_value,new_value,change_type,importance,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)");
+    // INSERT OR IGNORE + jedinečný index (0115): opakovaný beh toho istého porovnania nezdvojí zmeny
+    const stmt = DB.prepare("INSERT OR IGNORE INTO change_log (dataset_id,lv_no,parcel_no,entity,field,old_value,new_value,change_type,importance,run_id) VALUES (?,?,?,?,?,?,?,?,?,?)");
     const batch = data.changes.map((c) => stmt.bind(c.datasetId ?? null, c.lvNo ?? null, c.parcelNo ?? null, c.entity, c.field ?? null, c.oldValue ?? null, c.newValue ?? null, c.changeType, c.importance ?? "normal", data.runId ?? null));
-    for (let i = 0; i < batch.length; i += 40) await DB.batch(batch.slice(i, i + 40));
-    return { ok: true, inserted: data.changes.length };
+    let inserted = 0;
+    for (let i = 0; i < batch.length; i += 40) for (const r of await DB.batch(batch.slice(i, i + 40))) inserted += Number((r as { meta?: { changes?: number } }).meta?.changes ?? 0);
+    return { ok: true, inserted };
   });
 
 // Bulk zápis per-nehnuteľnosť akvizícií (Mac → asset_acquisitions). Auth = alert_secret.
@@ -8398,6 +8401,9 @@ export type PropertyCore = {
     freePlots: { landsearch: number; up: number };
     buildingMix: { druh: string; n: number }[];
   };
+  /** klientska verzia (share-client.ts): jednotlivé zmluvy, inzeráty a LV susedov sú nahradené agregátmi */
+  clientSafe?: boolean;
+  clientAgg?: ClientAgg;
 };
 
 /** Insolvenčný register REPLIK (od 1. 10. 2025 nahradil Register úpadcov) — LEN IČO právnických osôb, cache 14 dní. */
@@ -9269,6 +9275,8 @@ function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid
     }
     const zn = asObj(snap.zone);
     if (zn) delete zn.geometry_json;
+    // údaje o tretích osobách (jednotlivé zmluvy s cenou, inzeráty, LV susedov, daň predávajúceho) → agregáty
+    clientizeCore(core);
     let out = JSON.stringify(snap);
     if (out.length > 1_800_000 && Array.isArray(core.parcels)) {
       core.parcels = (core.parcels as Record<string, unknown>[]).map((p, i) => (i < 30 ? p : { ...p, geometry_json: null }));
