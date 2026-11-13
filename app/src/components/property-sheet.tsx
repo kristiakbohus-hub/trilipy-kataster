@@ -2,10 +2,11 @@
 // živé) alebo /n/$token (klientska, snapshot bez mien a internej práce). Komponent nič nenačítava zo servera —
 // interné widgety (kupci, komentáre, dokumenty, kontakt) dostane cez `internal`. Zásady: chýbajúci údaj je
 // NEZNÁMY stav; každá sekcia uvádza zdroj; formulácie podľa phrases.ts (Property-360 §4).
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FACT_GROUP_LABEL, FACT_SCHEMA, type FactField } from "../lib/facts-schema";
 import { nf, eur, m2, dist, prettyZone, date, Sec, Muted, Sub, Grid, Table, HideCtx, LangCtx } from "./ps-ui";
 import { EN_LIGHT, EN_TITLES, EN_UI, EN_WORD, enExplain, enFindings } from "../lib/i18n-en";
+import { translateDom } from "../lib/i18n-en-dict";
 import { qrMatrix } from "../lib/qr";
 import { DecisionBody, PermitsBody, SettlementBlock } from "./property-decision";
 import { DeclarationBlock } from "./property-decl";
@@ -423,7 +424,7 @@ function PrintTeaser({ d, fin, lights }: { d: SheetData; fin: FinResult | null; 
       <ParcelSketch d={d} labels="main" />
       <div className="ps-kpis grid grid-cols-3 border-t border-line">{kpis.map(([k, v]) => <div key={k} className="ps-kpi border-b border-line py-2 pr-2"><div className="ps-kpi-v text-lg font-semibold">{v}</div><div className="ps-kpi-k text-[10px] uppercase tracking-[0.2em] text-muted">{k}</div></div>)}</div>
       <div className="grid gap-5 sm:grid-cols-[1.6fr_1fr]">
-        <div><ul className="ps-findings space-y-1 text-[13px]">{keyFindings(d, fin).slice(0, 5).map((t, i) => <li key={i}>{t}</li>)}</ul>
+        <div><ul className="ps-findings space-y-1 text-[13px]">{(d.lang === "en" ? enFindings(d, fin) : keyFindings(d, fin)).slice(0, 5).map((t, i) => <li key={i}>{t}</li>)}</ul>
           {audiences(d).length ? <p className="mt-2 text-[12px]"><b>Vhodné pre:</b> {audiences(d).map((a) => a.who.toLowerCase()).join(", ")}{d.decl?.ec_trieda ? ` · energetická trieda ${String(d.decl.ec_trieda)}` : ""}</p> : null}</div>
         <div className="space-y-1 text-[12px]">{lights.map((l) => <div key={l.key} className="flex items-center gap-1.5"><span className="ps-dot inline-block h-2.5 w-2.5 rounded-full" style={{ background: LIGHT_DOT[l.state] }} /><b>{l.label}</b><span className="text-muted">— {LIGHT_WORD[l.state]}</span></div>)}</div>
       </div>
@@ -462,7 +463,7 @@ function PrintCover({ d, lights, isClient, fin, en = false }: { d: SheetData; li
         <h1 className="ps-cover-title">{c.title}</h1>
         {addressOf(c)?.adresa ? <p className="ps-cover-addr">{String(addressOf(c)?.adresa)}{addressOf(c)?.presna === false ? " (najbližšia adresa)" : ""}</p> : null}
         {c.celokNote && !en ? <p className="ps-cover-note">{c.celokNote}</p> : null}
-        {en ? <p className="ps-cover-note">English edition: summary, chapter titles and explanations in English; detailed register tables keep the official Slovak terminology.</p> : null}
+        {en ? <p className="ps-cover-note">English edition. Values copied from official registers (land types, place names, zoning categories, register texts) are kept in Slovak as officially recorded.</p> : null}
       </div>
       <div className="ps-cover-map"><ParcelSketch d={d} labels="main" /></div>
       <div className="ps-kpis">{kpis.map(([k, v]) => <div key={k} className="ps-kpi"><div className="ps-kpi-v">{v}</div><div className="ps-kpi-k">{k}</div></div>)}</div>
@@ -631,6 +632,8 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
   const [finIn, setFinIn] = useState<Partial<FinInputs>>(d.finInputs ?? {});
   const fin = useMemo(() => { try { return financeOf(d, d.fin ?? null, finIn); } catch { return null; } }, [d, finIn]);
   const en = d.lang === "en";
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => { if (en) translateDom(rootRef.current); });
   const ex = (id: string) => (en ? enExplain(id, d, fin) : explain(id, d, fin));
   const tt = (id: string, sk: string) => (en ? EN_TITLES[id] ?? sk : sk);
   const setFin = (p: Partial<FinInputs>) => setFinIn((o) => { const n = { ...o, ...p }; onFinInputs?.(n); return n; });
@@ -668,11 +671,11 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
     hodnota: "Hodnota", predikcia: "Predikcia hodnoty", trh: "Trh a dopyt", financovanie: "Financovanie a hypotéka", naklady: "Náklady kúpy, vlastníctva a dane", poistenie: "Poistenie a riziká", investicia: "Výnos a vyjednávanie", obec: "Obec a ľudia", praca: "Signály a práca (interné)", overit: "Čo overiť pred kúpou", zdroje: "Zdroje a úplnosť" } as Record<string, string>)[id] ?? label] as [string, string]);
 
   if (d.variant === "teaser") return (
-    <div className="property-sheet ps-teaser-wrap text-fg"><style>{printCss(c.title) + TEASER_CSS}</style><PrintTeaser d={d} fin={fin} lights={lights} /></div>
+    <div ref={rootRef} className="property-sheet ps-teaser-wrap text-fg"><style>{printCss(c.title) + TEASER_CSS}</style><PrintTeaser d={d} fin={fin} lights={lights} /></div>
   );
   return (
     <LangCtx.Provider value={en ? "en" : "sk"}><HideCtx.Provider value={hideSet}>
-    <div className="property-sheet mx-auto max-w-4xl space-y-5 text-fg">
+    <div ref={rootRef} className="property-sheet mx-auto max-w-4xl space-y-5 text-fg">
       <style>{printCss(c.title, en)}</style>
       <PrintCover d={d} lights={lights} isClient={isClient} fin={fin} en={en} />
       <PrintSummary d={d} lights={lights} isClient={isClient} toc={toc} fin={fin} en={en} />
