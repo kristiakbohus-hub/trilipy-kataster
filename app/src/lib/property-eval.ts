@@ -165,7 +165,7 @@ export function semafor(d: SheetData): Light[] {
     // vyjadrenia správcov (evidované odpovede, 0113) majú prednosť pred odhadom z OSM a údajov obce
     const ans = (c.requests ?? []).filter((r) => r.status === "odpoved" && r.outcome && r.kind !== "up_obec");
     if (ans.some((r) => r.outcome === "riziko")) { st = "bad"; parts.unshift("vyjadrenie správcu: prekážka"); }
-    else if (ans.some((r) => r.outcome === "pozor")) { st = st === "bad" ? st : "warn"; parts.unshift("vyjadrenie správcu: s podmienkami"); }
+    else if (ans.some((r) => r.outcome === "pozor")) { st = "warn"; parts.unshift("vyjadrenie správcu: s podmienkami"); }
     else if (ans.length) { parts.unshift(`vyjadrenia správcov bez prekážok (${ans.length})`); if (st === "unknown") st = "ok"; }
     out.push({ key: "siete", label: "Siete", state: st, text: parts.join(" · ") || "Napojenie obce neznáme — vyjadrenia správcov." });
   }
