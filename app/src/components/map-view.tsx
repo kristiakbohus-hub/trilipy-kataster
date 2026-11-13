@@ -448,6 +448,10 @@ export function MapView({
     let alive = true;
     for (const r of rasters) {
       if ((rasterOn[r.id] || georefId === r.id) && !rasterData[r.id]) {
+        if (r.kind === "up_mac") {   // výkres z Macu: priamo JPEG z R2 (/api/up-raster), nie base64 v odpovedi
+          setRasterData((m) => (m[r.id] ? m : { ...m, [r.id]: `/api/up-raster?id=${encodeURIComponent(r.id)}` }));
+          continue;
+        }
         getRasterData({ data: { id: r.id } }).then((d) => {
           if (alive && d.ok && d.dataUrl) setRasterData((m) => (m[r.id] ? m : { ...m, [r.id]: d.dataUrl! }));
         }).catch(() => {});
