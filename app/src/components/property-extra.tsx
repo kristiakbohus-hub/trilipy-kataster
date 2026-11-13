@@ -215,3 +215,28 @@ export function RentalsTable({ d }: { d: SheetData }) {
       l.url ? <a key="u" href={l.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{(l.title ?? "inzerát").slice(0, 44)}</a> : l.title ?? "inzerát",
       dist(l.distM), m2(l.area_m2), eur(l.price_eur), l.ppm2 ? nf(l.ppm2, 1) : "—"])} /></>);
 }
+
+// ——— intenzita dopravy (SSC sčítanie 2022–2023) a orientačný hluk pri pozemku ———
+export function trafficNoise(d: SheetData): { road: string; s: number; sMax: number; tPct: number; distM: number; lden: number; level: string } | null {
+  const r = d.limits?.road; const f = fact(d.core, "doprava", `ku:${d.core.dataset?.ku_code ?? ""}`);
+  if (!r || !f || !r.cislo) return null;
+  const cesty = (f.cesty ?? {}) as Record<string, { s_med: number; s_max: number; t_pct: number }>;
+  const x = cesty[String(r.cislo)] ?? cesty[String(r.cislo).replace(/^0+/, "")];
+  if (!x) return null;
+  // zjednodušený odhad Lden: hladina 10 m od cesty z intenzity a podielu ťažkých vozidiel, útlm so vzdialenosťou (líniový zdroj + terén)
+  const L10 = 10 * Math.log10(Math.max(50, x.s_med)) + 29 + 10 * Math.log10(1 + 4 * (x.t_pct / 100));
+  const lden = Math.round(L10 - 15 * Math.log10(Math.max(r.distM, 10) / 10));
+  const level = lden < 45 ? "tiché" : lden < 53 ? "mierny hluk" : lden < 60 ? "hlučnejšie" : lden < 65 ? "hlučné" : "veľmi hlučné";
+  return { road: `${r.trieda} ${r.cislo}`, s: x.s_med, sMax: x.s_max, tPct: x.t_pct, distM: Math.round(r.distM), lden, level };
+}
+export function TrafficNoiseBlock({ d }: { d: SheetData }) {
+  const t = trafficNoise(d); if (!t) return null;
+  return (
+    <>
+      <Sub>Doprava a hluk z najbližšej cesty</Sub>
+      <Grid rows={[["Cesta", `${t.road} vo vzdialenosti ${dist(t.distM)}`], ["Intenzita (sčítanie 2022–2023)", `${nf(t.s)} vozidiel za 24 h (úseky v okrese do ${nf(t.sMax)})`], ["Podiel ťažkých vozidiel", `${nf(t.tPct, 1)} %`],
+        ["Orientačný hluk pri pozemku", <b key="l">~{t.lden} dB (Lden) — {t.level}</b>]]} />
+      <Muted>Odhad bez protihlukových stien, budov a terénu medzi cestou a pozemkom. Svetová zdravotnícka organizácia odporúča pre cestnú dopravu menej ako 53 dB; vyhláška 549/2007 pripúšťa pri cestách v obytnom území 60 dB cez deň a 50 dB v noci. Presné hodnoty majú strategické hlukové mapy a meranie.</Muted>
+    </>
+  );
+}

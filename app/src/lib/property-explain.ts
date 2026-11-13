@@ -71,12 +71,16 @@ export function explain(id: string, d: SheetData, fin: FinResult | null): string
       const ob = fact(c, "obec", `ku:${kod}`); const osm = mk ? fact(c, "osm", mk) : null;
       out.push(`Siete (elektrina, voda, kanalizácia, plyn) sú pre stavbu kľúčové — prípojka môže stáť od stoviek po desaťtisíce eur. ${typeof osm?.cesta === "number" ? `Siete vedú spravidla po ceste; tá je od pozemku ~${dist(osm.cesta as number)}, takže prípojky budú merať zhruba toľko.` : ""} ${ob?.plyn_obec === false ? "Obec nie je plynofikovaná — kúrenie bude elektrinou, tepelným čerpadlom alebo tuhým palivom." : ""}`.trim());
       out.push("Presnú polohu a kapacitu sietí potvrdí len správca vo vyjadrení k existencii sietí — vzor žiadosti nájdete v prílohe listu.");
+      const w = fact(c, "voda", `ku:${kod}`);
+      if (w?.tvrdost_slovom) out.push(`Voda z verejného vodovodu je ${String(w.tvrdost_slovom)} (${String(w.tvrdost_mmol)} mmol/l). ${Number(w.tvrdost_mmol) >= 2.14 ? "Tvrdšia voda je zdravotne v poriadku, ale tvorí vodný kameň — počítajte so zmäkčovačom alebo častejším odvápňovaním spotrebičov." : "Mäkšia voda netvorí veľa vodného kameňa."}`);
       break;
     }
     case "doprava": {
       const osm = mk ? fact(c, "osm", mk) : null;
       const parts = [num(osm?.skola) != null ? `škola ${dist(num(osm?.skola) as number)}` : null, num(osm?.potrav) != null ? `obchod ${dist(num(osm?.potrav) as number)}` : null, num(osm?.bus) != null ? `zastávka ${dist(num(osm?.bus) as number)}` : null, num(osm?.t_za) != null ? `Žilina autom ${num(osm?.t_za)} min` : null].filter(Boolean);
       if (parts.length) out.push(`Pre každodenný život: ${parts.join(", ")}. Vzdialenosti sú vzdušnou čiarou, skutočná cesta býva o tretinu dlhšia.`);
+      const ad = fact(c, "adresa", mk ?? "");
+      if (ad?.skola_zs) out.push(`Spádová základná škola podľa školského obvodu je ${String(ad.skola_zs)} — tam má dieťa s trvalým pobytom na tejto adrese zaručené miesto.`);
       break;
     }
     case "hodnota": {

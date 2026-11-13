@@ -8,7 +8,7 @@ import { nf, eur, m2, dist, prettyZone, date, Sec, Muted, Sub, Grid, Table } fro
 import { financeOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, PurchaseSteps, RentalsTable, SubdivisionBlock, TerrainProfile, Timeline } from "./property-extra";
+import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, PurchaseSteps, RentalsTable, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock } from "./property-extra";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -746,6 +746,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
           <FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_ZONES} />
         </>) : <Muted>Siete z OpenStreetMap pre parcelu zatiaľ nie sú spočítané.</Muted>}
         {fact(c, "obec", kuKey) ? <FactsBlock grp="obec" data={Object.fromEntries(Object.entries(fact(c, "obec", kuKey) ?? {}).filter(([k]) => /vod|kanal|cov|plyn|distrib|elektr|stocn|voda/i.test(k)))} /> : null}
+        {fact(c, "voda", kuKey) ? (() => { const w = fact(c, "voda", kuKey)!; return <Grid rows={[["Tvrdosť pitnej vody (verejný vodovod)", `${nf(Number(w.tvrdost_mmol), 2)} mmol/l (${nf(Number(w.tvrdost_dh), 1)} °dH) — ${String(w.tvrdost_slovom)}`], ["Vodovod", `${String(w.vodovod)} · ${String(w.miesto)}`]]} />; })() : null}
         {connectionLength(d) != null ? <Grid rows={[["Orientačná dĺžka prípojok (od cesty, kde siete spravidla vedú)", `~${connectionLength(d)} m`]]} /> : null}
         <Muted>Existenciu a polohu sietí potvrdí správca vo „vyjadrení k existencii sietí" (elektrina, plyn, voda, telekomunikácie); cenu prípojok určí projekt a cenník správcu.</Muted>
       </Sec>
@@ -759,6 +760,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
           </div>
         ) : null}
         {mk && fact(c, "osm", mk) ? (<>
+          <TrafficNoiseBlock d={d} />
           <Sub>Vzdialenosti k vybavenosti</Sub><AmenityChart d={d} />
           <Sub>Čas autom</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_TIME} />
           <Sub>Prístupová cesta</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_ROAD} />
