@@ -899,4 +899,7 @@ export const EN_TPL: Record<string, string> = {
   "Predaj po {0} rokoch": "Sale after {0} years",
   "· najviac": "· at most",
   "najviac": "at most",
+  "limity WHO {0}": "WHO {0} limits",
+  "Norma": "Standard",
+  "Stav": "Status",
 };
