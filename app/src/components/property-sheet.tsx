@@ -2,19 +2,15 @@
 // živé) alebo /n/$token (klientska, snapshot bez mien a internej práce). Komponent nič nenačítava zo servera —
 // interné widgety (kupci, komentáre, dokumenty, kontakt) dostane cez `internal`. Zásady: chýbajúci údaj je
 // NEZNÁMY stav; každá sekcia uvádza zdroj; formulácie podľa phrases.ts (Property-360 §4).
-import type { ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { FACT_GROUP_LABEL, FACT_SCHEMA, type FactField } from "../lib/facts-schema";
+import { nf, eur, m2, dist, prettyZone, date, Sec, Muted, Sub, Grid, Table } from "./ps-ui";
+import { financeOf, type FinInputs, type FinResult } from "../lib/finance";
+import { explain, lightsSentence } from "../lib/property-explain";
+import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
 import { checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
-const nf = (n: number, d = 0) => n.toLocaleString("sk-SK", { maximumFractionDigits: d, minimumFractionDigits: 0 });
-const eur = (n: number | null | undefined) => (n == null ? "—" : `${nf(Math.round(n))}\u00a0€`);
-const m2 = (n: number | null | undefined) => (n == null ? "—" : `${nf(Math.round(n))}\u00a0m²`);
-const dist = (m: number | null | undefined) => (m == null ? "—" : m < 1000 ? `${Math.round(m / 10) * 10}\u00a0m` : `${nf(m / 1000, 1)}\u00a0km`);
-/** „šport/ihriská" → „Šport / ihriská" (rodiny zón z enginu sú technické názvy) */
-const prettyZone = (z: string | null | undefined) => (z ? z.replace(/\s*\/\s*/g, " / ").replace(/^./, (x) => x.toUpperCase()) : z ?? null);
-const date = (s: string | null | undefined) => (s ? s.slice(0, 10).split("-").reverse().join(". ") : "—");
-
 const LEGAL_LABEL: Record<string, string> = {
   zalozne_pravo: "Záložné právo", vecne_bremeno: "Vecné bremeno", predkupne: "Predkupné právo", najom: "Nájom", exekucia: "Exekúcia",
   dedicstvo: "Dedičstvo", kupa: "Kúpna zmluva", darovanie: "Darovacia zmluva", rozhodnutie: "Rozhodnutie", drazba: "Dražba", ine: "Iné",
@@ -34,43 +30,6 @@ export function groupLegal(items: string[]): { label: string; n: number; span: s
     const ys = g.years.sort((a, b) => a - b);
     return { label, n: g.n, span: ys.length === 0 ? null : ys[0] === ys[ys.length - 1] ? String(ys[0]) : `${ys[0]}–${ys[ys.length - 1]}` };
   }).sort((a, b) => (a.label === "Iné" ? 1 : b.label === "Iné" ? -1 : 0) || b.n - a.n);
-}
-
-// ——— stavebné bloky ———
-function Sec({ id, n, title, source, children }: { id: string; n?: string; title: string; source?: ReactNode; children: ReactNode }) {
-  return (
-    <section id={id} className="ps-sec scroll-mt-16 border-t border-line pt-4">
-      <h2 className="ps-h2 mb-2 flex items-baseline gap-2 text-base font-semibold text-fg">{n ? <span className="ps-num font-light text-muted">{n}</span> : null}<span>{title}</span></h2>
-      <div className="ps-body space-y-3 text-sm">{children}</div>
-      {source ? <div className="ps-source mt-2 text-[10px] leading-snug text-muted">Zdroj: {source}</div> : null}
-    </section>
-  );
-}
-function Muted({ children }: { children: ReactNode }) { return <p className="ps-muted text-xs text-muted">{children}</p>; }
-function Sub({ children }: { children: ReactNode }) { return <h3 className="ps-sub text-[11px] font-semibold uppercase tracking-wider text-muted">{children}</h3>; }
-function Grid({ rows }: { rows: [ReactNode, ReactNode][] }) {
-  const r = rows.filter(([, v]) => v != null && v !== "" && v !== "—");
-  if (!r.length) return null;
-  return (
-    <dl className="ps-grid grid grid-cols-1 gap-x-6 sm:grid-cols-2">
-      {r.map(([k, v], i) => (
-        <div key={i} className="flex justify-between gap-3 border-b border-line/40 py-0.5">
-          <dt className="text-muted">{k}</dt><dd className="text-right tabular-nums">{v}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-function Table({ head, rows }: { head: string[]; rows: ReactNode[][] }) {
-  if (!rows.length) return null;
-  return (
-    <div className="ps-tablewrap overflow-x-auto">
-      <table className="ps-table w-full text-xs">
-        <thead><tr className="border-b border-line text-left text-muted">{head.map((h, i) => <th key={i} className="py-1 pr-2 font-medium">{h}</th>)}</tr></thead>
-        <tbody>{rows.map((r, i) => <tr key={i} className="border-b border-line/40 align-top">{r.map((c, j) => <td key={j} className="py-1 pr-2 tabular-nums">{c}</td>)}</tr>)}</tbody>
-      </table>
-    </div>
-  );
 }
 
 // ——— predpočítané údaje (property_facts) — popisy zo schém Mac modulov ———
@@ -382,7 +341,7 @@ function docRef(d: SheetData): string {
 }
 
 /** Kľúčové zistenia pre zhrnutie — len z údajov listu, bez tvrdení nad rámec dôkazu (phrases.ts). */
-function keyFindings(d: SheetData): string[] {
+function keyFindings(d: SheetData, fin: FinResult | null): string[] {
   const c = d.core; const mk = mainKey(c); const out: string[] = [];
   const est = c.compStats?.estimateEur ?? d.avm?.estimate_eur ?? null;
   if (c.compStats?.estimateEur) out.push(`Orientačná hodnota ${eur(c.compStats.estimateEur)} podľa ${c.compStats.n} porovnateľných predajov zo zmlúv v okrese${c.compStats.medPpm2 ? ` (medián ${nf(c.compStats.medPpm2)} €/m²)` : ""}.`);
@@ -400,16 +359,20 @@ function keyFindings(d: SheetData): string[] {
   if (net.length) out.push(`Siete: ${net.join(", ")}.`);
   const tar = c.legal.reduce((x, l) => x + l.tarchyCount, 0), own = c.owners.perLv.reduce((x, l) => x + l.count, 0);
   out.push(`Vlastníctvo: ${own} ${own === 1 ? "vlastník" : own < 5 ? "vlastníci" : "vlastníkov"} na ${c.lvs.length} LV; ${tar ? `${tar}× ťarcha alebo poznámka` : "ťarcha v našom zázname nie je zapísaná (overiť na výpise)"}.`);
+  const fm = fin?.mortgage;
+  if (fm) out.push(`Financovanie: pri úvere ${Math.round(fin!.inputs.ltv * 100)} % splátka ~${eur(fm.payment)} mesačne (${nf(fm.rate, 2)} %, ${fin!.inputs.fix} r. fixácia), vlastné zdroje ~${eur(fm.ownFunds.total)}, potrebný čistý príjem domácnosti ~${eur(fm.income.netMonthly)}${fm.blockers.length ? `; ${fm.blockers.length}× prekážka financovania` : ""}.`);
+  const pz = fin?.prediction;
+  if (pz) out.push(`Hodnota o 5 rokov (základný scenár): ~${eur(pz.scenarios[1].values[2])}, rozpätie ${eur(pz.scenarios[0].values[2])} – ${eur(pz.scenarios[2].values[2])}.`);
   return out;
 }
 
-function PrintCover({ d, lights, isClient }: { d: SheetData; lights: Light[]; isClient: boolean }) {
+function PrintCover({ d, lights, isClient, fin }: { d: SheetData; lights: Light[]; isClient: boolean; fin: FinResult | null }) {
   const c = d.core;
   const total = c.parcels.reduce((x, p) => x + (p.area_m2 ?? 0), 0);
   const est = c.compStats?.estimateEur ?? d.avm?.estimate_eur ?? null;
   const z = zoneOf(d);
   const kpis: [string, string][] = [
-    ["Výmera", m2(total)], ["Parcely", String(c.parcels.length)],
+    ["Výmera", m2(total)], fin?.mortgage ? ["Hypotéka mesačne", `${eur(fin.mortgage.payment)}`] : ["Parcely", String(c.parcels.length)],
     ["List vlastníctva", c.lvs.length ? `${c.lvs.slice(0, 3).join(", ")}${c.lvs.length > 3 ? " …" : ""}` : "—"],
     ["Územný plán", z.name ? short(prettyZone(z.name.replace(/ — ÚP z výkresu, orientačné$/, " (výkres)")) ?? "", 30) : "bez zóny"],
     ["Orientačná hodnota", est ? eur(est) : "—"], ["Katastrálne územie", (c.dataset?.ku_name ?? "—").replace(/^k\.ú\.\s*/i, "")],
@@ -447,7 +410,7 @@ function PrintCover({ d, lights, isClient }: { d: SheetData; lights: Light[]; is
   );
 }
 
-function PrintSummary({ d, lights, isClient, toc }: { d: SheetData; lights: Light[]; isClient: boolean; toc: [string, string][] }) {
+function PrintSummary({ d, lights, isClient, toc, fin }: { d: SheetData; lights: Light[]; isClient: boolean; toc: [string, string][]; fin: FinResult | null }) {
   const checks = checklist(d).slice(0, 7);
   const suit = suitability(d);
   return (
@@ -456,7 +419,7 @@ function PrintSummary({ d, lights, isClient, toc }: { d: SheetData; lights: Ligh
       <div className="ps-sum-cols">
         <div>
           <h3 className="ps-sub">Kľúčové zistenia</h3>
-          <ul className="ps-findings">{keyFindings(d).map((t, i) => <li key={i}>{t}</li>)}</ul>
+          <ul className="ps-findings">{keyFindings(d, fin).map((t, i) => <li key={i}>{t}</li>)}</ul>
           <h3 className="ps-sub">Vhodnosť podľa využitia</h3>
           <div className="ps-suit">{suit.map((x) => (
             <div key={x.key} className="ps-suit-row"><span>{x.label}</span><span className="ps-bar"><span style={{ width: `${x.score}%` }} /></span><span className="ps-suit-n">{x.score}</span></div>
@@ -464,6 +427,7 @@ function PrintSummary({ d, lights, isClient, toc }: { d: SheetData; lights: Ligh
         </div>
         <div>
           <h3 className="ps-sub">Semafor</h3>
+          <p className="ps-sum-lead">{lightsSentence(d)}</p>
           <div className="ps-sum-lights">{lights.map((l) => (
             <div key={l.key} className="ps-sum-light"><span className="ps-dot" style={{ background: LIGHT_DOT[l.state] }} /><b>{l.label}</b> — {LIGHT_WORD[l.state]}<div>{l.text}</div></div>
           ))}</div>
@@ -560,12 +524,34 @@ function printCss(title: string): string {
   .property-sheet svg { max-width: 100%; }
   .property-sheet figure { break-inside: avoid; }
   .property-sheet .rounded-md, .property-sheet .rounded-lg { border-radius: 0 !important; }
+  /* vysvetlenia pre laika, dátum údajov, nápovedy */
+  .ps-explain { background: #f6f6f4 !important; border: none !important; border-left: 1.2pt solid #333 !important; padding: 2.2mm 3.2mm !important; break-inside: avoid; }
+  .ps-explain-h { font-family: "Josefin Sans", sans-serif; letter-spacing: .2em !important; font-size: 6.4pt !important; color: #333 !important; margin-bottom: 1mm !important; }
+  .ps-explain p { font-size: 8pt !important; line-height: 1.5 !important; color: #3a3a3a !important; margin: 0 0 .8mm !important; }
+  .ps-asof { font-family: "Montserrat", sans-serif !important; text-transform: none !important; letter-spacing: 0 !important; font-size: 6.4pt !important; font-weight: 400 !important; color: #9a9a9a !important; }
+  .ps-asof.ps-stale { color: #9c4a40 !important; }
+  .ps-hint { font-size: 6.6pt !important; color: #8a8a8a !important; font-weight: 400 !important; }
+  .ps-matrix span { font-size: 6.8pt !important; }
+  .ps-sum-lead { color: #5a5a5a; margin: 0 0 1.5mm; }
 }`;
 }
 
 // ——— hlavný komponent ———
-export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode } }) {
+export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData; mode: SheetMode; internal?: { actions?: ReactNode; buyers?: ReactNode; work?: ReactNode }; onFinInputs?: (p: Partial<FinInputs>) => void }) {
   const c = d.core;
+  const [finIn, setFinIn] = useState<Partial<FinInputs>>(d.finInputs ?? {});
+  const fin = useMemo(() => { try { return financeOf(d, d.fin ?? null, finIn); } catch { return null; } }, [d, finIn]);
+  const ex = (id: string) => explain(id, d, fin);
+  const setFin = (p: Partial<FinInputs>) => setFinIn((o) => { const n = { ...o, ...p }; onFinInputs?.(n); return n; });
+  const kat = c.dataset?.updated_at ?? null;
+  const fm = (g: string) => c.factMeta[g]?.asOf ?? null;
+  const AS: Record<string, [string | null, number]> = {
+    prehlad: [kat, 180], skladba: [kat, 180], vlastnictvo: [kat, 180], pravo: [kat, 180], pristup: [fm("pristup") ?? kat, 365], up: [fm("up") ?? kat, 365],
+    limity: [d.generatedAt, 45], teren: [fm("teren"), 3650], klima: [fm("klima"), 3650], siete: [fm("osm"), 400], doprava: [fm("osm"), 400],
+    hodnota: [kat, 180], predikcia: [d.generatedAt, 45], trh: [c.market.rent?.day ?? d.generatedAt, 21], financovanie: [d.fin?.banksAsOf ?? d.fin?.asOf ?? null, 7],
+    naklady: [fin?.params.asOf ?? null, 365], poistenie: [d.generatedAt, 45], investicia: [d.generatedAt, 45], obec: [fm("obec"), 400],
+  };
+  const asof = (id: string) => (AS[id] ? { asOf: AS[id][0], staleDays: AS[id][1] } : {});
   const mk = mainKey(c);
   const kuKey = `ku:${c.dataset?.ku_code ?? ""}`;
   const lights = semafor(d);
@@ -579,20 +565,20 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
   const totalArea = c.parcels.reduce((s, p) => s + (p.area_m2 ?? 0), 0);
   const flatsByLv = Object.entries(c.facts.byty ?? {}).filter(([k]) => k.startsWith("flat:"));
   const nav: [string, string][] = [["prehlad", "Prehľad"], ["skladba", "Skladba"], ["vlastnictvo", "Vlastníctvo"], ["pravo", "Právny stav"], ["pristup", "Prístup"],
-    ["up", "ÚP"], ["limity", "Limity"], ["teren", "Terén a slnko"], ["klima", "Klíma"], ["siete", "Siete"], ["doprava", "Doprava"], ["hodnota", "Hodnota"],
-    ["trh", "Trh"], ["obec", "Obec"], ...(isClient ? [] : [["praca", "Práca"] as [string, string]]), ["overit", "Čo overiť"], ["zdroje", "Zdroje"]];
+    ["up", "ÚP"], ["limity", "Limity"], ["teren", "Terén a slnko"], ["klima", "Klíma"], ["siete", "Siete"], ["doprava", "Doprava"], ["hodnota", "Hodnota"], ["predikcia", "Predikcia"],
+    ["trh", "Trh"], ["financovanie", "Hypotéka"], ["naklady", "Náklady a dane"], ["poistenie", "Poistenie a riziká"], ["investicia", "Výnos a vyjednávanie"], ["obec", "Obec"], ...(isClient ? [] : [["praca", "Práca"] as [string, string]]), ["overit", "Čo overiť"], ["zdroje", "Zdroje"]];
 
   const navIds = nav.map(([id]) => id);
   const num = (id: string) => String(navIds.indexOf(id) + 1).padStart(2, "0");
   const toc = nav.map(([id, label]) => [num(id), ({ prehlad: "Prehľad", skladba: "Skladba nehnuteľnosti", vlastnictvo: "Vlastníctvo", pravo: "Právny stav", pristup: "Prístup a susedia",
     up: "Územný plán a zastavateľnosť", limity: "Limity a riziká", teren: "Terén a slnko", klima: "Klíma a stavebné normy", siete: "Siete a energie", doprava: "Doprava a vybavenosť",
-    hodnota: "Hodnota", trh: "Trh a dopyt", obec: "Obec a ľudia", praca: "Signály a práca (interné)", overit: "Čo overiť pred kúpou", zdroje: "Zdroje a úplnosť" } as Record<string, string>)[id] ?? label] as [string, string]);
+    hodnota: "Hodnota", predikcia: "Predikcia hodnoty", trh: "Trh a dopyt", financovanie: "Financovanie a hypotéka", naklady: "Náklady kúpy, vlastníctva a dane", poistenie: "Poistenie a riziká", investicia: "Výnos a vyjednávanie", obec: "Obec a ľudia", praca: "Signály a práca (interné)", overit: "Čo overiť pred kúpou", zdroje: "Zdroje a úplnosť" } as Record<string, string>)[id] ?? label] as [string, string]);
 
   return (
     <div className="property-sheet mx-auto max-w-4xl space-y-5 text-fg">
       <style>{printCss(c.title)}</style>
-      <PrintCover d={d} lights={lights} isClient={isClient} />
-      <PrintSummary d={d} lights={lights} isClient={isClient} toc={toc} />
+      <PrintCover d={d} lights={lights} isClient={isClient} fin={fin} />
+      <PrintSummary d={d} lights={lights} isClient={isClient} toc={toc} fin={fin} />
 
       <header className="ps-screen-only space-y-2 border-b-2 pb-3" style={{ borderColor: "#333" }}>
         <div className="flex items-center gap-3"><img src="/tl-logo.png" alt="TRI LIPY" className="h-9 w-auto" /><div className="text-[10px] uppercase tracking-[0.22em] text-muted">list nehnuteľnosti{isClient ? "" : " · interná verzia"}</div></div>
@@ -608,7 +594,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {nav.map(([id, label]) => <a key={id} href={`#${id}`} className="rounded border border-line px-2 py-0.5 text-muted hover:border-ink hover:text-fg">{label}</a>)}
       </nav>
 
-      <Sec id="prehlad" n={num("prehlad")} title="Prehľad" source={<>Kataster ÚGKK SR (stav k {date(c.dataset?.updated_at)}); obrysy z katastrálnej mapy (VGI).</>}>
+      <Sec id="prehlad" n={num("prehlad")} explain={ex("prehlad")} {...asof("prehlad")} title="Prehľad" source={<>Kataster ÚGKK SR (stav k {date(c.dataset?.updated_at)}); obrysy z katastrálnej mapy (VGI).</>}>
         <div className="ps-screen-only"><ParcelSketch d={d} /></div>
         {c.main.lat != null && c.main.lng != null ? <HistoricMap lat={c.main.lat} lng={c.main.lng} /> : null}
         <Grid rows={[
@@ -622,7 +608,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {!isClient && c.main.lat != null ? <a className="no-print text-xs text-brand underline" href={`/mapa?ll=${c.main.lat},${c.main.lng}`}>Otvoriť na mape →</a> : null}
       </Sec>
 
-      <Sec id="skladba" n={num("skladba")} title="Skladba nehnuteľnosti" source="SPI a VGI (ÚGKK SR); zóna ÚP z našich územnoplánovacích podkladov.">
+      <Sec id="skladba" n={num("skladba")} explain={ex("skladba")} {...asof("skladba")} title="Skladba nehnuteľnosti" source="SPI a VGI (ÚGKK SR); zóna ÚP z našich územnoplánovacích podkladov.">
         <Table head={["Parcela", "Výmera", "Druh pozemku", "Umiestnenie", "LV", "Úloha v celku", "Zóna ÚP"]}
           rows={c.parcels.slice(0, 60).map((p) => [`${p.register === "E" ? "E " : ""}${p.parcel_no}`, m2(p.area_m2), p.use_type ?? "—", p.placement ?? "—", p.lv_no ?? "—", p.role, prettyZone(p.zone) ?? "—"])} />
         {c.parcels.length > 60 ? <Muted>… a ďalších {c.parcels.length - 60} parciel.</Muted> : null}
@@ -647,7 +633,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           : mainParcel?.bpej ? <Grid rows={[["BPEJ", mainParcel.bpej], ["Skupina kvality", mainParcel.bpej_skupina != null ? String(mainParcel.bpej_skupina) : "—"], ["Odvod za vyňatie (odhad)", mainParcel.odnatie_eur != null ? eur(mainParcel.odnatie_eur) : "—"]]} /> : null}
       </Sec>
 
-      <Sec id="vlastnictvo" n={num("vlastnictvo")} title="Vlastníctvo" source={<>Časť B LV (ÚGKK SR); nadobudnutia z titulov; finančné údaje firiem z RÚZ.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}</>}>
+      <Sec id="vlastnictvo" n={num("vlastnictvo")} explain={ex("vlastnictvo")} {...asof("vlastnictvo")} title="Vlastníctvo" source={<>Časť B LV (ÚGKK SR); nadobudnutia z titulov; finančné údaje firiem z RÚZ.{isClient ? " Mená vlastníkov sa v tejto verzii neuvádzajú." : ""}</>}>
         {c.owners.perLv.map((l) => {
           const agg = fact(c, "vlastnici", `lv:${l.lvNo}`);
           return (
@@ -673,7 +659,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           <Muted>Insolvencia: insolvenčný register REPLIK (Ministerstvo spravodlivosti SR), len podľa IČO firmy.</Muted></>) : null}
       </Sec>
 
-      <Sec id="pravo" n={num("pravo")} title="Právny stav" source="Časť B a C LV, poznámky a plomby (SPI); dražby z verejných registrov dražieb; stavby bez zápisu porovnaním ZBGIS a katastra.">
+      <Sec id="pravo" n={num("pravo")} explain={ex("pravo")} {...asof("pravo")} title="Právny stav" source="Časť B a C LV, poznámky a plomby (SPI); dražby z verejných registrov dražieb; stavby bez zápisu porovnaním ZBGIS a katastra.">
         {c.legal.map((l) => (
           <div key={l.lvNo} className="space-y-1">
             <Sub>LV {l.lvNo}</Sub>
@@ -694,13 +680,13 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {c.parcels.some((p) => p.register === "C" && p.settled === 0) ? <Muted>Pod parcelou je pozemok registra E (iní vlastníci podľa pôvodného stavu) — vysporiadanie: {c.parcels.filter((p) => p.ekn_ref).map((p) => `${p.parcel_no} → E ${p.ekn_ref}`).join(", ")}.</Muted> : null}
       </Sec>
 
-      <Sec id="pristup" n={num("pristup")} title="Prístup a susedia" source="Spôsob využívania pozemkov (SPI) a spoločné hranice z katastrálnej mapy; cesty z OpenStreetMap a SSC.">
+      <Sec id="pristup" n={num("pristup")} explain={ex("pristup")} {...asof("pristup")} title="Prístup a susedia" source="Spôsob využívania pozemkov (SPI) a spoločné hranice z katastrálnej mapy; cesty z OpenStreetMap a SSC.">
         {mk && fact(c, "pristup", mk) ? <FactsBlock grp="pristup" data={fact(c, "pristup", mk)} /> : <Muted>Prístup z verejnej cesty zatiaľ nie je spočítaný — overiť na mape a v teréne.</Muted>}
         {d.limits?.road ? <Grid rows={[["Najbližšia cesta (SSC)", `${d.limits.road.trieda}${d.limits.road.cislo ? ` ${d.limits.road.cislo}` : ""} · ${dist(d.limits.road.distM)}`]]} /> : null}
         {mk && fact(c, "susedia", mk) ? (<><Sub>Susedné parcely</Sub><FactsBlock grp="susedia" data={fact(c, "susedia", mk)} /></>) : null}
       </Sec>
 
-      <Sec id="up" n={num("up")} title="Územný plán a zastavateľnosť" source="Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.">
+      <Sec id="up" n={num("up")} explain={ex("up")} {...asof("up")} title="Územný plán a zastavateľnosť" source="Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.">
         <Grid rows={[["Funkčná zóna", prettyZone(z.name) ?? "nemáme zónu ÚP pre parcelu"]]} />
         {mk && fact(c, "up", mk) ? (<><Sub>Zóna z výkresu ÚP (georeferencovaný výkres, orientačné)</Sub><FactsBlock grp="up" data={fact(c, "up", mk)} /></>) : null}
         {fact(c, "up", kuKey) ? <FactsBlock grp="up" data={Object.fromEntries(Object.entries(fact(c, "up", kuKey) ?? {}).filter(([k]) => ["zdroj", "dokumenty", "metoda", "presnost_m", "poznamka"].includes(k)))} /> : null}
@@ -720,7 +706,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           ))}</ul></>) : null}
       </Sec>
 
-      <Sec id="limity" n={num("limity")} title="Limity a riziká" source={<>Úradné registre: {[...new Set([...(d.limits?.items ?? []).map((h) => h.attribution), ...(d.ext ?? []).map((e) => e.attribution)])].join(", ") || "—"}. Bez prieniku = v použitej vrstve a dostupnom pokrytí sa nič nenašlo.</>}>
+      <Sec id="limity" n={num("limity")} explain={ex("limity")} {...asof("limity")} title="Limity a riziká" source={<>Úradné registre: {[...new Set([...(d.limits?.items ?? []).map((h) => h.attribution), ...(d.ext ?? []).map((e) => e.attribution)])].join(", ") || "—"}. Bez prieniku = v použitej vrstve a dostupnom pokrytí sa nič nenašlo.</>}>
         {d.limits?.items.length ? (
           <Table head={["Register", "Výsledok"]} rows={d.limits.items.map((h) => [
             <span key="l">{h.label}{h.names?.length ? <span className="text-muted"> · {h.names.slice(0, 2).join(", ")}</span> : null}</span>,
@@ -730,19 +716,19 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {d.ext?.length ? <ExtBlock items={d.ext} /> : null}
       </Sec>
 
-      <Sec id="teren" n={num("teren")} title="Terén a slnko" source="Digitálny model reliéfu DMR 5.0 (ÚGKK SR, CC BY 4.0); poloha slnka (výpočet NOAA) s horizontom z terénu.">
+      <Sec id="teren" n={num("teren")} explain={ex("teren")} {...asof("teren")} title="Terén a slnko" source="Digitálny model reliéfu DMR 5.0 (ÚGKK SR, CC BY 4.0); poloha slnka (výpočet NOAA) s horizontom z terénu.">
         {teren ? <FactsBlock grp="teren" data={teren} /> : <Muted>Terén pre parcelu zatiaľ nie je spočítaný.</Muted>}
         {mk && fact(c, "slnko", mk) ? (<><Sub>Slnko</Sub>
           <HorizonChart hor={fact(c, "slnko", mk)?.hor} lat={c.main.lat} />
           <FactsBlock grp="slnko" data={fact(c, "slnko", mk)} skip={["hor"]} /></>) : null}
       </Sec>
 
-      <Sec id="klima" n={num("klima")} title="Klíma a stavebné normy" source={<>{c.factMeta.klima?.source ?? "NASA POWER, PVGIS (EÚ JRC)"}; normy STN EN (národné prílohy).</>}>
+      <Sec id="klima" n={num("klima")} explain={ex("klima")} {...asof("klima")} title="Klíma a stavebné normy" source={<>{c.factMeta.klima?.source ?? "NASA POWER, PVGIS (EÚ JRC)"}; normy STN EN (národné prílohy).</>}>
         {fact(c, "klima", kuKey) ? <KlimaBlock data={fact(c, "klima", kuKey) as Record<string, unknown>} elev={elev} /> : <Muted>Klimatické údaje pre lokalitu zatiaľ nie sú spočítané.</Muted>}
         {fact(c, "normy", kuKey) ? (<><Sub>Stavebné normy lokality</Sub><BandsBlock grp="normy" data={fact(c, "normy", kuKey) as Record<string, unknown>} elev={elev} skip={["elev_range"]} /></>) : null}
       </Sec>
 
-      <Sec id="siete" n={num("siete")} title="Siete a energie" source="OpenStreetMap (© prispievatelia OSM), údaje o obci (vodovody, kanalizácie, plyn); presné trasy sietí potvrdí len vyjadrenie správcu.">
+      <Sec id="siete" n={num("siete")} explain={ex("siete")} {...asof("siete")} title="Siete a energie" source="OpenStreetMap (© prispievatelia OSM), údaje o obci (vodovody, kanalizácie, plyn); presné trasy sietí potvrdí len vyjadrenie správcu.">
         {mk && fact(c, "osm", mk) ? (<>
           <FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_NET} />
           <Sub>Ochranné pásma a okolie</Sub>
@@ -753,7 +739,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         <Muted>Existenciu a polohu sietí potvrdí správca vo „vyjadrení k existencii sietí" (elektrina, plyn, voda, telekomunikácie); cenu prípojok určí projekt a cenník správcu.</Muted>
       </Sec>
 
-      <Sec id="doprava" n={num("doprava")} title="Doprava a vybavenosť" source="OpenStreetMap; časy jazdy odhadom po cestnej sieti.">
+      <Sec id="doprava" n={num("doprava")} explain={ex("doprava")} {...asof("doprava")} title="Doprava a vybavenosť" source="OpenStreetMap; časy jazdy odhadom po cestnej sieti.">
         {d.access ? (
           <div className="grid grid-cols-2 gap-x-6 text-xs sm:grid-cols-3">
             {[...Object.entries(d.access.transport), ...Object.entries(d.access.amenities), ...Object.entries(d.access.infra)].filter(([, v]) => v).slice(0, 18).map(([k, v]) => (
@@ -773,7 +759,7 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         ) : null}
       </Sec>
 
-      <Sec id="hodnota" n={num("hodnota")} title="Hodnota" source="Ceny zo zmlúv zapísaných v katastri (SPI, od 2019); automatický odhad z ponúk a predajov v okrese; ponuky z verejnej inzercie. Orientačné — nie znalecký posudok.">
+      <Sec id="hodnota" n={num("hodnota")} explain={ex("hodnota")} {...asof("hodnota")} title="Hodnota" source="Ceny zo zmlúv zapísaných v katastri (SPI, od 2019); automatický odhad z ponúk a predajov v okrese; ponuky z verejnej inzercie. Orientačné — nie znalecký posudok.">
         <Grid rows={[
           ["Odhad podľa skutočných predajov v okolí", c.compStats?.estimateEur ? `${eur(c.compStats.estimateEur)}${c.compStats.basisM2 && c.compStats.medPpm2 ? ` (${nf(c.compStats.medPpm2)} €/m² × ${nf(c.compStats.basisM2)} m²)` : ""}` : "—"],
           ["Rozpätie €/m² (25.–75. percentil)", c.compStats?.p25 != null && c.compStats?.p75 != null ? `${nf(c.compStats.p25)}–${nf(c.compStats.p75)} €/m²` : "—"],
@@ -793,7 +779,11 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
           <Table head={["Dátum", "LV", "Druh", "Položky", "Cena v zmluve", "€/m²"]} rows={c.prices.map((p) => [date(p.cas), p.lvNo, p.kind, (p.items ?? "").slice(0, 40), eur(p.cen), p.ppm2 ? nf(p.ppm2) : "—"])} /></>) : null}
       </Sec>
 
-      <Sec id="trh" n={num("trh")} title="Trh a dopyt" source="Verejná inzercia (denný zber), satelitné snímky Copernicus (nová zástavba), Centrálny register zmlúv.">
+      <Sec id="predikcia" n={num("predikcia")} explain={ex("predikcia")} {...asof("predikcia")} title="Predikcia hodnoty" source={<>Trend cien zo zmlúv v katastri (okres), mzdy v okrese (ŠÚ SR), index cien bývania a inflácia (ECB/Eurostat){fin?.market?.hpi ? ` — ${fin.market.hpi.period}` : ""}. Modelový výpočet, nie prísľub ceny.</>}>
+        {fin ? <PredictionBody fin={fin} trend={c.market.trend} /> : <Muted>Na predikciu chýbajú údaje.</Muted>}
+      </Sec>
+
+      <Sec id="trh" n={num("trh")} explain={ex("trh")} {...asof("trh")} title="Trh a dopyt" source="Verejná inzercia (denný zber), satelitné snímky Copernicus (nová zástavba), Centrálny register zmlúv.">
         {c.listings.length ? (<><Sub>Pravdepodobne táto nehnuteľnosť v inzercii (priradené podľa výmery a polohy — overiť)</Sub>
           <Table head={["Inzerát", "Cena", "€/m²", "Od", "Naposledy", "Vývoj ceny", "Istota"]} rows={c.listings.map((l) => [
             l.url ? <a key="u" href={l.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{(l.title ?? "inzerát").slice(0, 40)}</a> : l.title ?? "inzerát",
@@ -815,12 +805,28 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         {!isClient && internal?.buyers ? (<><Sub>Kto by mohol kúpiť</Sub>{internal.buyers}</>) : null}
       </Sec>
 
-      <Sec id="obec" n={num("obec")} title="Obec a ľudia" source={<>{c.factMeta.obec?.source ?? "Štatistický úrad SR, ÚPSVR, MV SR"}.</>}>
+      <Sec id="financovanie" n={num("financovanie")} explain={ex("financovanie")} {...asof("financovanie")} title="Financovanie a hypotéka" source={fin ? finSourcesText(fin) : "—"}>
+        {fin ? <><FinInputsPanel fin={fin} set={setFin} /><FinancingBody fin={fin} isClient={isClient} /></> : <Muted>Výpočet financovania sa nepodaril.</Muted>}
+      </Sec>
+
+      <Sec id="naklady" n={num("naklady")} explain={ex("naklady")} {...asof("naklady")} title="Náklady kúpy, vlastníctva a dane" source="Zákon 145/1995 (vklad), zákon 582/2004 a VZN obce (daň z nehnuteľností, odpad), zákon 595/2003 (daň z príjmov), zákon 222/2004 (DPH); cenníky služieb a správcov sietí — orientačne.">
+        {fin ? <CostsBody fin={fin} /> : <Muted>—</Muted>}
+      </Sec>
+
+      <Sec id="poistenie" n={num("poistenie")} explain={ex("poistenie")} {...asof("poistenie")} title="Poistenie a riziká" source="Riziká z úradných registrov v tomto liste (záplavy, zosuvy, radón, seizmicita STN EN 1998, kriminalita MV SR, hasiči OSM); náklady obnovy stavby a sadzby poistného — modelový odhad.">
+        {fin ? <InsuranceBody fin={fin} /> : <Muted>—</Muted>}
+      </Sec>
+
+      <Sec id="investicia" n={num("investicia")} explain={ex("investicia")} {...asof("investicia")} title="Výnos a vyjednávanie" source="Nájmy a ponuky z verejnej inzercie (denný zber), náklady z tohto listu, regulatív ÚP a náklady výstavby; dane zjednodušene. Nie investičné poradenstvo.">
+        {fin ? <InvestBody fin={fin} /> : <Muted>—</Muted>}
+      </Sec>
+
+      <Sec id="obec" n={num("obec")} explain={ex("obec")} {...asof("obec")} title="Obec a ľudia" source={<>{c.factMeta.obec?.source ?? "Štatistický úrad SR, ÚPSVR, MV SR"}.</>}>
         {fact(c, "obec", kuKey) ? <FactsBlock grp="obec" data={fact(c, "obec", kuKey)} /> : <Muted>Údaje o obci zatiaľ nie sú načítané.</Muted>}
       </Sec>
 
       {!isClient ? (
-        <Sec id="praca" n={num("praca")} title="Signály a práca (interné)" source="Scenáre appky (vysporiadanie, príležitosti, zdedené byty, pôda na bývanie, zadania), evidencia obchodov a kontaktov.">
+        <Sec id="praca" n={num("praca")} explain={ex("praca")} {...asof("praca")} title="Signály a práca (interné)" source="Scenáre appky (vysporiadanie, príležitosti, zdedené byty, pôda na bývanie, zadania), evidencia obchodov a kontaktov.">
           <ul className="text-xs">
             {c.signals.settlement.map((s, i) => <li key={`s${i}`} className="border-b border-line/40 py-0.5"><b>Vysporiadanie</b> — {s.classification === "MATCH" ? "kandidát" : "na preskúmanie"} · parcela {s.parcel_no}{s.buyout_eur ? ` · odkup ~${eur(s.buyout_eur)}` : ""}</li>)}
             {c.signals.landsearch.map((s, i) => <li key={`l${i}`} className="border-b border-line/40 py-0.5"><b>Príležitosť</b> — {s.purpose ?? "?"} · {s.verdict ?? "?"}{s.quality != null ? ` · skóre ${Math.round(s.quality)}` : ""}</li>)}
@@ -836,11 +842,11 @@ export function PropertySheet({ d, mode, internal }: { d: SheetData; mode: Sheet
         </Sec>
       ) : null}
 
-      <Sec id="overit" n={num("overit")} title="Čo overiť pred kúpou" source="Zostavené automaticky zo zistení v tomto liste — nie je to právne poradenstvo.">
+      <Sec id="overit" n={num("overit")} explain={ex("overit")} {...asof("overit")} title="Čo overiť pred kúpou" source="Zostavené automaticky zo zistení v tomto liste — nie je to právne poradenstvo.">
         <ol className="list-decimal space-y-1 pl-5 text-sm">{checks.map((x, i) => <li key={i}>{x.text}<span className="text-xs text-muted"> — {x.why}</span></li>)}</ol>
       </Sec>
 
-      <Sec id="zdroje" n={num("zdroje")} title="Zdroje a úplnosť">
+      <Sec id="zdroje" n={num("zdroje")} explain={ex("zdroje")} {...asof("zdroje")} title="Zdroje a úplnosť">
         <Grid rows={[
           ["Úplnosť listu", `${comp.have} z ${comp.total} oblastí s údajmi`],
           ["Chýba", comp.missing.join(", ") || "—"],

@@ -6,7 +6,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   esknIdentify, getDatasets, getLocalityMedian, getParcelAccessibility, getParcelLimits, getParcelZone, getPropertyCore,
-  getPropertyExt, getUpDocs, type PropertyCore,
+  getFinanceMarket, getPropertyExt, getUpDocs, type PropertyCore,
 } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { useRole } from "../lib/role-context";
@@ -18,6 +18,7 @@ import { CommentsPanel, WatchButton } from "../components/collab";
 import { DocumentsPanel } from "../components/documents-panel";
 import { PropertyShareBox } from "../components/property-share";
 import type { SheetData } from "../lib/property-eval";
+import type { FinInputs } from "../lib/finance";
 
 type Search = { ds?: string; p?: string; reg?: "C" | "E"; lv?: string; sc?: string; byt?: string };
 export const Route = createFileRoute("/nehnutelnost")({
@@ -40,10 +41,11 @@ function PropertyPage() {
   const kind = s.byt ? "byt" : s.sc ? "stavba" : s.lv ? "lv" : s.p ? "parcela" : null;
   const ref = s.byt ?? s.sc ?? s.lv ?? s.p ?? null;
   const [core, setCore] = useState<PropertyCore | null>(null);
-  const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null });
+  const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null, fin: null });
   const [rawZone, setRawZone] = useState<Awaited<ReturnType<typeof getParcelZone>>>(null);
   const [ready, setReady] = useState(false);
   const [hash, setHash] = useState<string | null>(null);
+  const [finIn, setFinIn] = useState<Partial<FinInputs>>({});
   const calibDev = useCalibDev();
 
   useEffect(() => {
@@ -65,6 +67,7 @@ function PropertyPage() {
       jobs.push(esknIdentify({ data: { lat, lng } }).then((r) => patch({ avm: r.avm ?? null })).catch(() => {}));
       jobs.push(getPropertyExt({ data: { token, lat, lng, datasetId: core.dataset!.id } }).then((r) => patch({ ext: r.ok ? r.items : null })).catch(() => {}));
     }
+    jobs.push(getFinanceMarket({ data: { token } }).then((r) => patch({ fin: r.market })).catch(() => {}));
     jobs.push(getUpDocs({ data: { datasetId: core.dataset!.id } }).then((d) => patch({ upDocs: d.map((x) => ({ id: x.id, title: x.title, url: x.url, kind: x.kind })) })).catch(() => {}));
     const okres = core.dataset?.okres ?? (core.dataset?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "");
     if (okres) jobs.push(getLocalityMedian({ data: { okres, ptype: "pozemok", deal: "predaj" } }).then((r) => patch({ medPoz: r.median })).catch(() => {}));
@@ -106,7 +109,7 @@ function PropertyPage() {
   }
   return (
     <div className="px-4 py-5 print:p-0">
-      <PropertySheet d={sheet} mode="internal" internal={{
+      <PropertySheet d={sheet} mode="internal" onFinInputs={setFinIn} internal={{
         actions: (
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">Tlačiť / uložiť PDF</button>
@@ -115,7 +118,7 @@ function PropertyPage() {
             {lv != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: core.dataset!.id, lvNo: String(lv) }} search={{ typ: "vypis" as const }} className="text-brand underline">Výpis LV {lv}</Link> : null}
             {mainC ? <Link to="/report/$datasetId/$parcelNo" params={{ datasetId: core.dataset!.id, parcelNo: mainC }} className="text-brand underline">Dossier parcely</Link> : null}
             <span className="text-muted">{ready ? `odtlačok ${hash ?? "…"}` : "načítavam registre…"}</span>
-            <div className="w-full"><PropertyShareBox sheet={sheet} ready={ready} /></div>
+            <div className="w-full"><PropertyShareBox sheet={{ ...sheet, finInputs: finIn }} ready={ready} /></div>
           </div>
         ),
         buyers: mainC ? <BuyersSection datasetId={core.dataset!.id} parcelNo={mainC} token={token} kuName={(core.dataset?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "") || null} areaM2={core.parcels.reduce((t, x) => t + (x.area_m2 ?? 0), 0) || null} /> : null,

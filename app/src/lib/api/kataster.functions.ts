@@ -24,6 +24,8 @@ import { phraseIssues, type PhraseIssue } from "../phrases";
 import { accessTimesLabel, plural, zoneLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEFAULTS } from "../development";
 import { EXT_DEFS, type ExtDef } from "../ext-sources";
+import { financeMarketCore } from "../fin-market.server";
+import type { FinMarket } from "../finance";
 
 const roleSchema = z.enum([
   "admin",
@@ -8706,6 +8708,14 @@ export const probeExt = createServerFn({ method: "POST" })
     return { ok: true, items: await Promise.all(EXT_DEFS.map((d) => extRun(d, data.lat, data.lng))) };
   });
 
+/** Trhové údaje pre financie listu (ECB/Eurostat živo + verejné sadzby bánk z nočného zberu), cache 12 h. */
+export const getFinanceMarket = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), refresh: z.boolean().optional() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; market: FinMarket | null; message?: string }> => {
+    if (!(await requireUser(data.token))) return { ok: false, market: null, message: "Neprihlásený." };
+    return { ok: true, market: await financeMarketCore(!!data.refresh).catch(() => null) };
+  });
+
 // ——— LIST NEHNUTEĽNOSTI — klientska verzia cez odkaz (bez mien, bez internej práce) ———
 // Snapshot pripraví stránka (rovnaké dáta, aké vidí používateľ); server ho ešte raz očistí podľa pevného zoznamu
 // ciest: mená vlastníkov, firmy-vlastníci, signály scenárov a pracovné záznamy sa NIKDY neuložia. Tituly a ťarchy
@@ -8777,6 +8787,7 @@ export const buildClientShare = createServerFn({ method: "POST" })
   .validator(z.object({
     secret: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt"]), ref: z.string().min(1).max(60),
     register: z.enum(["C", "E"]).optional(), days: z.number().int().min(1).max(60).optional(), client: z.string().max(120).optional(),
+    finInputs: z.object({ price: z.number().nullable().optional(), ltv: z.number().min(0).max(0.9).optional(), years: z.number().int().min(5).max(40).optional(), fix: z.number().int().min(1).max(30).optional(), age: z.number().int().min(18).max(80).optional(), adults: z.number().int().min(1).max(6).optional(), children: z.number().int().min(0).max(10).optional(), persons: z.number().int().min(1).max(12).optional(), rentMonthly: z.number().nullable().optional() }).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; path?: string; title?: string; message?: string }> => {
     const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
@@ -8807,7 +8818,8 @@ export const buildClientShare = createServerFn({ method: "POST" })
       const r = developmentCalc(areaC, reg, { ...DEV_DEFAULTS, predajEurM2: medPoz ?? DEV_DEFAULTS.predajEurM2 });
       dev = { regName: reg.name ?? null, proxy: !regUp, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
     }
-    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, generatedAt: new Date().toISOString(), client: data.client ?? null };
+    const fin = await financeMarketCore().catch(() => null);
+    const snap: Record<string, unknown> = { core, limits, access, zone, avm, medPoz, upDocs, ext, dev, generatedAt: new Date().toISOString(), client: data.client ?? null, fin, finInputs: data.finInputs ?? null };
     const out = sanitizeShareSnapshot(JSON.parse(JSON.stringify(snap)) as Record<string, unknown>);
     if (out === "invalid" || out === "toolarge") return { ok: false, message: out === "toolarge" ? "List je príliš veľký." : "Neplatný obsah listu." };
     const bytes = new Uint8Array(16); crypto.getRandomValues(bytes);

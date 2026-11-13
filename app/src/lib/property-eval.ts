@@ -2,6 +2,7 @@
 // nad dátami listu; rovnaké pre internú aj klientsku verziu. Zásada z kontraktu Property-360 §4: chýbajúci údaj
 // je NEZNÁMY stav, nikdy „v poriadku". Formulácie prechádzajú phrase-guardom v builde.
 import type { PropertyCore, LimitsResult, AvmResult } from "./api/kataster.functions";
+import type { FinInputs, FinMarket } from "./finance";
 
 export type ExtHit = { key: string; label: string; category: string; status: "ok" | "hit" | "none" | "error"; value: string | null; detail?: string | null; attribution: string; url?: string | null; risk?: boolean };
 export type SheetData = {
@@ -18,6 +19,10 @@ export type SheetData = {
   generatedAt: string;
   /** pre koho je dokument (klientska verzia zostavená na serveri) */
   client?: string | null;
+  /** trhové údaje pre financie (sadzby ECB/NBS, verejné sadzby bánk) — živé pri otvorení */
+  fin?: FinMarket | null;
+  /** zadané vstupy financovania (klientska verzia ich nesie v snapshote) */
+  finInputs?: Partial<FinInputs> | null;
 };
 
 export type LightState = "ok" | "warn" | "bad" | "unknown";
