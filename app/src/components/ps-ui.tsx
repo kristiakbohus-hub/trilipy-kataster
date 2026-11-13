@@ -1,5 +1,6 @@
 // Spoločné stavebné bloky listu nehnuteľnosti (obrazovka aj tlač) — používa property-sheet aj property-finance.
-import { createContext, useContext, type ReactNode } from "react";
+import { Fragment, createContext, useContext, type ReactNode } from "react";
+import { SECTION_GUIDE } from "../lib/sheet-guide";
 
 /** Kapitoly skryté v klientskej verzii (výber kapitol pri zdieľaní). */
 export const HideCtx = createContext<Set<string>>(new Set());
@@ -33,6 +34,21 @@ export function Explain({ lines }: { lines: string[] }) {
     </div>
   );
 }
+/** Stály výklad kapitoly (sheet-guide.ts): čo to je · prečo je dobré to vedieť · čo to ovplyvňuje. */
+function GuideBox({ id }: { id: string }) {
+  const lang = useContext(LangCtx);
+  const g = SECTION_GUIDE[id];
+  if (!g) return null;
+  const x = lang === "en" ? g.en : g;
+  const rows: [string, string][] = lang === "en"
+    ? [["What it is", x.co], ["Why it matters", x.preco], ["What it affects", x.ovplyvnuje]]
+    : [["Čo to je", x.co], ["Prečo je dobré to vedieť", x.preco], ["Čo to ovplyvňuje", x.ovplyvnuje]];
+  return (
+    <div className="ps-guide grid gap-x-3 gap-y-0.5 text-[11.5px] leading-snug text-muted sm:grid-cols-[auto_1fr]" data-no-en>
+      {rows.map(([k, v]) => <Fragment key={k}><span className="font-medium text-fg/80">{k}:</span><span>{v}</span></Fragment>)}
+    </div>
+  );
+}
 export function Sec({ id, n, title, source, children, explain, asOf, staleDays }: { id: string; n?: string; title: string; source?: ReactNode; children: ReactNode;
   explain?: string[]; asOf?: string | null; staleDays?: number }) {
   const hidden = useContext(HideCtx);
@@ -43,7 +59,7 @@ export function Sec({ id, n, title, source, children, explain, asOf, staleDays }
     <section id={id} className="ps-sec scroll-mt-16 border-t border-line pt-4">
       <h2 className="ps-h2 mb-2 flex items-baseline gap-2 text-base font-semibold text-fg">{n ? <span className="ps-num font-light text-muted">{n}</span> : null}<span>{title}</span>
         {asOf ? <span className={`ps-asof ml-auto text-[10px] font-normal tracking-normal ${stale ? "ps-stale" : "text-muted"}`} style={stale ? { color: "#9c4a40" } : undefined}>stav k {date(asOf)}{stale ? " · starší údaj" : ""}</span> : null}</h2>
-      <div className="ps-body space-y-3 text-sm">{explain?.length ? <Explain lines={explain} /> : null}{children}</div>
+      <div className="ps-body space-y-3 text-sm"><GuideBox id={id} />{explain?.length ? <Explain lines={explain} /> : null}{children}</div>
       {source ? <div className="ps-source mt-2 text-[10px] leading-snug text-muted">Zdroj: {source}</div> : null}
     </section>
   );

@@ -16,6 +16,7 @@ import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, Pr
 import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, NkpBlock, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { ownerKey } from "../lib/domain";
 import { wgsToSjtskKn } from "../lib/sjtsk";
+import { GROUP_GUIDE } from "../lib/sheet-guide";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -77,10 +78,15 @@ export function FactsBlock({ grp, data, skip = [], only, depth = 0 }: { grp: str
     .filter(([k, v]) => !skip.includes(k) && !["lat", "lon", "lng"].includes(k) && v != null && v !== "" && !(Array.isArray(v) && !v.length));
   if (!entries.length) return null;
   const simple = entries.filter(([, v]) => typeof v !== "object" || (Array.isArray(v) && v.every((x) => typeof x !== "object")));
+  // pomocník pri každom údaji: čo to je (popis zo schémy) + prečo je dobré to vedieť a čo to ovplyvňuje (sheet-guide)
+  const gg = GROUP_GUIDE[grp];
+  const tip = (k: string) => [schema[k]?.note ? `Čo to je: ${schema[k]?.note}` : `Čo to je: ${schema[k]?.label ?? human(k)}`,
+    gg ? `Prečo je dobré to vedieť: ${gg.preco}.` : "", gg ? `Čo to ovplyvňuje: ${gg.ovplyvnuje}.` : ""].filter(Boolean).join("\n");
+  const lbl = (k: string) => <span key={k} title={tip(k)} className="cursor-help underline decoration-dotted decoration-1 underline-offset-2 [text-decoration-color:rgba(127,127,127,.45)]">{schema[k]?.label ?? human(k)}</span>;
   const complex = entries.filter((e) => !simple.includes(e));
   return (
     <div className="space-y-1">
-      <Grid rows={simple.map(([k, v]) => [<span key={k} title={schema[k]?.note}>{schema[k]?.label ?? human(k)}</span>, fmtVal(v, schema[k])] as [ReactNode, ReactNode])} />
+      <Grid rows={simple.map(([k, v]) => [lbl(k), fmtVal(v, schema[k])] as [ReactNode, ReactNode])} />
       {complex.map(([k, v]) => (
         v && typeof v === "object" && !Array.isArray(v) && depth < 2 ? (
           <div key={k} className="pl-2"><div className="pt-1 text-[11px] font-medium text-muted" title={schema[k]?.note}>{schema[k]?.label ?? human(k)}</div><FactsBlock grp={grp} data={v as Record<string, unknown>} depth={depth + 1} /></div>
