@@ -70,7 +70,11 @@ function PropertyPage() {
       jobs.push(getParcelAccessibility({ data: { lat, lng } }).then((access) => patch({ access: access as SheetData["access"] })).catch(() => {}));
       jobs.push(getParcelZone({ data: { datasetId: core.dataset!.id, lat, lng } }).then((z) => { setRawZone(z); patch({ zone: z as SheetData["zone"] }); }).catch(() => {}));
       jobs.push(esknIdentify({ data: { lat, lng } }).then((r) => patch({ avm: r.avm ?? null })).catch(() => {}));
-      jobs.push(getPropertyExt({ data: { token, lat, lng, datasetId: core.dataset!.id } }).then((r) => patch({ ext: r.ok ? r.items : null })).catch(() => {}));
+      // obrys hlavnej parcely → registre typu ArcGIS sa pýtajú na prienik s celou parcelou, nie len so stredom
+      const mp = core.parcels.find((x) => x.parcel_no === core.main.parcelNo && x.register === core.main.register) ?? core.parcels[0];
+      let ring: [number, number][] | undefined;
+      try { const g = mp?.geometry_json ? JSON.parse(mp.geometry_json) as { type: string; coordinates: unknown } : null; ring = g?.type === "Polygon" ? (g.coordinates as [number, number][][])[0] : g?.type === "MultiPolygon" ? (g.coordinates as [number, number][][][])[0]?.[0] : undefined; } catch { ring = undefined; }
+      jobs.push(getPropertyExt({ data: { token, lat, lng, datasetId: core.dataset!.id, ring } }).then((r) => patch({ ext: r.ok ? r.items : null })).catch(() => {}));
       jobs.push(getShading({ data: { token, lat, lng } }).then((r) => patch({ shade: r.shade })).catch(() => {}));
     }
     jobs.push(getDeclaration({ data: { token, datasetId: core.dataset!.id, subjectType: core.kind === "byt" ? "flat" : "lv", subjectRef: core.kind === "byt" ? core.main.flat ?? "" : String(core.main.lvNo ?? core.lvs[0] ?? "") } })

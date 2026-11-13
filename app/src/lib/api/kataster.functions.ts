@@ -9052,7 +9052,7 @@ async function extFetch(url: string, text = false): Promise<unknown> {
   } catch { return null; } finally { clearTimeout(to); }
 }
 const dig = (o: unknown, path: string): unknown => path.split(".").reduce<unknown>((a, k) => (a && typeof a === "object" ? (a as Record<string, unknown>)[k] : undefined), o);
-async function extRun(def: ExtDef, lat: number, lng: number): Promise<ExtHitRow> {
+async function extRun(def: ExtDef, lat: number, lng: number, ring?: [number, number][] | null): Promise<ExtHitRow> {
   const base: ExtHitRow = { key: def.key, label: def.label, category: def.category, status: "error", value: null, attribution: def.provider, risk: def.risk };
   const hit = (value: string | null, detail?: string | null, url?: string | null): ExtHitRow => ({ ...base, status: "hit", value: value?.slice(0, 180) ?? null, detail: detail ? detail.slice(0, 260) : null, url: url ?? null });
   const none = (value: string | null = null): ExtHitRow => ({ ...base, status: "none", value });
@@ -9133,8 +9133,12 @@ async function extRun(def: ExtDef, lat: number, lng: number): Promise<ExtHitRow>
       const v = a[firstK];
       return hit(v == null ? "zásah" : def.valueMap[String(v)] ?? String(v), fieldsText(a));
     }
-    // arcgis_query
-    const j = await extFetch(extUrl(def, lat, lng)) as Record<string, unknown> | null;
+    // arcgis_query — ak máme obrys parcely, pýtame sa na PRIENIK S CELOU PARCELOU (nie len stred); vrty (okolie 500 m)
+    // ostávajú bodové. GOLD v2 GOLD-18 / audit 2026-11-13: pri veľkej či pretiahnutej parcele bodový dopyt zásah prehliadol.
+    const usePoly = !!ring && ring.length >= 4 && def.params.geometryType === "esriGeometryPoint" && def.special !== "vrty" && !def.params.distance;
+    const qdef: ExtDef = usePoly ? { ...def, params: { ...def.params, geometryType: "esriGeometryPolygon",
+      geometry: JSON.stringify({ rings: [ring], spatialReference: { wkid: 4326 } }) } } : def;
+    const j = await extFetch(extUrl(qdef, lat, lng)) as Record<string, unknown> | null;
     if (!j || j.error) return base;
     const feats = ((j.features as { attributes?: Record<string, unknown> }[] | undefined) ?? []).map((f) => f.attributes ?? {});
     if (def.special === "stupen") {
@@ -9154,23 +9158,35 @@ async function extRun(def: ExtDef, lat: number, lng: number): Promise<ExtHitRow>
     const v0 = firstK ? a[firstK] : null;
     const det = fieldsText(a);
     const val = v0 == null || String(v0).trim() === "" ? (det ? det.split(" · ")[0] : "v území (bez podrobností)") : def.valueMap[String(v0)] ?? String(v0);
-    const more = feats.length > 1 ? `${feats.length} objektov v okolí · ` : "";
-    return hit(val.trim(), `${more}${det}`);
+    const more = feats.length > 1 ? `${feats.length} objektov ${usePoly ? "na parcele" : "v okolí"} · ` : "";
+    return hit(val.trim(), `${usePoly ? "zasahuje do parcely (prienik s jej obrysom) · " : ""}${more}${det}`);
   } catch { return base; }
 }
-async function extAll(lat: number, lng: number, refresh: boolean): Promise<{ items: ExtHitRow[]; cached: boolean }> {
-  const key = `ext3:${lat.toFixed(4)}:${lng.toFixed(4)}:${EXT_DEFS.length}`;
+/** Obrys na dopyt: najviac ~80 vrcholov (dĺžka URL), 6 desatinných miest; uzavretý. */
+function ringForQuery(r: [number, number][] | null | undefined): [number, number][] | null {
+  if (!r || r.length < 4) return null;
+  const step = Math.max(1, Math.ceil(r.length / 80));
+  const out = r.filter((_, i) => i % step === 0).map(([x, y]) => [Math.round(x * 1e6) / 1e6, Math.round(y * 1e6) / 1e6] as [number, number]);
+  const f = out[0], l = out[out.length - 1];
+  if (f[0] !== l[0] || f[1] !== l[1]) out.push([f[0], f[1]]);
+  return out.length >= 4 ? out : null;
+}
+async function extAll(lat: number, lng: number, refresh: boolean, ringIn?: [number, number][] | null): Promise<{ items: ExtHitRow[]; cached: boolean }> {
+  const ring = ringForQuery(ringIn);
+  const rk = ring ? `:p${ring.length}:${ring.reduce((s, [x, y]) => (s * 31 + Math.round(x * 1e5) + Math.round(y * 1e5)) % 1e9, 7)}` : "";
+  const key = `ext3:${lat.toFixed(4)}:${lng.toFixed(4)}:${EXT_DEFS.length}${rk}`;
   const c = await regCacheRead(key, refresh, 30 * 24 * 3600).catch(() => null);
   if (c) return { items: c.payload as ExtHitRow[], cached: true };
-  const items = await Promise.all(EXT_DEFS.map((d) => extRun(d, lat, lng)));
+  const items = await Promise.all(EXT_DEFS.map((d) => extRun(d, lat, lng, ring)));
   if (items.filter((i) => i.status !== "error").length >= EXT_DEFS.length / 2) await regCacheWrite(key, "ext", items).catch(() => {});
   return { items, cached: false };
 }
 export const getPropertyExt = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string(), lat: z.number(), lng: z.number(), datasetId: z.string().max(40).optional(), refresh: z.boolean().optional() }))
+  .validator(z.object({ token: z.string(), lat: z.number(), lng: z.number(), datasetId: z.string().max(40).optional(), refresh: z.boolean().optional(),
+    ring: z.array(z.tuple([z.number(), z.number()])).max(2000).optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; items: ExtHitRow[]; cached?: boolean; message?: string }> => {
     if (!(await requireUser(data.token))) return { ok: false, items: [], message: "Neprihlásený." };
-    const r = await extAll(data.lat, data.lng, !!data.refresh);
+    const r = await extAll(data.lat, data.lng, !!data.refresh, data.ring ?? null);
     return { ok: true, ...r };
   });
 // ——— TIENENIE A VÝŠKA OKOLITEJ ZÁSTAVBY (2026-11-13) — DMP 1.0 (povrch: budovy, stromy) − DMR 5.0 (terén), WMS GetFeatureInfo.
@@ -9359,7 +9375,7 @@ export const buildClientShare = createServerFn({ method: "POST" })
     let limits: LimitsResult | null = null, access: Accessibility | null = null, ext: ExtHitRow[] | null = null, zone: Record<string, unknown> | null = null, avm: AvmResult | null = null;
     if (lat != null && lng != null) {
       [limits, access, ext] = await Promise.all([
-        limitsCore(lat, lng).catch(() => null), accessibilityCore(lat, lng).catch(() => null), extAll(lat, lng, false).then((r) => r.items).catch(() => null)]);
+        limitsCore(lat, lng).catch(() => null), accessibilityCore(lat, lng).catch(() => null), extAll(lat, lng, false, geoRings(mp?.geometry_json ?? null)[0] ?? null).then((r) => r.items).catch(() => null)]);
       const zones = await q<Record<string, unknown> & { geometry_json: string }>(`SELECT ${UPZONE_COLS} FROM up_zones WHERE dataset_id = ?`, [core.dataset.id]).catch(() => []);
       zone = zones.find((zn) => zoneContains(zn.geometry_json, lng, lat)) ?? null;
       try {
