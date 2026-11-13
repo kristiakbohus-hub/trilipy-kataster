@@ -801,4 +801,6 @@ export const EN_TPL: Record<string, string> = {
   "Mobilný – max. odosielan": "Mobile – max. upl",
   "bývanie – rodinné domy — ÚP z výkresu — orientačné": "housing – family houses — zoning from a drawing — indicative",
   "výroba/technická": "industry/technical",
+  " — vysvetlené v kapitole Právny stav; pred podpisom sa riešia výmazom alebo prevzatím.": " — explained in the Legal status chapter; resolved by deletion or assumption before signing.",
+  "— vysvetlené v kapitole Právny stav; pred podpisom sa riešia výmazom alebo prevzatím.": "— explained in the Legal status chapter; resolved by deletion or assumption before signing.",
 };

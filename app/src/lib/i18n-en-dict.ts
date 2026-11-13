@@ -981,13 +981,14 @@ const EN_PATTERNS: [RegExp, Rep][] = [
   [/^(.+), súp\. č\. (\d+)$/, "$1, reg. no. $2"],
   [/^k\.ú\. (.+)$/, "cadastral area $1"],
   [/^zámer v obci: (.+)$/, "municipal project: $1"],
-  [/^obec: (.+)$/, "municipality: $1"],
+  [/^obec: (.+)$/, (_m, a) => `municipality: ${enText(a)}`],
   [/^LV (\d+): kúpa(.*)$/, "LV $1: purchase$2"], [/^LV (\d+): dedičstvo(.*)$/, "LV $1: inheritance$2"], [/^LV (\d+): darovanie(.*)$/, "LV $1: gift$2"],
-  [/^(\d+)× ťarcha alebo poznámka na LV(.*)$/, "$1× encumbrance or note on title deed$2"],
+  [/^(\d+)× ťarcha alebo poznámka na LV(.*)$/, (_m, a, b) => `${a}× encumbrance or note on title deed${b ? enText(b) : ""}`],
+  [/^čs\. ?(\S.*)$/i, "no. $1"],
   [/^(\d+)× zapísaná ťarcha alebo poznámka$/, "$1× registered encumbrance or note"],
   [/^priemer (\d+) bánk \(fixácia (\d+) r\., (.+)\)$/, "average of $1 banks ($2-yr fixation, $3)"],
   [/^priemer nových úverov v SR \(ECB\/NBS, (.+)\)$/, "average new loans in Slovakia (ECB/NBS, $1)"],
-  [/^(.+) \(najbližšia adresa\)$/, "$1 (nearest address)"],
+  [/^(.+) \(najbližšia adresa\)$/, "$1 (nearest address)"], [/^(.+) \(najbližšia adresa, (.+)\)$/, "$1 (nearest address, $2)"],
   [/^stav k (.+?)( · starší údaj)?$/, "as of $1"],
   [/^Pre nadmorskú výšku ~(\d+) m(.*)$/, "For elevation ~$1 m$2"],
   [/^snímkované (.+)$/, "captured $1"],
@@ -1000,7 +1001,7 @@ const EN_PATTERNS: [RegExp, Rep][] = [
   [/^Okresný úrad (.+), pozemkový a lesný odbor \(príslušnosť overiť\)$/, "District Office $1, land and forestry department (verify competence)"],
   [/^Okresný úrad (.+), odbor starostlivosti o životné prostredie$/, "District Office $1, environmental department"],
   [/^OR PZ (.+?) \(okresy (.+)\)$/, "District Police $1 (districts $2)"], [/^OR PZ (.+)$/, "District Police $1"],
-  [/^kraj (\S+) zistených trestných činov na (\S+) obyvateľov \((.+?)\); OR PZ (.+)$/, (_m, a, b, c, d) =>
+  [/^kraj (.+?) zistených trestných činov na (.+?) obyvateľov \((.+?)\); OR PZ (.+)$/, (_m, a, b, c, d) =>
     `region ${a} recorded crimes per ${b} residents (${c}); District Police ${d.replace("(okresy ", "(districts ").replace("objasnenosť", "clearance rate")}`],
   [/^Úradné registre hlásia: (.+)\. Podrobnosti a dopad na poistenie v kapitole Poistenie a riziká\.$/, (_m, a) =>
     `Official registers report: ${listEn(a)}. Details and the impact on insurance in the Insurance and risks chapter.`],
