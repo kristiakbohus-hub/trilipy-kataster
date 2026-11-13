@@ -18,6 +18,10 @@ export function gates(d: SheetData): Gate[] {
   const mk = mainKey(c); const pr = mk ? fact(c, "pristup", mk) : null;
   if (/bez/i.test(String(pr?.trieda ?? ""))) out.push({ text: "bez právneho prístupu z verejnej cesty", hard: true });
   else if (/cez/i.test(String(pr?.trieda ?? ""))) out.push({ text: "prístup cez cudzí pozemok — zabezpečiť vecné bremeno (kľúčový pás pozemku pri ceste)", hard: false });
+  const o = mk ? fact(c, "osm", mk) : null;
+  if (o?.el_op === true) out.push({ text: `ochranné pásmo elektrického vedenia${o.el_op_kv ? ` ${String(o.el_op_kv)} kV` : ""} cez pozemok (251/2012 § 43) — zmenšuje zastavateľnú plochu, preložka na náklady investora`, hard: false });
+  if (o?.plyn_op === true) out.push({ text: "ochranné / bezpečnostné pásmo plynovodu (251/2012 § 79–80) — stavba len so súhlasom SPP-distribúcia", hard: false });
+  if (typeof o?.zel === "number" && (o.zel as number) <= 60) out.push({ text: "ochranné pásmo dráhy 60 m (513/2009 § 5) — súhlas dopravného správneho orgánu", hard: false });
   const z = zoneOf(d).name;
   if (z && NONBUILD.test(z)) out.push({ text: "územný plán nepripúšťa výstavbu — len po zmene ÚP (1–3 roky, neisté)", hard: false });
   if (!z) out.push({ text: "zónu ÚP nemáme — overiť územnoplánovacou informáciou", hard: false });
