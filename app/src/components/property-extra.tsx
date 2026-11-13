@@ -155,6 +155,7 @@ export function legalRisk(d: SheetData): { score: number; level: string; factors
   if (c.parcels.some((p) => p.register === "E")) f.push(["parcely registra E", 10]);
   if (c.parcels.some((p) => p.register === "C" && p.settled === 0)) f.push(["nevysporiadaný pozemok pod stavbou", 15]);
   if (c.unregistered.length) f.push(["stavba bez zápisu v katastri", 15]);
+  if (Object.keys(c.facts.nkp ?? {}).length) f.push(["národná kultúrna pamiatka (zásahy len so súhlasom pamiatkového úradu)", 10]);
   if (c.legal.some((l) => !l.hasData)) f.push(["časť B/C nemáme pre všetky LV", 10]);
   const mk = mainKey(c); const pr = mk ? fact(c, "pristup", mk) : null; if (/bez|cez/i.test(String(pr?.trieda ?? ""))) f.push(["prístup cez cudzí pozemok alebo bez prístupu", 12]);
   for (const lv of c.lvs) { const v = fact(c, "vlastnici", `lv:${lv}`); if (v && Number(v.pravdepodobne_zosnuli ?? 0) > 0) { f.push(["pravdepodobne zosnulý vlastník", 15]); break; } }
@@ -389,7 +390,7 @@ export function NkpBlock({ d }: { d: SheetData }) {
   return (
     <>
       <Sub>Národná kultúrna pamiatka</Sub>
-      <Table head={["Kde", "Pamiatka", "Vznik / sloh", "Číslo ÚZPF", "Chránený celok"]} rows={n.map((x) => [x.ref, `${x.p.nazov ?? x.p.druh ?? "pamiatka"}${x.p.druh && x.p.nazov && x.p.druh.toLowerCase() !== x.p.nazov.toLowerCase() ? ` (${x.p.druh.toLowerCase()})` : ""}`, [x.p.vznik, x.p.sloh].filter(Boolean).join(" · ") || "—", x.p.cislo_uzpf ?? "—", x.p.chraneny_celok ?? "—"])} />
+      <Table head={["Kde", "Pamiatka", "Vznik / sloh", "Číslo ÚZPF", "Chránený celok"]} rows={n.map((x) => [x.ref, `${x.p.nazov ?? x.p.druh ?? "pamiatka"}${x.p.druh && x.p.nazov && x.p.druh.toLowerCase() !== x.p.nazov.toLowerCase() ? ` (${x.p.druh.toLowerCase()})` : ""}`, [x.p.vznik, x.p.sloh].filter(Boolean).join(" · ") || "—", x.p.cislo_uzpf ?? "—", x.p.chraneny_celok ? ({ MPR: "mestská pamiatková rezervácia", PZ: "pamiatková zóna", PRĽA: "pamiatková rezervácia ľudovej architektúry" } as Record<string, string>)[x.p.chraneny_celok] ?? x.p.chraneny_celok : "—"])} />
       <Muted>Obnova, prestavba aj zmena využitia pamiatky len podľa rozhodnutia krajského pamiatkového úradu (zákon 49/2002); vlastník má povinnosť pamiatku udržiavať a pri predaji oznámiť zmenu vlastníka. Register PÚ SR (otvorené dáta, stav 2019) — aktuálny stav overiť na KPÚ.</Muted>
     </>
   );
