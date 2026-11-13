@@ -3,7 +3,7 @@
 // ani odhad daňovej situácie predávajúceho. Ostávajú agregáty (počet, medián, rozpätie, obdobie, okres, pásmo).
 // Všetky údaje v teste sú vymyslené.
 import { describe, expect, test } from "bun:test";
-import { CLIENT_MIN_N, clientizeCore, clientView } from "../src/lib/share-client";
+import { CLIENT_MIN_N, clientizeCore, clientNotice, clientView, redactPersonNames } from "../src/lib/share-client";
 import { financeOf, hedonicOf } from "../src/lib/finance";
 import type { PropertyCore } from "../src/lib/api/kataster.functions";
 import type { SheetData } from "../src/lib/property-eval";
@@ -126,6 +126,34 @@ describe("jedna zmluva na viacerých LV sa počíta raz", () => {
     const o = clientizeCore(c as unknown as Record<string, unknown>) as unknown as PropertyCore;
     expect(o.clientAgg!.comps!.n).toBe(6);
     expect(o.compStats).toMatchObject({ n: 6, medPpm2: 58, estimateEur: 58_000 });
+  });
+});
+
+describe("úradná tabuľa obce v klientskej verzii", () => {
+  const n = (title: string, url: string | null = "https://obec.example.invalid/tabula/dokument.pdf") => ({ title, url, change: "new", relevance: "pozemky", detected_at: `${Y}-01-01` });
+  test("meno v titulku sa začierni a odkaz na dokument sa vynechá", () => {
+    expect(clientNotice(n("Zámer predaja pozemku – Ján Testovací"))).toMatchObject({ title: "Zámer predaja pozemku – [meno vynechané]", url: null });
+    expect(clientNotice(n("ZÁMER PREDAJA POZEMKU PRE JÁNA TESTOVACIEHO"))!.title).toBe("ZÁMER PREDAJA POZEMKU PRE [meno vynechané]");
+    expect(clientNotice(n("Nájom pozemku Testovacia Mária"))!.title).toBe("Nájom pozemku [meno vynechané]");
+    expect(clientNotice(n("Žiadosť Ing. Testovací o odkúpenie"))!.title).toBe("Žiadosť [meno vynechané] o odkúpenie");
+  });
+  test("meno len v názve súboru odkazu → odkaz preč, titulok ostane", () => {
+    expect(clientNotice(n("Zámer predaja pozemku", "https://obec.example.invalid/files/predaj_Peter_Testovaci.pdf"))).toMatchObject({ title: "Zámer predaja pozemku", url: null });
+  });
+  test("doručovanie písomností konkrétnej osobe sa vynechá celé", () => {
+    expect(clientNotice(n("Oznámenie o uložení zásielky"))).toBeNull();
+    expect(clientNotice(n("Verejná vyhláška – doručenie písomnosti"))).toBeNull();
+  });
+  test("bez falošných zásahov: miesta, svätci, bežné oznámenia", () => {
+    for (const t of ["VZN mesta Martin o dani z nehnuteľností", "Kostol sv. Michala – oprava strechy", "Obec Svätý Anton – rozpočet", "Zásady hospodarenia s majetkom obce Liptovský Ondrej", "Ulica Jána Hollého – rekonštrukcia",
+      "Oznámenie o začatí stavebného konania – rodinný dom", "Územný plán obce Testovo – Zmeny a doplnky č. 2"]) expect(redactPersonNames(t)).toEqual({ text: t, hit: false });
+    expect(clientNotice(n("Oznámenie o začatí stavebného konania"))!.url).toBe("https://obec.example.invalid/tabula/dokument.pdf");
+  });
+  test("v snímke: oznámenia vyčistené pri clientizeCore", () => {
+    const c = mkCore(); c.obec = { changes: [n("Predaj pozemku Ján Testovací"), n("Oznámenie o uložení zásielky"), n("Zmeny a doplnky ÚP")], upChanges: [] };
+    const o = clientizeCore(c as unknown as Record<string, unknown>) as unknown as PropertyCore;
+    expect(o.obec.changes.map((x) => x.title)).toEqual(["Predaj pozemku [meno vynechané]", "Zmeny a doplnky ÚP"]);
+    expect(JSON.stringify(o)).not.toContain("Testovací");
   });
 });
 

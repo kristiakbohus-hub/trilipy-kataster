@@ -118,6 +118,56 @@ function stripLvInFacts(group: unknown): void {
   }
 }
 
+// ——— mená fyzických osôb v titulkoch úradnej tabule obce ———
+// Titulky z úradných tabúľ (monitor 1027 obcí) občas nesú meno: „Zámer predaja pozemku – ‹meno›", „Oznámenie o uložení
+// zásielky…". Heuristika: titul (Ing., Mgr.…) + slovo s veľkým písmenom, alebo krstné meno (aj skloňované, aj VERZÁLKAMI)
+// vedľa slova s veľkým písmenom. Samotné priezvisko bez krstného mena nespozná — preto sa pri zásahu vynecháva aj odkaz.
+const NAMES_M = "adam adrián albert alexander alojz andrej anton augustín benedikt bohumil bohuslav boris branislav bruno ctibor cyril dalibor daniel dávid denis dominik dušan eduard emil erik ernest eugen filip florián františek gabriel gregor gustáv henrich igor imrich ivan jakub ján jaromír jaroslav jozef juraj kamil karol kristián ladislav leonard leopold ľubomír ľudovít ľuboš lukáš marcel marek marián martin matej matúš michal milan miloslav miloš miroslav mojmír norbert ondrej oliver oskar patrik pavol peter radoslav radovan rastislav richard róbert roland roman rudolf samuel sebastián šimon štefan teodor tibor tomáš václav valentín vavrinec viktor viliam vincent vladimír vladislav vojtech zoltán";
+const NAMES_F = "adriána agnesa alena alexandra alica alžbeta andrea angela anna antónia barbora beáta blanka božena brigita dagmara danica daniela denisa diana dominika dorota drahomíra edita elena emília erika eva gabriela hana helena henrieta ivana iveta jana jarmila jaroslava jozefína judita júlia justína kamila karolína katarína klaudia kristína ľubica ľudmila lucia lýdia magdaléna marcela margita mária marianna marta martina michaela milena miriama miroslava monika natália oľga petra renáta romana ružena sabína silvia simona soňa stanislava svetlana tatiana terézia timea veronika viera viktória vlasta zdenka zita zlatica zuzana žaneta";
+const STEM: Record<string, string> = { peter: "petr", pavol: "pavl" };
+const FIRST_NAMES: Set<string> = (() => {
+  const s = new Set<string>();
+  for (const n of NAMES_M.split(" ")) { const st = STEM[n] ?? n; s.add(n); for (const e of ["a", "ovi", "om"]) s.add(st + e); }
+  for (const n of NAMES_F.split(" ")) { const st = n.slice(0, -1); s.add(n); for (const e of ["y", "e", "i", "u", "ou"]) s.add(st + e); }
+  return s;
+})();
+/** slová pred krstným menom, pri ktorých ide o miesto alebo svätca (mesto Martin, ulica Jána Hollého, sv. Michala) */
+const PLACE_BEFORE = /^(mesto|mesta|meste|mestom|obec|obce|obci|okres|okresu|okrese|ulica|ulice|ulici|ulicu|ul|námestie|námestí|nám|nábrežie|alej|aleja|park|parku|most|kostol|kostola|sv|svät\p{L}*|časť|priestranstvo|priestranstva|škola|školy|zš|gymnázium)$/iu;
+const NOT_SURNAME = /^(obec|obce|obci|mesto|mesta|mestská|mestský|ul|vzn|zámer|predaj|oznámenie|rozhodnutie|výzva|návrh|zmluva|úradná|tabuľa|pozemok|pozemku|parcela|parc|kú|ku|sr|pdf|docx?)$/i;
+const ACADEMIC = /(?<![\p{L}])(?:Ing|Mgr|Bc|MUDr|JUDr|PhDr|RNDr|PaedDr|MVDr|doc|prof)\.(?:\s*(?:arch|art)\.)?\s*\p{Lu}[\p{L}-]+(?:\s+\p{Lu}[\p{L}-]+)?/gu;
+const PERSONAL_NOTICE = /ulož\p{L}*\s+(?:zásielk|písomnost)|doruč\p{L}*\s+písomnost|doručovan\p{L}*\s+písomnost/iu;
+const MASK = "[meno vynechané]";
+
+/** Nahradí v texte pravdepodobné mená fyzických osôb; `hit` = niečo sa nahradilo. */
+export function redactPersonNames(text: string): { text: string; hit: boolean } {
+  let hit = false;
+  let t = text.replace(ACADEMIC, () => { hit = true; return MASK; });
+  const toks = [...t.matchAll(/\p{L}[\p{L}-]*/gu)].map((m) => ({ w: m[0], i: m.index as number }));
+  const cap = (w: string | undefined) => !!w && w.length >= 2 && /^\p{Lu}/u.test(w) && !NOT_SURNAME.test(w) && !FIRST_NAMES.has(w.toLowerCase());
+  const spans: [number, number][] = [];
+  toks.forEach((k, j) => {
+    if (!/^\p{Lu}/u.test(k.w) || !FIRST_NAMES.has(k.w.toLowerCase())) return;
+    if (j > 0 && PLACE_BEFORE.test(toks[j - 1].w)) return;
+    // viacslovný názov miesta: „obce Liptovský Ondrej", „mesto Svätý Jur"
+    if (j > 1 && /^\p{Lu}/u.test(toks[j - 1].w) && PLACE_BEFORE.test(toks[j - 2].w)) return;
+    const nx = toks[j + 1], pv = toks[j - 1];
+    if (cap(nx?.w) && t.slice(k.i + k.w.length, nx.i).trim() === "") spans.push([k.i, nx.i + nx.w.length]);
+    else if (cap(pv?.w) && t.slice(pv.i + pv.w.length, k.i).trim() === "") spans.push([pv.i, k.i + k.w.length]);
+  });
+  for (const [a, b] of spans.reverse()) { t = t.slice(0, a) + MASK + t.slice(b); hit = true; }
+  return { text: t, hit };
+}
+/** Oznámenie úradnej tabule pre klienta: doručovanie písomností konkrétnej osobe vynechať; mená začierniť a bez odkazu. */
+export function clientNotice<N extends { title: string | null; url: string | null }>(n: N): N | null {
+  const title = n.title ?? "";
+  if (PERSONAL_NOTICE.test(title)) return null;
+  const r = redactPersonNames(title);
+  let file = "";
+  try { file = decodeURIComponent((n.url ?? "").split(/[?#]/)[0].split("/").pop() ?? ""); } catch { file = (n.url ?? "").split("/").pop() ?? ""; }
+  const urlHit = PERSONAL_NOTICE.test(file.replace(/[_+.]/g, " ")) || redactPersonNames(file.replace(/[_+]/g, " ").replace(/\.[a-z0-9]{2,5}$/i, "")).hit;
+  return { ...n, title: n.title == null ? null : r.text, url: r.hit || urlHit ? null : n.url };
+}
+
 /** Vyčistí jadro listu pre klienta (mutuje a vracia ten istý objekt). */
 export function clientizeCore<T extends Record<string, unknown>>(core: T): T {
   const c = core as Record<string, unknown>;
@@ -182,6 +232,10 @@ export function clientizeCore<T extends Record<string, unknown>>(core: T): T {
 
   // 6) pôvodný text ťarchy (môže obsahovať mená oprávnených osôb)
   for (const l of arr<Record<string, unknown>>(c.legal)) for (const it of arr<Record<string, unknown>>(l.items)) if (isObj(it)) it.txt = null;
+
+  // 7) úradná tabuľa obce: bez doručovania písomností konkrétnym ľuďom, mená v titulkoch začiernené
+  const ob = isObj(c.obec) ? c.obec : null;
+  if (ob) for (const k of ["changes", "upChanges"]) if (Array.isArray(ob[k])) ob[k] = arr<{ title: string | null; url: string | null }>(ob[k]).map(clientNotice).filter((x) => x != null);
 
   c.clientAgg = { comps: compAgg, hedonic: hed, lvPrices, listing, nearby, rentals } satisfies ClientAgg;
   c.clientSafe = true;
