@@ -8376,6 +8376,15 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
     const vyberLvs: number[] = []; const vyberScs: string[] = [];
     const parcels: PropParcel[] = []; const seen = new Set<string>();
     const addP = (p: PropParcel) => { const k = `${p.register}:${p.parcel_no}`; if (!seen.has(k)) { seen.add(k); parcels.push(p); } };
+    // Parcely LV, ktoré v `parcels` nie sú (D1 tam má len parcely C s obrysom z mapy) — hlavne parcely registra E
+    // z lv_parcels (2026-11-13: LV len s parcelami E mal v liste „0 parciel"). Bez obrysu a súradníc.
+    const addLvParts = async (lv: number, role: string) => {
+      const rows = await q<{ register: string; parcel_no: string; area_m2: number | null; drp_text: string | null; placement: string | null }>(
+        "SELECT register, parcel_no, area_m2, drp_text, placement FROM lv_parcels WHERE dataset_id=? AND lv_no=? LIMIT 300", [ds.id, lv]).catch(() => []);
+      for (const r of rows) addP({ parcel_no: r.parcel_no, register: r.register === "E" ? "E" : "C", area_m2: r.area_m2, use_type: r.drp_text, lv_no: lv,
+        settled: null, ekn_ref: null, bpej: null, bpej_skupina: null, odnatie_eur: null, lat: null, lng: null, geometry_json: null, geometry_quality: null,
+        placement: r.placement, role, zone: null, zone_verdict: null });
+    };
     const factsFor = async (stype: string, refs: string[], grp: string) =>
       qIn<{ subject_ref: string; data_json: string }>((ph) => `SELECT subject_ref, data_json FROM property_facts WHERE kod_ku=? AND grp=? AND subject_type=? AND subject_ref IN (${ph})`, [kod, grp, stype], refs);
 
@@ -8411,6 +8420,7 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
           vyberLvs.push(n);
           const rows = await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.lv_no=? ORDER BY (p.kn_type LIKE 'E%'), p.area_m2 DESC LIMIT 300`, [ds.id, n]);
           rows.forEach((r) => addP(toP(r, `parcela LV ${n}`)));
+          await addLvParts(n, `parcela LV ${n}`);
         } else if (m[1] === "sc") {
           if (!sc) sc = m[2];
           vyberScs.push(m[2]);
@@ -8421,10 +8431,17 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
           const wantE = m[1] === "E";
           const r = (await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? AND ${wantE ? "p.kn_type LIKE 'E%'" : "(p.kn_type IS NULL OR p.kn_type NOT LIKE 'E%')"} LIMIT 1`, [ds.id, m[2]]))[0];
           if (r) addP(toP(r, "vybraná parcela"));
+          else {
+            const lp = (await q<{ lv_no: number; area_m2: number | null; drp_text: string | null; placement: string | null }>(
+              "SELECT lv_no, area_m2, drp_text, placement FROM lv_parcels WHERE dataset_id=? AND register=? AND (parcel_no=? OR parcel_no LIKE ?) LIMIT 1", [ds.id, m[1], m[2], `%-${m[2]}`]).catch(() => []))[0];
+            if (lp) addP({ parcel_no: m[2], register: m[1] as "C" | "E", area_m2: lp.area_m2, use_type: lp.drp_text, lv_no: lp.lv_no, settled: null, ekn_ref: null, bpej: null,
+              bpej_skupina: null, odnatie_eur: null, lat: null, lng: null, geometry_json: null, geometry_quality: null, placement: lp.placement, role: "vybraná parcela", zone: null, zone_verdict: null });
+          }
         }
       }
       if (!parcels.length) return fail("Z výberu sa v katastrálnom území nenašla žiadna parcela.");
-      const big = [...parcels].sort((a, b) => (a.register === b.register ? (b.area_m2 ?? 0) - (a.area_m2 ?? 0) : a.register === "C" ? -1 : 1))[0];
+      // hlavná = najväčšia parcela so súradnicami (registre limitov, mapa), prednostne C
+      const big = [...parcels].sort((a, b) => (Number(b.lat != null) - Number(a.lat != null)) || (a.register === b.register ? (b.area_m2 ?? 0) - (a.area_m2 ?? 0) : a.register === "C" ? -1 : 1))[0];
       mainNo = big.parcel_no; mainReg = big.register; lvNo = big.lv_no;
       celokNote = `Vlastný celok zostavený ručne: ${items.map((x) => x.replace(/^lv:/, "LV ").replace(/^sc:/, "s.č. ").replace(/^([CE]):/, "$1 ")).join(", ")}.`;
     } else if (kind === "lv") {
@@ -8432,6 +8449,7 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       if (!Number.isFinite(lvNo)) return fail("Neplatné číslo LV.");
       const rows = await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.lv_no=? ORDER BY (p.kn_type LIKE 'E%'), p.area_m2 DESC LIMIT 300`, [ds.id, lvNo]);
       rows.forEach((r, i) => addP(toP(r, i === 0 ? "najväčšia parcela" : "parcela LV")));
+      await addLvParts(lvNo, parcels.length ? "parcela LV" : "parcela LV (bez obrysu v appke)");
       if (parcels[0]) { mainNo = parcels[0].parcel_no; mainReg = parcels[0].register; }
       celokNote = `Všetky nehnuteľnosti zapísané na LV č. ${lvNo}.`;
     } else {
