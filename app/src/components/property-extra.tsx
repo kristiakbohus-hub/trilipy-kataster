@@ -262,3 +262,30 @@ export function ShadeBlock({ d }: { d: SheetData }) {
     ]} />
   );
 }
+
+// ——— okolie: zastávky s počtom liniek, zberný dvor, pamiatky (OSM, appka počíta najbližšie k pozemku) ———
+const hav = (a: number, b: number, c: number, d: number) => Math.hypot((a - c) * 110540, (b - d) * 111320 * Math.cos((a * Math.PI) / 180));
+export function OkolieBlock({ d }: { d: SheetData }) {
+  const c = d.core; const la = c.main.lat, lo = c.main.lng; const kod = c.dataset?.ku_code ?? "";
+  const ok = fact(c, "okolie", `ku:${kod}`), pm = fact(c, "pamiatky", `ku:${kod}`);
+  if (la == null || lo == null || (!ok && !pm)) return null;
+  type St = [number, number, string, number, number];
+  const st = (Array.isArray(ok?.zastavky) ? (ok?.zastavky as St[]) : []).map((s) => ({ la: s[0], lo: s[1], n: s[2], vlak: s[3] === 1, lines: s[4], d: hav(la, lo, s[0], s[1]) })).sort((a, b) => a.d - b.d);
+  const bus = st.find((s) => !s.vlak), busLines = st.filter((s) => !s.vlak && s.d <= 600).sort((a, b) => b.lines - a.lines)[0], train = st.find((s) => s.vlak);
+  const zb = (Array.isArray(ok?.zbery) ? (ok?.zbery as [number, number, string][]) : []).map((z) => ({ n: z[2], d: hav(la, lo, z[0], z[1]) })).sort((a, b) => a.d - b.d)[0];
+  const pam = (Array.isArray(pm?.body) ? (pm?.body as [number, number, string, string, number][]) : []).map((p) => ({ n: p[2], t: p[3], her: p[4] === 1, d: hav(la, lo, p[0], p[1]) })).filter((p) => p.d <= 1500).sort((a, b) => a.d - b.d).slice(0, 6);
+  const T: Record<string, string> = { castle: "hrad / kaštieľ", manor: "kaštieľ", church: "kostol", chapel: "kaplnka", monastery: "kláštor", memorial: "pamätník", monument: "pomník", archaeological_site: "archeologická lokalita", ruins: "ruiny", pamiatka: "pamiatka" };
+  return (
+    <>
+      <Sub>Verejná doprava, odpad a pamiatky v okolí</Sub>
+      <Grid rows={[
+        ["Najbližšia zastávka autobusu", bus ? `${bus.n || "zastávka"} · ${dist(bus.d)}${bus.lines ? ` · ${bus.lines} ${bus.lines === 1 ? "linka" : bus.lines < 5 ? "linky" : "liniek"}` : ""}` : "—"],
+        ["Najlepšie obslúžená zastávka do 600 m", busLines && busLines.lines && busLines !== bus ? `${busLines.n} · ${dist(busLines.d)} · ${busLines.lines} liniek` : "—"],
+        ["Najbližšia železničná stanica / zastávka", train ? `${train.n || "stanica"} · ${dist(train.d)}${train.lines ? ` · ${train.lines} vlakových liniek` : ""}` : "—"],
+        ["Zberný dvor", zb ? `${zb.n} · ${dist(zb.d)}` : "—"],
+      ]} />
+      {pam.length ? <Table head={["Pamiatka / historický objekt do 1,5 km", "Druh", "Vzdialenosť"]} rows={pam.map((p) => [p.n, `${T[p.t] ?? p.t}${p.her ? " · chránená" : ""}`, dist(p.d)])} /> : null}
+      <Muted>Počet liniek podľa trás v OpenStreetMap (nie cestovný poriadok); frekvenciu spojov overte v cestovnom poriadku. Ochranu pamiatky potvrdí Pamiatkový úrad SR (v katastri je pri parcele poznámka o ochrane).</Muted>
+    </>
+  );
+}

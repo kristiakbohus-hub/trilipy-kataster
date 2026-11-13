@@ -230,6 +230,12 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "note": "subjekt lv; prípony odkazov flat 'v:<vchod>:b:<číslo>' → celý odkaz 'lv:<LV>:' + prípona. NP má číslo 'np<CNP>' (bez CNP 'np_d<kód druhu>')"
     }
   },
+  "doprava": {
+    "_": {
+      "label": "Intenzita dopravy (SSC)",
+      "kind": "text"
+    }
+  },
   "klima": {
     "ref_source": {
       "label": "Zdroj referenčných dát",
@@ -1405,6 +1411,12 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "note": "skrátený zoznam zdrojov podľa oblastí; plné URL v 49_LIST_NEHNUTELNOSTI/obec_klima/README.md"
     }
   },
+  "okolie": {
+    "_": {
+      "label": "Okolie (OSM)",
+      "kind": "text"
+    }
+  },
   "osm": {
     "vn": {
       "label": "Najbližšie VN vedenie (1–110 kV)",
@@ -1743,6 +1755,12 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "unit": "min",
       "kind": "number",
       "note": "Model z cestného grafu OSM (Dijkstra), priemerné rýchlosti podľa triedy cesty: diaľnica 110, rýchlostná/I. tr. (trunk) 85, I. tr. 70, II. tr. 56, III. tr. 45, miestna spojovacia 32, ulica 25, účelová 15, poľná 10–20 km/h; pri uvedenej max. rýchlosti sa berie nižšia z oboch; nespevnené max. 20 km/h. Cieľ = centrum mesta. Plus prístup od stredu parcely k najbližšej ceste (vzdušne × 1,3 pri 15 km/h). Bez dopravných špičiek, križovatiek a zimy. Overené: Turzovka→Žilina 47 vs ~45 min, Čadca→Žilina 32 vs ~30 min, Žilina→Bratislava 118 vs ~120 min (±5 %). Presnosť cca ±10–15 %."
+    }
+  },
+  "pamiatky": {
+    "_": {
+      "label": "Pamiatky v okolí (OSM)",
+      "kind": "text"
     }
   },
   "pristup": {
@@ -2464,6 +2482,12 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "note": "[{druh: dedičstvo | kúpa | darovanie | exekúcia/dražba | ROEP | zámena | reštitúcia/navrátenie | pozemkové úpravy | vyporiadanie BSM… | iné, n: počet vlastníkov, rok: najnovší rok}]"
     }
   },
+  "voda": {
+    "_": {
+      "label": "Pitná voda (SEVAK)",
+      "kind": "text"
+    }
+  },
   "vzn": {
     "obec": {
       "label": "Obec",
@@ -2541,5 +2565,5 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
 export const FACT_GROUP_LABEL: Record<string, string> = {
   teren: "Terén", slnko: "Slnko a svetlo", stavby: "Stavby", byty: "Byty a nebytové priestory", pristup: "Prístup z cesty",
   susedia: "Susedné parcely", mapa: "Z katastrálnej mapy", bpej: "Pôda (BPEJ)", vlastnici: "Vlastníci — súhrn",
-  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci", up: "Územný plán z výkresu", adresa: "Adresa a spádová škola", vzn: "Dane a poplatky obce (VZN)", financie: "Sadzby bánk",
+  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci", up: "Územný plán z výkresu", adresa: "Adresa a spádová škola", vzn: "Dane a poplatky obce (VZN)", financie: "Sadzby bánk", okolie: "Zastávky, zberné dvory (OSM)", pamiatky: "Pamiatky v okolí (OSM)", doprava: "Intenzita dopravy (SSC)", voda: "Pitná voda (SEVAK)",
 };

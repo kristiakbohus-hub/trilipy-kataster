@@ -9,7 +9,7 @@ import { qrMatrix } from "../lib/qr";
 import { financeOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, PurchaseSteps, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
+import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, OkolieBlock, PurchaseSteps, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -843,6 +843,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
         {mk && fact(c, "osm", mk) ? (<>
           <TrafficNoiseBlock d={d} />
           <Sub>Vzdialenosti k vybavenosti</Sub><AmenityChart d={d} />
+          <OkolieBlock d={d} />
           <Sub>Čas autom</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_TIME} />
           <Sub>Prístupová cesta</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_ROAD} />
           <Sub>Vybavenosť (vzdušnou čiarou)</Sub><FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_AMEN} />
