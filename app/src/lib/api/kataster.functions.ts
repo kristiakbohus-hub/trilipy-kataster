@@ -8089,7 +8089,7 @@ export type PropParcel = {
   role: string; zone: string | null; zone_verdict: string | null;
 };
 export type PropBuilding = { descr: string; on_parcel: string | null; sc: string | null; lv_no: number };
-export type PropComparable = { cas: string; kind: string; cen: number; ppm2: number | null; land_m2: number | null; flat_m2: number | null; items: string | null; ku: string | null; distM: number | null; same_lv: boolean };
+export type PropComparable = { cas: string; kind: string; cen: number; ppm2: number | null; land_m2: number | null; flat_m2: number | null; items: string | null; ku: string | null; distM: number | null; same_lv: boolean; lat?: number | null; lng?: number | null };
 export type PropListing = { source: string | null; url: string | null; title: string | null; ptype: string | null; price_eur: number | null; ppm2: number | null; area_m2: number | null; first_seen: string | null; last_seen: string | null; removed: boolean; confidence: string | null; distM: number | null; history: { day: string; price_eur: number | null }[] };
 export type PropertyCore = {
   ok: boolean; message?: string;
@@ -8108,6 +8108,8 @@ export type PropertyCore = {
   comparables: PropComparable[];
   compStats: { kind: string; n: number; medPpm2: number | null; p25: number | null; p75: number | null; medCen: number | null; estimateEur: number | null; basisM2: number | null } | null;
   listings: PropListing[]; nearby: PropListing[];
+  /** ponuky na prenájom rovnakého typu v okolí (posledných 180 dní) */
+  rentals?: PropListing[];
   auctions: { source: string; url: string | null; auction_date: string | null; property_type: string | null; price_min_eur: number | null; price_estimate_eur: number | null; match: string }[];
   unregistered: { parcel_no: string; building_m2: number | null; n_budov: number | null; vyuzitie: string | null; kategoria: string | null }[];
   acquisitions: { lvNo: number; kind: string; n: number; firstYear: number | null; lastYear: number | null }[];
@@ -8371,9 +8373,9 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       const ageY = (Date.now() - Date.parse(c.cas)) / 3.15e10;
       const areaPen = compKind === "pozemok" && landArea && c.land_m2 ? Math.abs(Math.log(c.land_m2 / landArea)) * 3 : 0;
       const same = c.dataset_id === ds.id && lvs.includes(c.lv_no);
-      return { c, distM, same, score: (distM == null ? 25 : distM / 1000) + ageY * 1.5 + areaPen };
+      return { c, distM, pt, same, score: (distM == null ? 25 : distM / 1000) + ageY * 1.5 + areaPen };
     }).filter((x) => !x.same).sort((a, b) => a.score - b.score).slice(0, 12);
-    const comparables: PropComparable[] = scored.map(({ c, distM }) => ({ cas: c.cas, kind: c.kind, cen: c.cen, ppm2: c.ppm2, land_m2: c.land_m2, flat_m2: c.flat_m2, items: c.items, ku: c.ku_name, distM, same_lv: false }));
+    const comparables: PropComparable[] = scored.map(({ c, distM, pt }) => ({ cas: c.cas, kind: c.kind, cen: c.cen, ppm2: c.ppm2, land_m2: c.land_m2, flat_m2: c.flat_m2, items: c.items, ku: c.ku_name, distM, same_lv: false, lat: pt?.lat ?? null, lng: pt?.lng ?? null }));
     const ppms = comparables.map((c) => c.ppm2).filter((x): x is number => x != null && x > 0);
     const cens = comparables.map((c) => c.cen).filter((x) => x > 0);
     const medPpm2 = pctl(ppms, 0.5);
@@ -8406,6 +8408,18 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       nearby = rows.map((l) => ({ source: l.source, url: l.url, title: l.title, ptype: l.ptype, price_eur: l.price_eur, ppm2: l.ppm2, area_m2: l.area_m2, first_seen: l.first_seen, last_seen: l.last_seen, removed: false, confidence: null,
         distM: l.lat != null && l.lng != null ? haversine(main.lat as number, main.lng as number, l.lat, l.lng) : null, history: [] }))
         .sort((a, b) => (a.distM ?? 1e9) - (b.distM ?? 1e9)).slice(0, 10);
+    }
+    // nájmy rovnakého typu v okolí (ponuky na prenájom) — podklad pre odhad nájomného a výnosu
+    let rentals: PropListing[] = [];
+    if (main?.lat != null && main?.lng != null && compKind !== "pozemok") {
+      const ptype = compKind === "dom" ? "dom" : "byt";
+      const d = 0.06;
+      const rows = await q<MarketListing & { removed_at: string | null }>(
+        `SELECT ${ML_COLS}, removed_at FROM market_listings WHERE lat BETWEEN ? AND ? AND lng BETWEEN ? AND ? AND ptype=? AND deal='najom' AND price_eur > 0 AND last_seen >= date('now','-180 days') ORDER BY last_seen DESC LIMIT 120`,
+        [main.lat - d, main.lat + d, main.lng - d * 1.5, main.lng + d * 1.5, ptype]).catch(() => []);
+      rentals = rows.map((l) => ({ source: l.source, url: l.url, title: l.title, ptype: l.ptype, price_eur: l.price_eur, ppm2: l.ppm2, area_m2: l.area_m2, first_seen: l.first_seen, last_seen: l.last_seen, removed: !!l.removed_at, confidence: null,
+        distM: l.lat != null && l.lng != null ? haversine(main.lat as number, main.lng as number, l.lat, l.lng) : null, history: [] }))
+        .sort((a, b) => (a.distM ?? 1e9) - (b.distM ?? 1e9)).slice(0, 12);
     }
 
     // ——— 7) dražby, stavby bez zápisu, nadobudnutia, nová zástavba ———
@@ -8546,7 +8560,7 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       dataset: { id: ds.id, ku_code: ds.ku_code, ku_name: ds.ku_name, region: ds.region, okres, updated_at: ds.updated_at },
       main: { parcelNo: main?.parcel_no ?? null, register: main?.register ?? null, lvNo: main?.lv_no ?? lvNo, lat: main?.lat ?? null, lng: main?.lng ?? null, sc, flat },
       parcels, lvs, buildings, facts, factMeta,
-      owners: { access, perLv }, legal, legalYears, flags, prices, comparables, compStats, listings, nearby, auctions, unregistered, acquisitions,
+      owners: { access, perLv }, legal, legalYears, flags, prices, comparables, compStats, listings, nearby, rentals, auctions, unregistered, acquisitions,
       construction: { ku: cku, near },
       signals: { settlement, landsearch, za, up, briefs, deal, cases },
       work: { contacts: ct?.n ?? 0, lastContact: ct?.last ?? null, nextAt: ct?.nxt ?? null, comments: cm, documents: dc },

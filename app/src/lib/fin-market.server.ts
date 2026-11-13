@@ -46,19 +46,20 @@ const RATES: { key: string; label: string; flow: string }[] = [
 ];
 
 export async function financeMarketCore(refresh = false): Promise<FinMarket> {
-  const key = "fin:market:v1";
+  const key = "fin:market:v2";
   if (!refresh) {
     const row = (await q<{ payload: string; fetched_at: number }>("SELECT payload, fetched_at FROM register_cache WHERE cache_key=?", [key]).catch(() => []))[0];
     if (row && Date.now() / 1000 - row.fetched_at < 12 * 3600) { try { return JSON.parse(row.payload) as FinMarket; } catch { /* znova */ } }
   }
   const errors: string[] = [];
   const safe = async <T,>(label: string, f: () => Promise<T>): Promise<T | null> => { try { return await f(); } catch (e) { errors.push(`${label}: ${(e as Error).message}`); return null; } };
-  const [rates, aprc, eur3, hicp, hpi] = await Promise.all([
+  const [rates, aprc, eur3, hicp, hpi, bond] = await Promise.all([
     Promise.all(RATES.map(async (r) => { const o = await safe(r.key, () => ecb(r.flow)); const last = o?.[o.length - 1]; return last ? { key: r.key, label: r.label, pct: Math.round(last.value * 100) / 100, period: last.period } : null; })),
     safe("rpmn", () => ecb(MIR("A", "C"))),
     safe("euribor", () => ecb("FM/M.U2.EUR.RT.MM.EURIBOR3MD_.HSTA")),
     safe("hicp", () => eurostat("prc_hicp_minr", "coicop18=TOTAL&unit=I25", 13)),
     safe("hpi", () => eurostat("prc_hpi_q", "purchase=TOTAL&unit=I15_Q", 21)),
+    safe("dlhopis", () => ecb("IRS/M.SK.L.L40.CI.0000.EUR.N.Z")),
   ]);
   const last = (o: Obs[] | null) => (o && o.length ? o[o.length - 1] : null);
   const hicpYoy = hicp && hicp.length >= 13 ? { pct: Math.round((hicp[hicp.length - 1].value / hicp[hicp.length - 13].value - 1) * 1000) / 10, period: hicp[hicp.length - 1].period } : null;
@@ -77,7 +78,7 @@ export async function financeMarketCore(refresh = false): Promise<FinMarket> {
   const out: FinMarket = {
     asOf: new Date().toISOString(), rates: rates.filter((x): x is NonNullable<typeof x> => !!x),
     aprc: a ? { pct: Math.round(a.value * 100) / 100, period: a.period } : null, euribor3m: e ? { pct: Math.round(e.value * 1000) / 1000, period: e.period } : null,
-    hicp: hicpYoy, hpi: hpi5, banks, banksAsOf, errors,
+    hicp: hicpYoy, hpi: hpi5, bond10y: last(bond) ? { pct: Math.round((last(bond) as Obs).value * 100) / 100, period: (last(bond) as Obs).period } : null, banks, banksAsOf, errors,
   };
   if (out.rates.length >= 3) {
     const { DB } = bindings();

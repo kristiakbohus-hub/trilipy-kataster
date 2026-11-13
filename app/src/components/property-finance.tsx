@@ -2,7 +2,8 @@
 // predikcia hodnoty, výnos a vyjednávanie. Výpočty v lib/finance.ts; texty pre laika v lib/property-explain.ts.
 // Zásada: všetko je modelový výpočet so zdrojom a dátumom — nie finančné poradenstvo ani odporúčanie produktu.
 import type { ReactNode } from "react";
-import type { FinInputs, FinResult } from "../lib/finance";
+import { sensitivityOf, type FinInputs, type FinResult } from "../lib/finance";
+import type { SheetData } from "../lib/property-eval";
 import { FIN, FIN_SOURCES } from "../lib/fin-params";
 import { nf, eur, m2, date, Muted, Sub, Grid, Table } from "./ps-ui";
 
@@ -124,6 +125,7 @@ export function FinancingBody({ fin, isClient }: { fin: FinResult; isClient: boo
         ["Zostatok úveru po fixácii", <V key="z" v={eur(m.balanceAtFix)} h="z tejto sumy sa počíta nová sadzba" />],
       ]} />
       {new Date().toISOString().slice(0, 10) < FIN.nbs.ltv2027.od ? <Muted>Od {date(FIN.nbs.ltv2027.od)} platí nové opatrenie NBS: úver najviac {Math.round(FIN.nbs.ltv2027.ostatni * 100)} % z hodnoty ({Math.round(FIN.nbs.ltv2027.mladi35 * 100)} % len mladí do 35 rokov pri prvom bývaní, {Math.round(FIN.nbs.ltv2027.tretia * 100)} % pri tretej a ďalšej nehnuteľnosti). Ak úver čerpáte v roku 2027, počítajte s vyšším podielom vlastných zdrojov.</Muted> : null}
+      <Muted>Typ úveru: {b.kind === "pozemok" ? "na pozemok banky požičiavajú spravidla len na stavebný pozemok (ÚP na bývanie, v zastavanom území) — často spolu so stavebným úverom na dom, ktorý sa čerpá po etapách podľa postupu stavby" : b.kind === "byt" || b.kind === "dom" ? "hypotekárny úver na kúpu bývania zabezpečený touto nehnuteľnosťou" : "úver na nehnuteľnosť na podnikanie — iné podmienky a vyššie sadzby ako hypotéka na bývanie"}.</Muted>
       <Sub>Vlastné zdroje spolu {eur(m.ownFunds.total)}</Sub>
       <OwnFundsBar f={m.ownFunds} />
       <Sub>Potrebný príjem podľa pravidiel NBS</Sub>
@@ -198,7 +200,9 @@ export function PredictionBody({ fin, trend }: { fin: FinResult; trend: { year: 
       {p ? (<>
         <PredictionChart p={p} />
         <Table head={["Scenár", "Ročne", "o 1 rok", "o 3 roky", "o 5 rokov", "o 10 rokov"]} rows={p.scenarios.map((s) => [s.label, pct(s.cagr), ...s.values.map((v) => eur(v))])} />
-        <Grid rows={[["Hodnota o 5 rokov v dnešných peniazoch", <V key="r" v={eur(p.real5)} h="po odpočítaní inflácie (základný scenár)" />], ["Trend cien zo zmlúv v okrese", pct(p.trendCagr)], ["Rast miezd v okrese (10 rokov)", pct(p.wageCagr)]]} />
+        <Grid rows={[["Hodnota o 5 rokov v dnešných peniazoch", <V key="r" v={eur(p.real5)} h="po odpočítaní inflácie (základný scenár)" />], ["Trend cien zo zmlúv v okrese", pct(p.trendCagr)], ["Rast miezd v okrese (10 rokov)", pct(p.wageCagr)],
+          ...(fin.market?.bond10y ? [["Alternatíva: štátny dlhopis SR na 10 rokov", <V key="b" v={`${pct(fin.market.bond10y.pct, 2)} ročne`} h={`výnos k ${fin.market.bond10y.period}; bez rizika nehnuteľnosti, bez nájmu`} />] as [string, ReactNode]] : []),
+          ...(fin.market?.hicp ? [["Inflácia v SR (medziročne)", `${pct(fin.market.hicp.pct)} (${fin.market.hicp.period})`] as [string, ReactNode]] : [])]} />
         {p.drivers.length ? (<><Sub>Čo hodnotu ovplyvní</Sub><ul className="space-y-0.5 text-xs">{p.drivers.map((x, i) => <li key={i}><span className="mr-1 inline-block w-3 text-center font-semibold">{x.sign > 0 ? "+" : x.sign < 0 ? "−" : "·"}</span>{x.text}</li>)}</ul></>) : null}
         <Muted>{p.method} Predikcia nie je prísľub budúcej ceny.</Muted>
       </>) : <Muted>Na predikciu chýba odhad hodnoty.</Muted>}
@@ -208,8 +212,9 @@ export function PredictionBody({ fin, trend }: { fin: FinResult; trend: { year: 
   );
 }
 
-export function InvestBody({ fin }: { fin: FinResult }) {
+export function InvestBody({ fin, d }: { fin: FinResult; d: SheetData }) {
   const v = fin.invest;
+  const sens = v.rent || fin.mortgage ? sensitivityOf(d, fin.market, fin.inputs) : [];
   return (
     <div className="space-y-3">
       {v.rent ? <Grid rows={[
@@ -222,6 +227,7 @@ export function InvestBody({ fin }: { fin: FinResult }) {
         ["Výnosnosť za 10 rokov (IRR)", <V key="irr" v={pct(v.irr10)} h="nájom + predaj v základnom scenári" />],
         ["Návratnosť", v.payback ? `${nf(v.payback, 1)} rokov` : "—"],
       ]} /> : <Muted>{v.rentFrom}. Pri pozemku sa výnos počíta z rozvoja (nižšie) — alebo zadajte nájom vyššie.</Muted>}
+      {sens.length ? (<><Sub>Citlivosť výsledku</Sub><Table head={["Zmena", "Splátka", "Čistý výnos", "IRR 10 r."]} rows={sens.map((x) => [x.label, eur(x.payment), pct(x.net), pct(x.irr)])} /></>) : null}
       {v.maxPrice.length ? (<><Sub>Najvyššia cena pre požadovaný čistý výnos</Sub><Table head={["Požadovaný výnos", "Najviac zaplatiť"]} rows={v.maxPrice.map((x) => [pct(x.yieldPct, 0), eur(x.price)])} /></>) : null}
       {v.residual ? (<><Sub>Zostatková hodnota pozemku pre developera</Sub><Grid rows={[["Hodnota projektu po dokončení", <V key="g" v={eur(v.residual.gdv)} h={`predajná plocha × ${eur(v.residual.saleM2)}/m² za nový byt`} />], ["Náklady výstavby", <V key="c" v={eur(v.residual.cost)} h={`${eur(FIN.vystavba.developerEurM2Hpp)}/m² hrubej podlažnej plochy`} />], ["Zisk developera", `${eur(v.residual.profit)} (${FIN.vystavba.developerZiskPct} %)`],
         ["Zostáva na pozemok (max. cena)", v.residual.land > 0 ? <b key="l">{eur(v.residual.land)}</b> : <span key="l">projekt podľa regulatívu pri týchto predpokladoch nevychádza</span>]]} /></>) : null}

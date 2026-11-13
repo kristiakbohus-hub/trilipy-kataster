@@ -14,8 +14,10 @@ export type FinMarket = {
   aprc: { pct: number; period: string } | null;
   euribor3m: { pct: number; period: string } | null;
   hicp: { pct: number; period: string } | null;
-  /** index cien bývania SR, medziročne % */
+  /** index cien bývania SR, priemerne ročne za 5 rokov % */
   hpi: { pct: number; period: string } | null;
+  /** výnos 10-ročného štátneho dlhopisu SR (ECB IRS) */
+  bond10y?: { pct: number; period: string } | null;
   banks: { banka: string; url: string | null; fixacie: Record<string, number>; typ: string | null; podmienky: string | null }[];
   banksAsOf: string | null;
   errors: string[];
@@ -380,6 +382,8 @@ export function risksOf(d: SheetData): InsuranceResult["risks"] {
   const seiz = (n?.seizmicita ?? null) as { agr_hlavna_ms2?: number } | null;
   const agR = typeof seiz?.agr_hlavna_ms2 === "number" ? seiz.agr_hlavna_ms2 : NaN;
   out.push({ label: "Zemetrasenie", level: Number.isFinite(agR) ? (agR >= 0.6 ? "stredné" : "nízke") : "neznáme", impact: Number.isFinite(agR) ? `seizmické zrýchlenie podložia ${agR} m/s² (STN EN 1998)` : "seizmickú oblasť nemáme" });
+  const sn = (n?.snih ?? null) as { zona_hlavna?: string; sk_rozsah_kn_m2?: number[] } | null;
+  if (sn?.zona_hlavna) out.push({ label: "Sneh a vietor", level: Number(sn.zona_hlavna) >= 4 ? "stredné" : "nízke", impact: `snehová oblasť ${sn.zona_hlavna}${Array.isArray(sn.sk_rozsah_kn_m2) ? ` (zaťaženie ${sn.sk_rozsah_kn_m2.join("–")} kN/m²)` : ""} podľa STN EN 1991-1-3 — vyššia oblasť = pevnejšia strecha` });
   const ob = fact(c, "obec", `ku:${kod}`);
   const krKraj = typeof ob?.kriminalita_kraj_zistene_2025 === "number" ? (ob.kriminalita_kraj_zistene_2025 as number) : null;
   const krObvod = ob?.kriminalita_zistene_2025 != null ? String(ob.kriminalita_zistene_2025) : null;
@@ -446,9 +450,11 @@ export type InvestResult = { rent: number | null; rentFrom: string; gross: numbe
 
 export function investOf(d: SheetData, b: Basis, inp: FinInputs, costs: CostsResult, mort: MortgageResult | null, pred: PredictionResult | null): InvestResult {
   const c = d.core; const price = b.price;
-  const rentM2 = c.market.rent?.rentM2 ?? null;
+  const loc = (c.rentals ?? []).map((l) => l.ppm2).filter((x): x is number => x != null && x > 1 && x < 40).sort((a, b2) => a - b2);
+  const locM2 = loc.length >= 3 ? loc[Math.floor(loc.length / 2)] : null;
+  const rentM2 = locM2 ?? c.market.rent?.rentM2 ?? null;
   const rent = inp.rentMonthly ?? (rentM2 && b.floorM2 && b.kind !== "pozemok" ? r0(rentM2 * b.floorM2) : null);
-  const rentFrom = inp.rentMonthly ? "zadaný nájom" : rent ? `medián ponúk nájmu v okrese ${r2(rentM2 ?? 0)} €/m² × ${r0(b.floorM2 ?? 0)} m²` : "nájom pre tento typ nemáme";
+  const rentFrom = inp.rentMonthly ? "zadaný nájom" : rent ? `${locM2 ? `medián ${loc.length} ponúk nájmu v okolí` : "medián ponúk nájmu v okrese"} ${r2(rentM2 ?? 0)} €/m² × ${r0(b.floorM2 ?? 0)} m²` : "nájom pre tento typ nemáme";
   let gross: number | null = null, net: number | null = null, netIncome: number | null = null, coc: number | null = null, cf: number | null = null, irr10: number | null = null, payback: number | null = null;
   const vac = FIN.investicia.neobsadenostMes;
   if (rent && price) {
@@ -527,4 +533,19 @@ export function financeOf(d: SheetData, m: FinMarket | null, partial: Partial<Fi
   const pred = predictionOf(d, b, m, mort);
   const invest = investOf(d, b, inputs, costs, mort, pred);
   return { inputs, basis: b, mortgage: mort, costs, insurance: ins, prediction: pred, invest, market: m, params: { asOf: FIN.asOf } };
+}
+
+/** Citlivosť: čo sa stane s výsledkom pri zmene ceny, nájmu a sadzby. */
+export function sensitivityOf(d: SheetData, m: FinMarket | null, partial: Partial<FinInputs>): { label: string; payment: number | null; net: number | null; irr: number | null }[] {
+  const base = financeOf(d, m, partial);
+  const p0 = base.inputs.price; const r0_ = base.invest.rent;
+  const runs: [string, Partial<FinInputs>][] = [["Základ", {}], ["Cena −10 %", { price: p0 ? p0 * 0.9 : null }], ["Cena +10 %", { price: p0 ? p0 * 1.1 : null }],
+    ["Nájom −10 %", { rentMonthly: r0_ ? r0_ * 0.9 : null }], ["Nájom +10 %", { rentMonthly: r0_ ? r0_ * 1.1 : null }]];
+  const out = runs.map(([label, ch]) => { const f = financeOf(d, m, { ...partial, ...ch }); return { label, payment: f.mortgage?.payment ?? null, net: f.invest.net, irr: f.invest.irr10 }; });
+  // sadzba +1 bod: posun trhových sadzieb
+  if (m) {
+    const m2: FinMarket = { ...m, rates: m.rates.map((x) => ({ ...x, pct: x.pct + 1 })), banks: m.banks.map((b) => ({ ...b, fixacie: Object.fromEntries(Object.entries(b.fixacie).map(([k, v]) => [k, v + 1])) })) };
+    const f = financeOf(d, m2, partial); out.push({ label: "Sadzby +1 bod", payment: f.mortgage?.payment ?? null, net: f.invest.net, irr: f.invest.irr10 });
+  }
+  return out;
 }
