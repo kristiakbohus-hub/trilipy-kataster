@@ -375,3 +375,22 @@ export function ProtectionZones({ d }: { d: SheetData }) {
     </>
   );
 }
+
+// ——— národné kultúrne pamiatky na parcelách celku (register PÚ SR, stav 2019) ———
+export function nkpOf(d: SheetData): { ref: string; p: Record<string, string> }[] {
+  const out: { ref: string; p: Record<string, string> }[] = [];
+  for (const [k, raw] of Object.entries(d.core.facts.nkp ?? {})) {
+    try { const j = JSON.parse(raw) as { pamiatky?: Record<string, string>[] }; for (const p of j.pamiatky ?? []) out.push({ ref: k.replace("parcel_c:", "parcela ").replace("building:sc:", "s. č. "), p }); } catch { /* */ }
+  }
+  return out;
+}
+export function NkpBlock({ d }: { d: SheetData }) {
+  const n = nkpOf(d); if (!n.length) return null;
+  return (
+    <>
+      <Sub>Národná kultúrna pamiatka</Sub>
+      <Table head={["Kde", "Pamiatka", "Vznik / sloh", "Číslo ÚZPF", "Chránený celok"]} rows={n.map((x) => [x.ref, `${x.p.nazov ?? x.p.druh ?? "pamiatka"}${x.p.druh && x.p.nazov && x.p.druh.toLowerCase() !== x.p.nazov.toLowerCase() ? ` (${x.p.druh.toLowerCase()})` : ""}`, [x.p.vznik, x.p.sloh].filter(Boolean).join(" · ") || "—", x.p.cislo_uzpf ?? "—", x.p.chraneny_celok ?? "—"])} />
+      <Muted>Obnova, prestavba aj zmena využitia pamiatky len podľa rozhodnutia krajského pamiatkového úradu (zákon 49/2002); vlastník má povinnosť pamiatku udržiavať a pri predaji oznámiť zmenu vlastníka. Register PÚ SR (otvorené dáta, stav 2019) — aktuálny stav overiť na KPÚ.</Muted>
+    </>
+  );
+}

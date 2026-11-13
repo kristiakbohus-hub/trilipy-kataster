@@ -29,6 +29,7 @@ export function gates(d: SheetData): Gate[] {
   if ((d.limits?.items ?? []).some((h) => h.hit && h.key === "zosuvy")) out.push({ text: "zosuvné územie", hard: false });
   const owners = c.owners.perLv.reduce((s, l) => s + l.count, 0); if (owners > 10) out.push({ text: `${owners} vlastníkov — vysporiadanie dlhé a neisté`, hard: false });
   for (const lv of c.lvs) { const v = fact(c, "vlastnici", `lv:${lv}`); if (v && Number(v.nezisteny ?? 0) > 0) { out.push({ text: "nezistený vlastník (správa SPF) — súdne alebo osobitné vysporiadanie", hard: false }); break; } }
+  if (Object.keys(c.facts.nkp ?? {}).length) out.push({ text: "národná kultúrna pamiatka na pozemku alebo stavbe — zásahy len so súhlasom krajského pamiatkového úradu (49/2002)", hard: false });
   if (c.unregistered.length) out.push({ text: "stavba bez zápisu — dodatočné povolenie (pri stavbách do 31. 3. 2025 do 31. 12. 2040 podľa novely 243/2026)", hard: false });
   return out;
 }
@@ -109,7 +110,7 @@ export function permits(d: SheetData): { studies: Study[]; timeline: { rd: strin
   if (d.limits?.road && d.limits.road.distM < 120 && /I\.|II\.|^I|^II/.test(d.limits.road.trieda)) studies.push({ name: "Hluková štúdia", why: `cesta ${d.limits.road.trieda} vo vzdialenosti ${r0(d.limits.road.distM)} m`, cost: "800 – 2 500 €", weeks: "3–6" });
   if ((d.shade?.center ?? 0) > 3 || (d.limits?.items ?? []).some((h) => h.hit && h.key === "les")) studies.push({ name: "Dendrologický posudok a súhlas na výrub", why: "stromy na pozemku alebo les do 50 m", cost: "200 – 800 € + náhradná výsadba", weeks: "4–8" });
   const pm = fact(c, "pamiatky", `ku:${c.dataset?.ku_code ?? ""}`); const map = mk ? fact(c, "mapa", mk) : null;
-  if ((Array.isArray(map?.ochrana) && (map?.ochrana as string[]).some((x) => /pamiat/i.test(x))) || (Array.isArray(pm?.body) && (pm?.body as unknown[]).length > 20)) studies.push({ name: "Archeologický výskum (rozhodne krajský pamiatkový úrad)", why: "pamiatka alebo historické jadro v okolí", cost: "od stoviek po desaťtisíce € (platí stavebník)", weeks: "4–26" });
+  if (Object.keys(c.facts.nkp ?? {}).length || (Array.isArray(map?.ochrana) && (map?.ochrana as string[]).some((x) => /pamiat/i.test(x))) || (Array.isArray(pm?.body) && (pm?.body as unknown[]).length > 20)) studies.push({ name: "Archeologický výskum (rozhodne krajský pamiatkový úrad)", why: "pamiatka alebo historické jadro v okolí", cost: "od stoviek po desaťtisíce € (platí stavebník)", weeks: "4–26" });
   if (c.parcels.some((p) => /orn|trval|záhrad|zahrad|ovocn/i.test(p.use_type ?? ""))) studies.push({ name: "Vyňatie z poľnohospodárskeho pôdneho fondu", why: "poľnohospodárska pôda", cost: "odvod podľa BPEJ + poplatky", weeks: "4–8" });
   if (d.dev?.hpp && d.dev.hpp > 3000) studies.push({ name: "Dopravná / kapacitná štúdia a zisťovacie konanie EIA (podľa veľkosti)", why: `hrubá podlažná plocha ~${r0(d.dev.hpp)} m²`, cost: "2 000 – 8 000 €", weeks: "8–20" });
   studies.push({ name: "Vyjadrenia správcov sietí a záväzné stanoviská dotknutých orgánov", why: "podmienka rozhodnutia o stavebnom zámere", cost: "spravidla bez poplatku", weeks: "4–9" });

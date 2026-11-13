@@ -12,7 +12,7 @@ import { DeclarationBlock } from "./property-decl";
 import { financeOf, hedonicOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
+import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, NkpBlock, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -779,6 +779,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
 
       <Sec id="pravo" n={num("pravo")} explain={ex("pravo")} {...asof("pravo")} title={tt("pravo", "Právny stav")} source="Časť B a C LV, poznámky a plomby (SPI); dražby z verejných registrov dražieb; stavby bez zápisu porovnaním ZBGIS a katastra.">
         <LegalRiskBlock d={d} />
+        <NkpBlock d={d} />
         {c.legal.map((l) => (
           <div key={l.lvNo} className="space-y-1">
             <Sub>LV {l.lvNo}</Sub>

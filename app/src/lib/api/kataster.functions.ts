@@ -8766,7 +8766,8 @@ export const probeExt = createServerFn({ method: "POST" })
 export type Declaration = Record<string, string | number | boolean | null>;
 const DECL_KEYS = ["ec_trieda", "ec_typ", "ec_potreba_kwh", "ec_platnost", "ec_vynimka", "sp_rok", "kol_rok", "povolenia", "rekonstrukcie", "vady", "spory",
   "prislusenstvo", "energie", "internet", "kurenie", "byt_spravca", "byt_fond_mes", "byt_zalohy_mes", "byt_opravy", "byt_dlhy", "poz_najom_do", "poz_najomca_typ",
-  "poz_pripojky", "poz_oplotenie", "poz_studna", "dovod_predaja", "uvolnenie", "poznamka"] as const;
+  "poz_pripojky", "poz_oplotenie", "poz_studna", "dovod_predaja", "uvolnenie", "poznamka",
+  "tech_strecha", "tech_fasada", "tech_okna", "tech_statika", "tech_vlhkost", "tech_elektro", "tech_voda", "tech_kurenie", "obhliadka_datum"] as const;
 export const getDeclaration = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string(), datasetId: z.string().max(40), subjectType: z.enum(["lv", "flat", "parcel_c", "parcel_e", "building"]), subjectRef: z.string().max(60) }))
   .handler(async ({ data }): Promise<{ ok: boolean; decl: string | null; updatedAt: string | null }> => {

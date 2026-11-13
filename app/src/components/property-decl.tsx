@@ -21,6 +21,11 @@ const BUILDING: F[] = [
   ["kurenie", "Kúrenie a zdroj tepla", "text"], ["energie", "Náklady na energie ročne (podľa faktúr)", "text"], ["internet", "Internet / pripojenie", "text"],
   ["prislusenstvo", "Čo zostáva v cene (kuchyňa, spotrebiče, nábytok, garáž…)", "long"],
 ];
+const TECH_OPTS = ["", "1 — bez vád", "2 — opravy v budúcnosti", "3 — vážne / naliehavé", "neprezerané"];
+export const TECH: F[] = [["tech_strecha", "Technický stav — strecha a klampiarske prvky", "sel", TECH_OPTS], ["tech_fasada", "Technický stav — fasáda a zateplenie", "sel", TECH_OPTS],
+  ["tech_okna", "Technický stav — okná a dvere", "sel", TECH_OPTS], ["tech_statika", "Technický stav — statika (praskliny)", "sel", TECH_OPTS], ["tech_vlhkost", "Technický stav — vlhkosť, pleseň", "sel", TECH_OPTS],
+  ["tech_elektro", "Technický stav — elektroinštalácia", "sel", TECH_OPTS], ["tech_voda", "Technický stav — voda a kanalizácia", "sel", TECH_OPTS], ["tech_kurenie", "Technický stav — kúrenie", "sel", TECH_OPTS],
+  ["obhliadka_datum", "Dátum obhliadky", "text"]];
 const FLAT: F[] = [["byt_spravca", "Správca / spoločenstvo (názov firmy)", "text"], ["byt_fond_mes", "Fond opráv (€ mesačne)", "num"], ["byt_zalohy_mes", "Zálohy spolu (€ mesačne)", "num"],
   ["byt_opravy", "Plánované opravy domu a schválené úvery", "long"], ["byt_dlhy", "Nedoplatky bytu voči správcovi", "text"]];
 const LAND: F[] = [["poz_najom_do", "Nájom poľnohospodárovi do (dátum / výpovedná lehota)", "text"], ["poz_najomca_typ", "Nájomca (typ: družstvo, firma, SHR — bez mien osôb)", "text"],
@@ -29,7 +34,7 @@ const LAND: F[] = [["poz_najom_do", "Nájom poľnohospodárovi do (dátum / výp
 export function declFields(d: SheetData): F[] {
   const k = d.core.kind; const isFlat = k === "byt" || Object.keys(d.core.facts.byty ?? {}).some((x) => x.startsWith("flat:"));
   const hasBuilding = d.core.buildings.length > 0 || isFlat;
-  return [...(hasBuilding ? BUILDING : []), ...(isFlat ? FLAT : []), ...(!hasBuilding || d.core.parcels.some((p) => /orn|trval|záhrad|zahrad/i.test(p.use_type ?? "")) ? LAND : []), ...COMMON];
+  return [...(hasBuilding ? BUILDING : []), ...(hasBuilding ? TECH : []), ...(isFlat ? FLAT : []), ...(!hasBuilding || d.core.parcels.some((p) => /orn|trval|záhrad|zahrad/i.test(p.use_type ?? "")) ? LAND : []), ...COMMON];
 }
 
 export function DeclarationForm({ d, token, onSaved }: { d: SheetData; token: string; onSaved: (decl: Record<string, string | number | boolean | null>) => void }) {
@@ -65,11 +70,16 @@ export function DeclarationForm({ d, token, onSaved }: { d: SheetData; token: st
 
 export function DeclarationBlock({ d }: { d: SheetData }) {
   const x = d.decl; if (!x || !Object.keys(x).length) return <Muted>Údaje od predávajúceho (energetický certifikát, povolenia, rekonštrukcie, vady, príslušenstvo) zatiaľ nie sú doplnené.</Muted>;
-  const rows = declFields(d).filter(([k]) => x[k] != null && x[k] !== "").map(([k, label]) => [label, String(x[k])] as [string, string]);
+  const rows = declFields(d).filter(([k]) => !k.startsWith("tech_") && k !== "obhliadka_datum" && x[k] != null && x[k] !== "").map(([k, label]) => [label, String(x[k])] as [string, string]);
+  const tech = TECH.filter(([k]) => k.startsWith("tech_") && x[k]).map(([k, label]) => [label.replace("Technický stav — ", ""), String(x[k])] as [string, string]);
+  const col = (v: string) => (v.startsWith("1") ? "#4f7a4a" : v.startsWith("2") ? "#c29434" : v.startsWith("3") ? "#b5523f" : "#9a9a9a");
   return (
     <>
       <Sub>Podľa vyhlásenia predávajúceho</Sub>
       <Grid rows={rows} />
+      {tech.length ? (<><Sub>Technický stav podľa obhliadky{x.obhliadka_datum ? ` (${String(x.obhliadka_datum)})` : ""}</Sub>
+        <div className="grid grid-cols-1 gap-x-6 text-xs sm:grid-cols-2">{tech.map(([k, v]) => <div key={k} className="flex items-center justify-between border-b border-line/40 py-0.5"><span className="text-muted">{k}</span><span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: col(v) }} />{v}</span></div>)}</div>
+        <Muted>Hodnotenie 1–3 z vizuálnej obhliadky makléra (1 = bez vád, 2 = opravy v budúcnosti, 3 = vážne alebo naliehavé) — nie je to odborný posudok. Pri známke 3 alebo pred kúpou staršej stavby odporúčame statika alebo znalca (PLATENÉ).</Muted></>) : null}
       <Muted>Údaje uviedol predávajúci; maklér ich neoveroval technickou ani právnou previerkou. Energetický certifikát, povolenia a kolaudačné rozhodnutie si vyžiadajte v kópii.</Muted>
     </>
   );

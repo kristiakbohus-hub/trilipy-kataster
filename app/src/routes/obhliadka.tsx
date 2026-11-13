@@ -3,7 +3,7 @@
 // v liste nehnuteľnosti (fotky aj v klientskej verzii, ak ich maklér pridá). BEZ `loader` (dáta až po prihlásení).
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { addComment, uploadDocument } from "../lib/api/kataster.functions";
+import { addComment, getDeclaration, saveDeclaration, uploadDocument } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { useRole } from "../lib/role-context";
 
@@ -51,6 +51,17 @@ function InspectionPage() {
       const lines = GROUPS.flatMap(([g, items]) => items.map((it) => { const a = ans[`${g}|${it}`]; return a?.v || a?.n ? `• ${it}: ${OPTS.find((o) => o[0] === a.v)?.[1] ?? "—"}${a.n ? ` — ${a.n}` : ""}` : null; }).filter(Boolean));
       const body = `OBHLIADKA ${new Date().toLocaleDateString("sk-SK")}${s.p ? ` (parcela ${s.p})` : ""}\n${lines.join("\n") || "bez poznámok"}${up ? `\nFotky: ${up}` : ""}`;
       const c = await addComment({ data: { token, subjectType: "lv", subjectId: `${s.ds}:${s.lv}`, body: body.slice(0, 4000) } });
+      // technický stav → údaje od predávajúceho (štruktúrovane, 1–3), zlúčené s existujúcimi
+      const MAP: Record<string, string> = { "Strecha a klampiarske prvky": "tech_strecha", "Statika — praskliny v murive": "tech_statika", "Vlhkosť, pleseň, zatekanie": "tech_vlhkost", "Okná a dvere": "tech_okna", "Kúrenie a zdroj tepla": "tech_kurenie", "Elektroinštalácia a rozvádzač": "tech_elektro" };
+      const VAL: Record<string, string> = { ok: "1 — bez vád", pozor: "2 — opravy v budúcnosti", problem: "3 — vážne / naliehavé", "?": "neprezerané" };
+      const tech: Record<string, string> = {};
+      for (const [it, key] of Object.entries(MAP)) { const a = ans[`Stavba|${it}`]; if (a?.v) tech[key] = VAL[a.v]; }
+      if (Object.keys(tech).length) {
+        const prev = await getDeclaration({ data: { token, datasetId: s.ds, subjectType: "lv", subjectRef: s.lv } }).catch(() => null);
+        let base: Record<string, string | number | boolean | null> = {};
+        try { base = prev?.decl ? (JSON.parse(prev.decl) as Record<string, string | number | boolean | null>) : {}; } catch { base = {}; }
+        await saveDeclaration({ data: { token, datasetId: s.ds, subjectType: "lv", subjectRef: s.lv, decl: { ...base, ...tech, obhliadka_datum: new Date().toLocaleDateString("sk-SK") } } }).catch(() => null);
+      }
       setMsg(c.ok ? `Uložené: zápis obhliadky${up ? ` a ${up} fotiek` : ""}. Nájdete ich v liste nehnuteľnosti (Signály a práca).` : c.message ?? "Uloženie zlyhalo.");
     } catch { setMsg("Uloženie zlyhalo — skúste znova."); } finally { setBusy(false); }
   }
