@@ -25,7 +25,8 @@ function InheritedFlatsPage() {
   const reload = useCallback(() => {
     setLoading(true);
     if (variantId && variant?.status === "done") {
-      getScenarioVariantRows({ data: { variantId } }).then((r) => setRows(r.rows.map(zaRowFromVariant)))
+      getScenarioVariantRows({ data: { variantId } })
+        .then((r) => setRows((JSON.parse(r.rowsJson) as Record<string, unknown>[]).map(zaRowFromVariant)))
         .catch(() => setRows([])).finally(() => setLoading(false));
       return;
     }

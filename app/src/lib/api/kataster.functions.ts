@@ -9456,7 +9456,7 @@ export const getScenarioSwitches = createServerFn({ method: "POST" })
 export const createScenarioVariant = createServerFn({ method: "POST" })
   .validator(z.object({
     token: z.string(), scenario: z.enum(SCENARIO_KEYS),
-    params: z.record(z.union([z.number(), z.boolean(), z.string()])),
+    params: z.record(z.string(), z.union([z.number(), z.boolean(), z.string()])),
     label: z.string().max(200).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; id?: number; existing?: boolean; message?: string }> => {
@@ -9482,11 +9482,12 @@ export const createScenarioVariant = createServerFn({ method: "POST" })
 
 export const getScenarioVariantRows = createServerFn({ method: "POST" })
   .validator(z.object({ variantId: z.number().int(), kodKu: z.string().regex(/^\d{6}$/).optional() }))
-  .handler(async ({ data }): Promise<{ variant: ScenarioVariant | null; rows: Record<string, unknown>[] }> => {
+  // riadky ako JSON text: tvar sa líši podľa scenára a server funkcia nevie preniesť typ `unknown`
+  .handler(async ({ data }): Promise<{ variant: ScenarioVariant | null; rowsJson: string }> => {
     const v = (await q<ScenarioVariant>(
       `SELECT id, scenario, label, params_json, status, progress, error, n_match, n_provisional, author, created_at, finished_at
        FROM scenario_variants WHERE id=?`, [data.variantId]).catch(() => []))[0] ?? null;
-    if (!v) return { variant: null, rows: [] };
+    if (!v) return { variant: null, rowsJson: "[]" };
     const where = data.kodKu ? "AND r.kod_ku=?" : "";
     // dataset a názov k.ú. pribalí server (odkazy na výpis LV a list nehnuteľnosti ako pri predvolenom behu)
     const rs = await q<{ data_json: string; dataset_id: string | null; ds_ku_name: string | null }>(
@@ -9499,7 +9500,7 @@ export const getScenarioVariantRows = createServerFn({ method: "POST" })
       try { rows.push({ ...(JSON.parse(r.data_json) as Record<string, unknown>), _datasetId: r.dataset_id, _kuName: r.ds_ku_name }); }
       catch { /* poškodený riadok vynechať */ }
     }
-    return { variant: v, rows };
+    return { variant: v, rowsJson: JSON.stringify(rows) };
   });
 
 /** Mac (brief_worker → scenario_variants.py): fronta variantov, zverejnenie prepínačov a zápis výsledkov. */
@@ -9511,7 +9512,7 @@ export const scenarioVariantQueue = createServerFn({ method: "POST" })
     scenario: z.enum(SCENARIO_KEYS).optional(),
     schema: z.string().max(20000).optional(),
     kodKu: z.string().regex(/^\d{6}$/).optional(),
-    rows: z.array(z.record(z.unknown())).max(2000).optional(),
+    rows: z.array(z.record(z.string(), z.unknown())).max(2000).optional(),
     progress: z.string().max(300).optional(),
     error: z.string().max(1000).optional(),
     stats: z.string().max(100000).optional(),
