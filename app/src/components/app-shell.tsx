@@ -36,6 +36,7 @@ const NAV_GROUPS: NavGroup[] = [
   ] },
   { title: "Trh", items: [
     { to: "/ceny", label: "Trhové ceny", icon: "target" },
+    { to: "/ceny-katastra", label: "Ceny z katastra", icon: "table" },
   ] },
   { title: "Nástroje", collapsible: true, items: [
     { to: "/import", label: "Import & intake", icon: "upload" },

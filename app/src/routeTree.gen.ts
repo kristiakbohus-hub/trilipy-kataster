@@ -100,6 +100,7 @@ import { Route as VlastniciRouteImport } from './routes/vlastnici'
 import { Route as DealsRouteImport } from './routes/deals'
 import { Route as PravnyReferentRouteImport } from './routes/pravny-referent'
 import { Route as CenyRouteImport } from './routes/ceny'
+import { Route as CenyKatastraRouteImport } from './routes/ceny-katastra'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -551,6 +552,11 @@ const CenyRoute = CenyRouteImport.update({
   path: '/ceny',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CenyKatastraRoute = CenyKatastraRouteImport.update({
+  id: '/ceny-katastra',
+  path: '/ceny-katastra',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DealsRoute = DealsRouteImport.update({
   id: '/deals',
   path: '/deals',
@@ -626,6 +632,7 @@ export interface FileRoutesByFullPath {
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
+  '/ceny-katastra': typeof CenyKatastraRoute
   '/system': typeof SystemRoute
   '/gdpr': typeof GdprRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -719,6 +726,7 @@ export interface FileRoutesByTo {
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
+  '/ceny-katastra': typeof CenyKatastraRoute
   '/system': typeof SystemRoute
   '/gdpr': typeof GdprRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -813,6 +821,7 @@ export interface FileRoutesById {
   '/trhova-historia': typeof TrhovaHistoriaRoute
   '/pravny-referent': typeof PravnyReferentRoute
   '/ceny': typeof CenyRoute
+  '/ceny-katastra': typeof CenyKatastraRoute
   '/system': typeof SystemRoute
   '/gdpr': typeof GdprRoute
   '/robots.txt': typeof RobotsDottxtRoute
@@ -908,6 +917,7 @@ export interface FileRouteTypes {
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
+    | '/ceny-katastra'
     | '/system'
     | '/gdpr'
     | '/robots.txt'
@@ -1001,6 +1011,7 @@ export interface FileRouteTypes {
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
+    | '/ceny-katastra'
     | '/system'
     | '/gdpr'
     | '/robots.txt'
@@ -1094,6 +1105,7 @@ export interface FileRouteTypes {
     | '/trhova-historia'
     | '/pravny-referent'
     | '/ceny'
+    | '/ceny-katastra'
     | '/system'
     | '/gdpr'
     | '/robots.txt'
@@ -1184,6 +1196,7 @@ export interface RootRouteChildren {
   TrhovaHistoriaRoute: typeof TrhovaHistoriaRoute
   PravnyReferentRoute: typeof PravnyReferentRoute
   CenyRoute: typeof CenyRoute
+  CenyKatastraRoute: typeof CenyKatastraRoute
   SystemRoute: typeof SystemRoute
   GdprRoute: typeof GdprRoute
   RobotsDottxtRoute: typeof RobotsDottxtRoute
@@ -1781,6 +1794,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CenyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/ceny-katastra': {
+      id: '/ceny-katastra'
+      path: '/ceny-katastra'
+      fullPath: '/ceny-katastra'
+      preLoaderRoute: typeof CenyKatastraRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/mapa': {
       id: '/mapa'
       path: '/mapa'
@@ -1923,6 +1943,7 @@ const rootRouteChildren: RootRouteChildren = {
   TrhovaHistoriaRoute: TrhovaHistoriaRoute,
   PravnyReferentRoute: PravnyReferentRoute,
   CenyRoute: CenyRoute,
+  CenyKatastraRoute: CenyKatastraRoute,
   SystemRoute: SystemRoute,
   GdprRoute: GdprRoute,
   RobotsDottxtRoute: RobotsDottxtRoute,

@@ -34,6 +34,7 @@ export type AppPath =
   | "/deals"
   | "/pravny-referent"
   | "/ceny"
+  | "/ceny-katastra"
   | "/poklesy"
   | "/gdpr"
   | "/system";

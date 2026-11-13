@@ -7535,6 +7535,10 @@ export const ingestLvPrices = createServerFn({ method: "POST" })
       kind: z.enum(["pozemok", "byt", "dom", "stavba", "zmiesane"]), nItems: z.number().int().min(1).max(5000),
       landM2: z.number().nullable().optional(), flatM2: z.number().nullable().optional(), ppm2: z.number().nullable().optional(),
       flag: z.string().max(60).nullable().optional(), items: z.string().max(400).nullable().optional(),
+      // 0112 (2026-11-13): pre stránku „Ceny z katastra" — druh pozemku, zastavané územie, parcely, obec, bod na mape
+      drp: z.number().int().nullable().optional(), inZu: z.number().int().min(0).max(1).nullable().optional(),
+      parcels: z.string().max(2000).nullable().optional(), obec: z.string().max(80).nullable().optional(),
+      lat: z.number().min(47).max(50).nullable().optional(), lon: z.number().min(16).max(23).nullable().optional(),
     })).max(3000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
@@ -7544,8 +7548,9 @@ export const ingestLvPrices = createServerFn({ method: "POST" })
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const did = `kn-${data.kodKu}`;
     if (data.reset) await DB.prepare("DELETE FROM lv_prices WHERE dataset_id=?").bind(did).run();
-    const ps = DB.prepare("INSERT INTO lv_prices (dataset_id,lv_no,cas,cen,kind,n_items,land_m2,flat_m2,ppm2,flag,items) VALUES (?,?,?,?,?,?,?,?,?,?,?)");
-    const stmts = data.rows.map((r) => ps.bind(did, r.lvNo, r.cas, r.cen, r.kind, r.nItems, r.landM2 ?? null, r.flatM2 ?? null, r.ppm2 ?? null, r.flag ?? null, r.items ?? null));
+    const ps = DB.prepare("INSERT INTO lv_prices (dataset_id,lv_no,cas,cen,kind,n_items,land_m2,flat_m2,ppm2,flag,items,drp,in_zu,parcels,obec,lat,lon) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    const stmts = data.rows.map((r) => ps.bind(did, r.lvNo, r.cas, r.cen, r.kind, r.nItems, r.landM2 ?? null, r.flatM2 ?? null, r.ppm2 ?? null, r.flag ?? null, r.items ?? null,
+      r.drp ?? null, r.inZu ?? null, r.parcels ?? null, r.obec ?? null, r.lat ?? null, r.lon ?? null));
     for (let i = 0; i < stmts.length; i += 50) await DB.batch(stmts.slice(i, i + 50));
     return { ok: true, inserted: stmts.length };
   });
@@ -7586,6 +7591,158 @@ export const getPriceStats = createServerFn({ method: "POST" })
       medPpm2: x.pp.length >= 3 ? Math.round((medianOf(x.pp) ?? 0) * 10) / 10 : null, medCen: x.cen.length >= 3 ? Math.round(medianOf(x.cen) ?? 0) : null,
     })).sort((a, b) => (a.kuName ?? "").localeCompare(b.kuName ?? "", "sk") || a.kind.localeCompare(b.kind) || b.year - a.year);
     return { ok: true, rows: out };
+  });
+
+// ——— CENY Z KATASTRA — vyhľadávanie v jednotlivých zmluvách (stránka /ceny-katastra, 2026-11-13) ———
+// Zadanie vlastníka: všetky filtre (miesto a typ, obdobie/cena/€/m²/výmera, druh pozemku a zastavané územie,
+// číslo parcely/LV), zoznam + súhrn, mapa, graf po rokoch, export; mená súčasných vlastníkov LV len pre
+// plný prístup (na obrazovke, nie v exporte); podozrivé ceny skryté a nikdy v mediánoch.
+const OKRES_SQL = "TRIM(REPLACE(SUBSTR(d.region, 1, INSTR(d.region || ' · ', ' · ') - 1), 'okres ', ''))";
+const priceFilterSchema = z.object({
+  okres: z.string().max(60).optional(), obec: z.string().max(80).optional(),
+  datasetIds: z.array(z.string().max(40)).max(80).optional(),
+  kinds: z.array(z.enum(["pozemok", "byt", "dom", "stavba", "zmiesane"])).max(5).optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  cenMin: z.number().nonnegative().optional(), cenMax: z.number().nonnegative().optional(),
+  ppm2Min: z.number().nonnegative().optional(), ppm2Max: z.number().nonnegative().optional(),
+  areaMin: z.number().nonnegative().optional(), areaMax: z.number().nonnegative().optional(),
+  drp: z.array(z.number().int().min(1).max(20)).max(12).optional(),
+  zu: z.enum(["v", "mimo"]).optional(),
+  parcel: z.string().max(40).optional(), lvNo: z.number().int().positive().optional(),
+  showFlagged: z.boolean().optional(),
+});
+export type ContractPriceFilter = z.infer<typeof priceFilterSchema>;
+export type ContractPriceRow = {
+  datasetId: string; kuName: string | null; okres: string | null; obec: string | null; lvNo: number; cas: string; cen: number;
+  kind: string; nItems: number; landM2: number | null; flatM2: number | null; ppm2: number | null; flag: string | null;
+  items: string | null; drp: number | null; inZu: number | null; lat: number | null; lon: number | null; owners?: string[];
+};
+export type ContractPricePoint = { lat: number; lon: number; ppm2: number | null; cen: number; kind: string; ds: string; lv: number; cas: string; flag: string | null };
+export type ContractPriceSearch = {
+  ok: boolean; message?: string; total: number; rows: ContractPriceRow[]; ownersShown: boolean;
+  summary: { n: number; nClean: number; nFlagged: number; medCen: number | null; medPpm2: number | null; nPpm2: number; withoutGeo: number };
+  byYear: { y: number; n: number; medPpm2: number | null; medCen: number | null }[];
+  points: ContractPricePoint[]; truncated: boolean;
+};
+function contractPriceWhere(f: ContractPriceFilter): { sql: string; args: unknown[] } {
+  const c: string[] = ["1=1"]; const a: unknown[] = [];
+  if (f.okres) { c.push(`${OKRES_SQL} = ?`); a.push(f.okres); }
+  if (f.obec) { c.push("lp.obec = ?"); a.push(f.obec); }
+  if (f.datasetIds?.length) { c.push(`lp.dataset_id IN (${f.datasetIds.map(() => "?").join(",")})`); a.push(...f.datasetIds); }
+  if (f.kinds?.length) { c.push(`lp.kind IN (${f.kinds.map(() => "?").join(",")})`); a.push(...f.kinds); }
+  if (f.from) { c.push("lp.cas >= ?"); a.push(f.from); }
+  if (f.to) { c.push("lp.cas <= ?"); a.push(f.to); }
+  if (f.cenMin != null) { c.push("lp.cen >= ?"); a.push(f.cenMin); }
+  if (f.cenMax != null) { c.push("lp.cen <= ?"); a.push(f.cenMax); }
+  if (f.ppm2Min != null) { c.push("lp.ppm2 >= ?"); a.push(f.ppm2Min); }
+  if (f.ppm2Max != null) { c.push("lp.ppm2 <= ?"); a.push(f.ppm2Max); }
+  if (f.areaMin != null) { c.push("COALESCE(lp.flat_m2, lp.land_m2) >= ?"); a.push(f.areaMin); }
+  if (f.areaMax != null) { c.push("COALESCE(lp.flat_m2, lp.land_m2) <= ?"); a.push(f.areaMax); }
+  if (f.drp?.length) { c.push(`lp.drp IN (${f.drp.map(() => "?").join(",")})`); a.push(...f.drp); }
+  if (f.zu) { c.push("lp.in_zu = ?"); a.push(f.zu === "v" ? 1 : 0); }
+  if (f.lvNo) { c.push("lp.lv_no = ?"); a.push(f.lvNo); }
+  if (f.parcel) {
+    // „1500/2", „C 1500/2", „E 9-120/1" → presná zhoda v zozname ,C:1500/2,E:9-120/1, (nie 1500/21)
+    const m = f.parcel.trim().toUpperCase().replace(/\s+/g, " ").match(/^(?:([CE])\s*)?(\d+(?:-\d+)?(?:\/\d+)?)$/);
+    if (m) {
+      const no = m[2];
+      if (m[1] === "E" && !no.includes("-")) { c.push("(lp.parcels LIKE ? OR lp.parcels LIKE ?)"); a.push(`%,E:${no},%`, `%,E:%-${no},%`); }
+      else if (m[1]) { c.push("lp.parcels LIKE ?"); a.push(`%,${m[1]}:${no},%`); }
+      else { c.push("(lp.parcels LIKE ? OR lp.parcels LIKE ? OR lp.parcels LIKE ?)"); a.push(`%,C:${no},%`, `%,E:${no},%`, `%-${no},%`); }
+    } else { c.push("0"); }
+  }
+  if (!f.showFlagged) c.push("lp.flag IS NULL");
+  return { sql: c.join(" AND "), args: a };
+}
+
+export const searchContractPrices = createServerFn({ method: "POST" })
+  .validator(z.object({
+    token: z.string(), f: priceFilterSchema,
+    sort: z.enum(["cas", "cen", "ppm2", "area"]).optional(), dir: z.enum(["asc", "desc"]).optional(),
+    page: z.number().int().min(0).max(5000).optional(), pageSize: z.number().int().min(10).max(200).optional(),
+  }))
+  .handler(async ({ data }): Promise<ContractPriceSearch> => {
+    const empty: ContractPriceSearch = { ok: false, total: 0, rows: [], ownersShown: false, summary: { n: 0, nClean: 0, nFlagged: 0, medCen: null, medPpm2: null, nPpm2: 0, withoutGeo: 0 }, byYear: [], points: [], truncated: false };
+    const u = await requireUser(data.token);
+    if (!u) return { ...empty, message: "Neprihlásený." };
+    const { sql, args } = contractPriceWhere(data.f);
+    const from = `FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id WHERE ${sql}`;
+    // súhrn, graf a mapa z celého výsledku (do 40 000 zmlúv); mediány vždy BEZ podozrivých cien
+    const all = await q<{ cen: number; ppm2: number | null; cas: string; flag: string | null; lat: number | null; lon: number | null; kind: string; ds: string; lv: number }>(
+      `SELECT lp.cen, lp.ppm2, lp.cas, lp.flag, lp.lat, lp.lon, lp.kind, lp.dataset_id ds, lp.lv_no lv ${from} ORDER BY lp.cas DESC LIMIT 40000`, args).catch(() => []);
+    const clean = all.filter((r) => !r.flag);
+    const pp = clean.map((r) => r.ppm2).filter((x): x is number => x != null && x > 0);
+    const yr = new Map<number, { cen: number[]; pp: number[]; n: number }>();
+    for (const r of all) {
+      const y = Number(r.cas.slice(0, 4)); const g = yr.get(y) ?? { cen: [], pp: [], n: 0 };
+      g.n += 1; if (!r.flag) { g.cen.push(r.cen); if (r.ppm2) g.pp.push(r.ppm2); }
+      yr.set(y, g);
+    }
+    const r1 = (x: number | null) => (x == null ? null : Math.round(x * 10) / 10);
+    const summary = {
+      n: all.length, nClean: clean.length, nFlagged: all.length - clean.length,
+      medCen: clean.length ? Math.round(medianOf(clean.map((r) => r.cen)) ?? 0) : null, medPpm2: r1(medianOf(pp)), nPpm2: pp.length,
+      withoutGeo: all.filter((r) => r.lat == null || r.lon == null).length,
+    };
+    const byYear = [...yr.entries()].sort((a, b) => a[0] - b[0]).map(([y, g]) => ({ y, n: g.n, medPpm2: g.pp.length >= 3 ? r1(medianOf(g.pp)) : null, medCen: g.cen.length >= 3 ? Math.round(medianOf(g.cen) ?? 0) : null }));
+    const points = all.filter((r) => r.lat != null && r.lon != null).slice(0, 4000)
+      .map((r) => ({ lat: r.lat as number, lon: r.lon as number, ppm2: r.ppm2, cen: r.cen, kind: r.kind, ds: r.ds, lv: r.lv, cas: r.cas, flag: r.flag }));
+
+    const order = { cas: "lp.cas", cen: "lp.cen", ppm2: "lp.ppm2", area: "COALESCE(lp.flat_m2, lp.land_m2)" }[data.sort ?? "cas"];
+    const dir = data.dir === "asc" ? "ASC" : "DESC";
+    const size = data.pageSize ?? 50; const page = data.page ?? 0;
+    const raw = await q<{ dataset_id: string; ku_name: string | null; okres: string | null; obec: string | null; lv_no: number; cas: string; cen: number; kind: string; n_items: number; land_m2: number | null; flat_m2: number | null; ppm2: number | null; flag: string | null; items: string | null; drp: number | null; in_zu: number | null; lat: number | null; lon: number | null }>(
+      `SELECT lp.dataset_id, d.ku_name, ${OKRES_SQL} okres, lp.obec, lp.lv_no, lp.cas, lp.cen, lp.kind, lp.n_items, lp.land_m2, lp.flat_m2, lp.ppm2, lp.flag, lp.items, lp.drp, lp.in_zu, lp.lat, lp.lon
+       ${from} ORDER BY ${order} IS NULL, ${order} ${dir}, lp.cas DESC, lp.lv_no LIMIT ? OFFSET ?`, [...args, size, page * size]).catch(() => []);
+    const rows: ContractPriceRow[] = raw.map((r) => ({ datasetId: r.dataset_id, kuName: r.ku_name, okres: r.okres, obec: r.obec, lvNo: r.lv_no, cas: r.cas, cen: r.cen, kind: r.kind, nItems: r.n_items, landM2: r.land_m2, flatM2: r.flat_m2, ppm2: r.ppm2, flag: r.flag, items: r.items, drp: r.drp, inZu: r.in_zu, lat: r.lat, lon: r.lon }));
+
+    // Mená SÚČASNÝCH vlastníkov LV — len plný prístup, len zobrazená strana, bez osôb s námietkou (suppression).
+    const ownersShown = ownerAccess(u.role) === "full" && rows.length > 0;
+    if (ownersShown) {
+      const sup = await suppressedNameSet();
+      const keys = [...new Set(rows.map((r) => `${r.datasetId}|${r.lvNo}`))];
+      const byLv = new Map<string, string[]>();
+      for (let i = 0; i < keys.length; i += 40) {
+        const part = keys.slice(i, i + 40).map((k) => k.split("|"));
+        const os = await q<{ dataset_id: string; lv_no: number; name: string }>(
+          `SELECT dataset_id, lv_no, name FROM lv_owners WHERE ${part.map(() => "(dataset_id=? AND lv_no=?)").join(" OR ")} ORDER BY is_company DESC, name`,
+          part.flatMap(([ds, lv]) => [ds, Number(lv)])).catch(() => []);
+        for (const o of os) {
+          const k = `${o.dataset_id}|${o.lv_no}`; const l = byLv.get(k) ?? [];
+          l.push(sup.has(normName(o.name)) ? "vlastník skrytý (námietka)" : o.name); byLv.set(k, l);
+        }
+      }
+      for (const r of rows) r.owners = byLv.get(`${r.datasetId}|${r.lvNo}`) ?? [];
+      await logAudit("prices.owners", u.role, `Ceny z katastra: mená súčasných vlastníkov pri ${keys.length} LV (strana ${page + 1}).`).catch(() => undefined);
+    }
+    return { ok: true, total: all.length, rows, ownersShown, summary, byYear, points, truncated: all.length >= 40000 };
+  });
+
+/** Export vyfiltrovaných zmlúv (bez mien — export osobných údajov ide len cez výpis LV). Najviac 10 000 riadkov. */
+export const exportContractPrices = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), f: priceFilterSchema }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: ContractPriceRow[]; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [], message: "Neprihlásený." };
+    const { sql, args } = contractPriceWhere(data.f);
+    const raw = await q<{ dataset_id: string; ku_name: string | null; okres: string | null; obec: string | null; lv_no: number; cas: string; cen: number; kind: string; n_items: number; land_m2: number | null; flat_m2: number | null; ppm2: number | null; flag: string | null; items: string | null; drp: number | null; in_zu: number | null; lat: number | null; lon: number | null }>(
+      `SELECT lp.dataset_id, d.ku_name, ${OKRES_SQL} okres, lp.obec, lp.lv_no, lp.cas, lp.cen, lp.kind, lp.n_items, lp.land_m2, lp.flat_m2, lp.ppm2, lp.flag, lp.items, lp.drp, lp.in_zu, lp.lat, lp.lon
+       FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id WHERE ${sql} ORDER BY lp.cas DESC, lp.lv_no LIMIT 10000`, args).catch(() => []);
+    await logAudit("prices.export", u.role, `Ceny z katastra: export ${raw.length} zmlúv (bez mien).`).catch(() => undefined);
+    return { ok: true, rows: raw.map((r) => ({ datasetId: r.dataset_id, kuName: r.ku_name, okres: r.okres, obec: r.obec, lvNo: r.lv_no, cas: r.cas, cen: r.cen, kind: r.kind, nItems: r.n_items, landM2: r.land_m2, flatM2: r.flat_m2, ppm2: r.ppm2, flag: r.flag, items: r.items, drp: r.drp, inZu: r.in_zu, lat: r.lat, lon: r.lon })) };
+  });
+
+/** Číselníky filtra: okresy, obce a k.ú., ktoré majú zmluvy s cenou. */
+export const contractPriceFacets = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; kus: { datasetId: string; kuName: string; okres: string; obec: string | null; n: number }[]; minCas: string | null; maxCas: string | null }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, kus: [], minCas: null, maxCas: null };
+    const kus = await q<{ dataset_id: string; ku_name: string; okres: string; obec: string | null; n: number; mn: string; mx: string }>(
+      `SELECT lp.dataset_id, d.ku_name, ${OKRES_SQL} okres, MAX(lp.obec) obec, COUNT(*) n, MIN(lp.cas) mn, MAX(lp.cas) mx
+       FROM lv_prices lp JOIN datasets d ON d.id = lp.dataset_id GROUP BY lp.dataset_id ORDER BY okres, d.ku_name`).catch(() => []);
+    return { ok: true, kus: kus.map((k) => ({ datasetId: k.dataset_id, kuName: k.ku_name, okres: k.okres, obec: k.obec, n: k.n })),
+      minCas: kus.reduce<string | null>((m, k) => (!m || k.mn < m ? k.mn : m), null), maxCas: kus.reduce<string | null>((m, k) => (!m || k.mx > m ? k.mx : m), null) };
   });
 
 export const ingestLvParts = createServerFn({ method: "POST" })
