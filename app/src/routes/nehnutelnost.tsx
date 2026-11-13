@@ -132,7 +132,7 @@ function PropertyPage() {
             <Link to="/ziadosti" search={{ ds: core.dataset!.id, p: mainC ?? undefined, lv: lv != null ? String(lv) : undefined }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Žiadosti (siete, ÚPI)</Link>
             {lv != null ? <Link to="/obhliadka" search={{ ds: core.dataset!.id, lv: String(lv), p: mainC ?? undefined }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Obhliadka (mobil)</Link> : null}
             {core.signals.briefs.length ? <Link to="/porovnanie" search={{ brief: String(core.signals.briefs[0].brief_id) }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Porovnať s kandidátmi zadania #{core.signals.briefs[0].brief_id}</Link> : null}
-            <Link to="/nehnutelnost" search={{ ds: core.dataset!.id, seed: core.kind === "vyber" ? core.ref : core.kind === "lv" ? `lv:${lv}` : core.kind === "stavba" && core.main.sc ? `sc:${core.main.sc}` : core.parcels.slice(0, 10).map((x) => `${x.register}:${x.parcel_no}`).join(";") }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Spojiť s ďalšími nehnuteľnosťami</Link>
+            {!core.dataset!.id.startsWith("ext-") ? <Link to="/nehnutelnost" search={{ ds: core.dataset!.id, seed: core.kind === "vyber" ? core.ref : core.kind === "lv" ? `lv:${lv}` : core.kind === "stavba" && core.main.sc ? `sc:${core.main.sc}` : core.parcels.slice(0, 10).map((x) => `${x.register}:${x.parcel_no}`).join(";") }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Spojiť s ďalšími nehnuteľnosťami</Link> : null}
             <button onClick={downloadJson} disabled={!ready} className="rounded-md border border-line px-3 py-1.5 hover:border-ink disabled:opacity-50">Stiahnuť JSON</button>
             {lv != null ? <WatchButton subjectType="lv" subjectId={`${core.dataset!.id}:${lv}`} label={core.title} /> : null}
             {lv != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: core.dataset!.id, lvNo: String(lv) }} search={{ typ: "vypis" as const }} className="text-brand underline">Výpis LV {lv}</Link> : null}
@@ -175,12 +175,24 @@ function Picker({ initDs, seed }: { initDs?: string; seed?: string }) {
   const nav = useNavigate();
   const [dss, setDss] = useState<{ id: string; ku_name: string | null }[]>([]);
   const [ds, setDs] = useState(initDs ?? "");
-  const [kind, setKind] = useState<"p" | "lv" | "sc" | "vyber">(seed ? "vyber" : "p");
+  const [kind, setKind] = useState<"p" | "lv" | "sc" | "vyber" | "sr">(seed ? "vyber" : "p");
+  // celoštátny číselník k.ú. (public/ku-sr.json: [kód, k.ú., obec, okres]) pre parcelu kdekoľvek v SR
+  const [kuSr, setKuSr] = useState<[string, string, string, string][]>([]);
+  const [kuTxt, setKuTxt] = useState("");
+  useEffect(() => { if (kind === "sr" && !kuSr.length) fetch("/ku-sr.json").then((r) => r.json()).then((x) => setKuSr(x as [string, string, string, string][])).catch(() => {}); }, [kind, kuSr.length]);
+  const kuCode = (kuTxt.match(/(\d{6})\s*$/) ?? kuTxt.match(/^\s*(\d{6})\s*$/))?.[1] ?? kuSr.find((k) => k[1].toLowerCase() === kuTxt.trim().toLowerCase())?.[0] ?? null;
   const [ref, setRef] = useState(vyberText(seed) ? vyberText(seed) + ", " : "");
   const [reg, setReg] = useState<"C" | "E">("C");
   useEffect(() => { getDatasets().then((r) => setDss(r.map((x) => ({ id: x.id, ku_name: x.ku_name })))).catch(() => {}); }, []);
   function go(e: FormEvent) {
     e.preventDefault();
+    if (kind === "sr") {
+      if (!kuCode || !ref.trim()) return;
+      // ak k.ú. máme importované → plný list, inak ľahký list z verejných služieb ÚGKK
+      const own = dss.find((d) => d.id === `kn-${kuCode}`);
+      void nav({ to: "/nehnutelnost", search: { ds: own ? own.id : `ext-${kuCode}`, p: ref.trim(), ...(reg === "E" ? { reg: "E" as const } : {}) } });
+      return;
+    }
     if (!ds || !ref.trim()) return;
     const v = ref.trim();
     const items = kind === "vyber" ? parseVyber(v) : [];
@@ -193,17 +205,25 @@ function Picker({ initDs, seed }: { initDs?: string; seed?: string }) {
       <h1 className="text-xl font-semibold">List nehnuteľnosti</h1>
       <p className="text-sm text-muted">Všetko, čo appka vie o nehnuteľnosti, na jednom mieste: kataster, právny stav, prístup, ÚP, limity, terén a slnko, klíma, siete, hodnota zo skutočných predajov, trh a čo overiť pred kúpou. Z parcely sa automaticky zostaví celok — stavba s pozemkom a priľahlé parcely tých istých vlastníkov.</p>
       <form onSubmit={go} className="space-y-3 rounded-lg border border-line bg-paper p-4 text-sm">
-        <label className="block">Katastrálne územie
-          <select value={ds} onChange={(e) => setDs(e.target.value)} className="mt-1 w-full rounded border border-line bg-surface px-2 py-1.5">
-            <option value="">— vyber —</option>
-            {dss.map((d) => <option key={d.id} value={d.id}>{(d.ku_name ?? d.id).replace(/^k\.ú\.\s*/i, "")}</option>)}
-          </select>
-        </label>
+        {kind === "sr" ? (
+          <label className="block">Katastrálne územie (celé Slovensko)
+            <input list="ku-sr" value={kuTxt} onChange={(e) => setKuTxt(e.target.value)} placeholder="začni písať názov, napr. Liptovský Mikuláš" className="mt-1 w-full rounded border border-line bg-surface px-2 py-1.5" />
+            <datalist id="ku-sr">{kuSr.map((k) => <option key={k[0]} value={`${k[1]} (${k[2] !== k[1] ? `${k[2]}, ` : ""}okres ${k[3]}) · ${k[0]}`} />)}</datalist>
+            <span className="mt-1 block text-xs text-muted">{kuCode ? (dss.some((d) => d.id === `kn-${kuCode}`) ? "Toto územie máme importované — otvorí sa plný list." : "Ľahký list: obrys, výmera, druh pozemku, registre limitov, terén, slnko a trh podľa polohy; bez vlastníkov a LV.") : "3 559 katastrálnych území SR."}</span>
+          </label>
+        ) : (
+          <label className="block">Katastrálne územie
+            <select value={ds} onChange={(e) => setDs(e.target.value)} className="mt-1 w-full rounded border border-line bg-surface px-2 py-1.5">
+              <option value="">— vyber —</option>
+              {dss.map((d) => <option key={d.id} value={d.id}>{(d.ku_name ?? d.id).replace(/^k\.ú\.\s*/i, "")}</option>)}
+            </select>
+          </label>
+        )}
         <div className="flex flex-wrap gap-3">
-          {([["p", "Parcela"], ["lv", "List vlastníctva"], ["sc", "Súpisné číslo"], ["vyber", "Vlastný celok (spojiť viac)"]] as const).map(([k, l]) => (
+          {([["p", "Parcela"], ["lv", "List vlastníctva"], ["sc", "Súpisné číslo"], ["vyber", "Vlastný celok (spojiť viac)"], ["sr", "Ľubovoľná parcela v SR"]] as const).map(([k, l]) => (
             <label key={k} className="flex items-center gap-1"><input type="radio" checked={kind === k} onChange={() => setKind(k)} /> {l}</label>
           ))}
-          {kind === "p" ? <select value={reg} onChange={(e) => setReg(e.target.value as "C" | "E")} className="rounded border border-line bg-surface px-1 py-0.5 text-xs"><option value="C">register C</option><option value="E">register E</option></select> : null}
+          {kind === "p" || kind === "sr" ? <select value={reg} onChange={(e) => setReg(e.target.value as "C" | "E")} className="rounded border border-line bg-surface px-1 py-0.5 text-xs"><option value="C">register C</option><option value="E">register E</option></select> : null}
         </div>
         {kind === "vyber" ? (
           <>
@@ -211,7 +231,7 @@ function Picker({ initDs, seed }: { initDs?: string; seed?: string }) {
             <p className="text-xs text-muted">Až 10 položiek v jednom katastrálnom území, oddelených čiarkou: parcely C (len číslo), parcely E („E 120/1“), celé listy vlastníctva („LV 812“) alebo stavby („s.č. 345“ — aj s pozemkom pod ňou). Rozpoznané: {parseVyber(ref).length ? parseVyber(ref).map((x) => x.replace(/^lv:/, "LV ").replace(/^sc:/, "s.č. ").replace(/^([CE]):/, "$1 ")).join(" · ") : "—"}</p>
           </>
         ) : (
-          <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder={kind === "p" ? "napr. 1234/5" : kind === "lv" ? "napr. 812" : "napr. 345"} className="w-full rounded border border-line bg-surface px-2 py-1.5" />
+          <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder={kind === "p" || kind === "sr" ? "napr. 1234/5" : kind === "lv" ? "napr. 812" : "napr. 345"} className="w-full rounded border border-line bg-surface px-2 py-1.5" />
         )}
         <button type="submit" className="rounded-md bg-ink px-4 py-1.5 font-medium text-cream">Otvoriť list</button>
       </form>

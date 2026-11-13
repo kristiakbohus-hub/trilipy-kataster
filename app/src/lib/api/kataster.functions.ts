@@ -8452,6 +8452,8 @@ export const getPropertyCore = createServerFn({ method: "POST" })
 /** Jadro listu — volá ho stránka (rola zo session) aj zostavovač klientskej verzie (vždy bez mien). */
 async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; ref: string; register?: "C" | "E" }, access: OwnerAccess): Promise<PropertyCore> {
     const fail = (message: string) => ({ ok: false, message } as unknown as PropertyCore);
+    // „ext-<kód k.ú.>" = parcela kdekoľvek v SR mimo importovaných k.ú. → ľahký list z verejných služieb ÚGKK
+    if (/^ext-\d{6}$/.test(data.datasetId)) return buildExternalCore(data, access);
     const ds = (await q<{ id: string; ku_code: string | null; ku_name: string | null; region: string | null; updated_at: string | null }>(
       "SELECT id, ku_code, ku_name, region, updated_at FROM datasets WHERE id=?", [data.datasetId]))[0];
     if (!ds) return fail("Dataset neexistuje.");
@@ -8885,6 +8887,70 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       flats, market: { trend, kuSales, rent, domDays, freePlots: { landsearch: freeLs, up: freeUp }, buildingMix },
       requests: await requestsFor(ds.id, [main?.parcel_no ? `p:${main.parcel_no}` : "", ...lvs.map((l) => `lv:${l}`)].filter(Boolean)),
     };
+}
+
+// ——— ĽAHKÝ LIST PRE ĽUBOVOĽNÚ PARCELU SR (2026-11-13, porovnanie s parcelnik.sk) ———
+// Parcela mimo importovaných k.ú.: obrys a výmera z ÚGKK INSPIRE (WFS, podľa národnej katastrálnej referencie
+// „<kód k.ú.>_<číslo>.C|E"), druh pozemku a umiestnenie z ESKN (identify v bode). Všetko ostatné (registre limitov,
+// terén, slnko, AVM, trh v okrese, ÚP kde je zdroj) dopĺňa list rovnako ako pri našich parcelách podľa súradníc.
+// Vlastníci, LV, ťarchy a ceny zmlúv nie sú — tie prídu až s importom k.ú. (list to jasne hovorí).
+async function buildExternalCore(data: { datasetId: string; kind: PropertyKind; ref: string; register?: "C" | "E" }, access: OwnerAccess): Promise<PropertyCore> {
+  const fail = (message: string) => ({ ok: false, message } as unknown as PropertyCore);
+  const kod = data.datasetId.slice(4);
+  const reg = data.register === "E" ? "E" : "C";
+  const no = data.ref.trim().replace(/^[CE]\s*:?\s*/i, "");
+  if (data.kind !== "parcela" || !/^\d{1,5}(?:\/\d{1,4})?$/.test(no)) return fail("Mimo importovaných k.ú. vie list zatiaľ otvoriť len parcelu podľa čísla (napr. 1234/5).");
+  const filter = `<fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:cp="http://inspire.ec.europa.eu/schemas/cp/4.0"><fes:PropertyIsEqualTo><fes:ValueReference>cp:nationalCadastralReference</fes:ValueReference><fes:Literal>${kod}_${no}.${reg}</fes:Literal></fes:PropertyIsEqualTo></fes:Filter>`;
+  const url = `https://inspirews.skgeodesy.sk/geoserver/cp/ows?${new URLSearchParams({ service: "WFS", version: "2.0.0", request: "GetFeature", typeNames: "cp:CP.CadastralParcel", outputFormat: "application/json", count: "2", FILTER: filter })}`;
+  const j = asObj(await fetchJsonTimed(url, 15000).catch(() => null));
+  const f = asObj(Array.isArray(j?.features) ? (j!.features as unknown[])[0] : null);
+  if (!j) return fail("Služba ÚGKK (INSPIRE parcely) neodpovedá — skús o chvíľu znova.");
+  if (!f) return fail(`Parcela ${reg === "E" ? "E " : ""}${no} sa v katastrálnom území ${kod} nenašla (ÚGKK INSPIRE).`);
+  const props = asObj(f.properties) ?? {};
+  const geom = asObj(f.geometry);
+  const area = Number(asObj(props.areaValue)?.value ?? NaN);
+  const rp = asObj(props.referencePoint);
+  const rpc = Array.isArray(rp?.coordinates) ? (rp!.coordinates as number[]) : null;
+  const rings = geoRings(geom ? JSON.stringify(geom) : null);
+  const cen = rpc ? { lng: rpc[0], lat: rpc[1] } : ringsCenter(rings);
+  if (!cen) return fail("Parcela nemá v ÚGKK obrys ani bod.");
+  // druh pozemku a umiestnenie z ESKN (register C; pri E pôvodný stav nemá druh v tejto vrstve)
+  let druh: string | null = null, umiest: string | null = null, chranene: string | null = null;
+  if (reg === "C") {
+    const ext = `${cen.lng - 0.002},${cen.lat - 0.002},${cen.lng + 0.002},${cen.lat + 0.002}`;
+    const ij = asObj(await fetchJsonTimed(`https://kataster.skgeodesy.sk/eskn/rest/services/VRM/kn/MapServer/identify?geometry=${cen.lng},${cen.lat}&geometryType=esriGeometryPoint&sr=4326&layers=all:9&tolerance=1&mapExtent=${ext}&imageDisplay=800,600,96&returnGeometry=false&f=json`, 12000).catch(() => null));
+    const hit = (Array.isArray(ij?.results) ? (ij!.results as unknown[]) : []).map(asObj).find((r) => r && String(asObj(r.attributes)?.["Parcelné číslo"] ?? "") === no) ?? null;
+    const at = asObj(hit?.attributes) ?? {};
+    const num = (k: string) => { const v = Number(String(at[k] ?? "").replace(",", ".")); return Number.isFinite(v) && String(at[k] ?? "") !== "" ? v : null; };
+    const dc = num("Identifikátor druhu pozemku"), uc = num("Identifikátor umiestnenia pozemku");
+    druh = dc != null ? (DRUH_POZEMKU[dc] ?? null) : null;
+    umiest = uc != null ? (UMIESTNENIE_POZEMKU[uc] ?? null) : null;
+    chranene = at["Zoznam chránených nehnuteľností"] != null ? String(at["Zoznam chránených nehnuteľností"]) || null : null;
+  }
+  // názov k.ú., obec a okres z celoštátneho číselníka k.ú. (verejná ArcGIS služba KATUZ, rovnaká ako ku_lookup na Macu)
+  const kj = asObj(await fetchJsonTimed(`https://services5.arcgis.com/xLgsg0kCC5lIjsBX/arcgis/rest/services/KATUZ/FeatureServer/0/query?where=IDN5%3D${kod}&outFields=NM5,NM4,NM3&returnGeometry=false&f=json`, 8000).catch(() => null));
+  const ka = asObj(asObj(Array.isArray(kj?.features) ? (kj!.features as unknown[])[0] : null)?.attributes) ?? {};
+  const ku = ka.NM5 ? `k.ú. ${String(ka.NM5)}` : null;
+  const okres = ka.NM3 ? String(ka.NM3) : null;
+  const fmt = (n: number) => Math.round(n).toLocaleString("sk-SK");
+  const parcel: PropParcel = { parcel_no: no, register: reg, area_m2: Number.isFinite(area) ? area : null, use_type: druh, lv_no: null, settled: null, ekn_ref: null,
+    bpej: null, bpej_skupina: null, odnatie_eur: null, lat: cen.lat, lng: cen.lng, geometry_json: geom ? JSON.stringify(geom) : null, geometry_quality: null,
+    placement: umiest, role: "zvolená parcela", zone: null, zone_verdict: null };
+  return {
+    ok: true, kind: "parcela", ref: no, title: `Pozemok parc. č. ${reg === "E" ? "E " : ""}${no}`,
+    subtitle: [ku ?? `k.ú. ${kod}`, okres ? `okres ${okres}` : null, Number.isFinite(area) ? `${fmt(area)} m²` : null, "ľahký list"].filter(Boolean).join(" · "),
+    celokNote: `Ľahký list: parcela je mimo katastrálnych území, ktoré máme importované. Obsahuje obrys, výmeru${druh ? ", druh pozemku" : ""} a všetky registre a mapové služby podľa polohy; vlastníkov, list vlastníctva, ťarchy a ceny zo zmlúv doplní až import katastrálneho územia ${kod}.${chranene ? ` ESKN uvádza chránenú nehnuteľnosť: ${chranene}.` : ""}`,
+    dataset: { id: data.datasetId, ku_code: kod, ku_name: ku ?? `k.ú. ${kod}`, region: okres ? `okres ${okres}` : null, okres, updated_at: new Date().toISOString().slice(0, 10) },
+    main: { parcelNo: no, register: reg, lvNo: null, lat: cen.lat, lng: cen.lng, sc: null, flat: null },
+    parcels: [parcel], lvs: [], buildings: [], facts: {}, factMeta: {},
+    owners: { access, perLv: [] }, legal: [], legalYears: [], flags: [], prices: [], comparables: [], compStats: null, listings: [], nearby: [], rentals: [],
+    auctions: [], unregistered: [], acquisitions: [], construction: { ku: null, near: { n: 0, area_m2: 0, nearestM: null } },
+    signals: { settlement: [], landsearch: [], za: [], up: [], briefs: [], deal: null, cases: [] },
+    work: { contacts: 0, lastContact: null, nextAt: null, comments: 0, documents: 0 },
+    firms: [], obec: { changes: [], upChanges: [] }, stateContracts: { n: 0, recent: [] }, flats: [],
+    market: { trend: [], kuSales: [], rent: null, domDays: null, freePlots: { landsearch: 0, up: 0 }, buildingMix: [] },
+    requests: [],
+  };
 }
 
 // ——— ŽIADOSTI — evidencia odoslania a odpovedí (správcovia sietí, územnoplánovacia informácia obce) — 0113 ———
