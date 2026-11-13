@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { PropertySheet } from "../components/property-sheet";
 import type { SheetData } from "../lib/property-eval";
+import { enNums } from "../lib/i18n-en-dict";
 
 // VEREJNÝ LIST NEHNUTEĽNOSTI PRE KLIENTA (2026-11-12): /n/<token> bez prihlásenia. Dáta z /api/property-share —
 // očistený snapshot z času zdieľania (bez mien vlastníkov a internej práce). Neindexovať.
@@ -27,7 +28,7 @@ function PublicPropertyPage() {
         : (
           <div className="mx-auto max-w-4xl space-y-3 rounded-xl border border-line bg-paper p-6 print:max-w-none print:rounded-none print:border-0 print:p-0">
             <div className="no-print flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-              <span>{d.snapshot.lang === "en" ? "Link valid until" : "Odkaz platí do"} {(d.expiresAt ?? "").slice(0, 10).split("-").reverse().join(". ")}</span>
+              <span>{d.snapshot.lang === "en" ? "Link valid until" : "Odkaz platí do"} {d.snapshot.lang === "en" ? enNums((d.expiresAt ?? "").slice(0, 10).split("-").reverse().join(". ")) : (d.expiresAt ?? "").slice(0, 10).split("-").reverse().join(". ")}</span>
               <span className="flex gap-2"><button onClick={() => setTeaser((t) => !t)} className="rounded-md border border-line px-3 py-1.5">{d.snapshot.lang === "en" ? (teaser ? "Full sheet" : "Teaser (1 page)") : teaser ? "Celý list" : "Teaser (1 strana)"}</button>
               <button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">{d.snapshot.lang === "en" ? "Print / save PDF" : "Tlačiť / uložiť PDF"}</button></span>
             </div>
