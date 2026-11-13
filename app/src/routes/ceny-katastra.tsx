@@ -31,6 +31,8 @@ type SortId = (typeof SORTS)[number]["id"];
 const eur = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n).toLocaleString("sk-SK")} €`);
 const ppm = (n: number | null | undefined) => (n == null ? "—" : `${n.toLocaleString("sk-SK", { maximumFractionDigits: n < 10 ? 2 : 0 })} €/m²`);
 const m2 = (n: number | null | undefined) => (n == null ? "—" : `${Math.round(n).toLocaleString("sk-SK")} m²`);
+/** len tvar slova (číslo sa formátuje zvlášť s oddeľovačom tisícov) */
+const pw = (n: number, one: string, few: string, many: string) => (n === 1 ? one : n >= 2 && n <= 4 ? few : many);
 const dateSk = (s: string) => { const [y, m, d] = s.split("-"); return `${Number(d)}. ${Number(m)}. ${y}`; };
 
 type Form = {
@@ -83,7 +85,8 @@ function CenyKatastraPage() {
   const kus = facets?.kus ?? [];
   const okresy = useMemo(() => [...new Set(kus.map((k) => k.okres).filter(Boolean))].sort((a, b) => a.localeCompare(b, "sk")), [kus]);
   const obce = useMemo(() => [...new Set(kus.filter((k) => !form.okres || k.okres === form.okres).map((k) => k.obec).filter((x): x is string => !!x))].sort((a, b) => a.localeCompare(b, "sk")), [kus, form.okres]);
-  const kuOpts = kus.filter((k) => (!form.okres || k.okres === form.okres) && (!form.obec || k.obec === form.obec));
+  const kuOpts = kus.filter((k) => (!form.okres || k.okres === form.okres) && (!form.obec || k.obec === form.obec))
+    .sort((a, b) => a.okres.localeCompare(b.okres, "sk") || a.kuName.localeCompare(b.kuName, "sk"));
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setForm((f) => ({ ...f, [k]: v }));
   const toggle = <T,>(arr: T[], v: T) => (arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
@@ -212,7 +215,8 @@ function CenyKatastraPage() {
                 <div>{s!.nFlat ? <>byty {ppm(s!.medFlat)}</> : null}</div>
                 {!s!.nLand && !s!.nFlat ? <div>—</div> : null}
               </div>}
-              sub={[s!.nLand ? `${s!.nLand.toLocaleString("sk-SK")} čistých zmlúv o pozemkoch` : "", s!.nFlat ? `${s!.nFlat.toLocaleString("sk-SK")} o bytoch` : ""].filter(Boolean).join(" · ") || "bez čistých zmlúv"} />
+              sub={[s!.nLand ? `${s!.nLand.toLocaleString("sk-SK")} ${pw(s!.nLand, "čistá zmluva", "čisté zmluvy", "čistých zmlúv")} o pozemkoch` : "",
+                s!.nFlat ? `${s!.nFlat.toLocaleString("sk-SK")} o bytoch` : ""].filter(Boolean).join(" · ") + ((s!.nLand && s!.nLand < 3) || (s!.nFlat && s!.nFlat < 3) ? " (medián od 3 zmlúv)" : "") || "bez čistých zmlúv"} />
             <Stat label="Na mape" value={(s!.n - s!.withoutGeo).toLocaleString("sk-SK")} sub={s!.withoutGeo ? `${s!.withoutGeo} bez polohy` : "všetky s polohou"} />
           </div>
 
@@ -357,12 +361,13 @@ function PriceMap({ points }: { points: ContractPricePoint[] }) {
     const ppKinds = new Set(ps.filter((p) => p.ppm2 != null).map((p) => p.kind));
     const usePpm = ppKinds.size === 1 && ps.filter((p) => p.ppm2 != null).length >= ps.length / 2;
     const vals = ps.map((p) => (usePpm ? p.ppm2 : p.cen)).filter((v): v is number => v != null).sort((a, b) => a - b);
+    const scale = new Set(vals).size >= 5;   // pri pár zmluvách nemá päťstupňová škála zmysel
     const q = [0.2, 0.4, 0.6, 0.8].map((t) => vals[Math.min(vals.length - 1, Math.floor(t * vals.length))] ?? 0);
-    const cls = (v: number | null) => (v == null ? -1 : q.findIndex((b) => v <= b) === -1 ? 4 : q.findIndex((b) => v <= b));
+    const cls = (v: number | null) => (v == null ? -1 : !scale ? 2 : q.findIndex((b) => v <= b) === -1 ? 4 : q.findIndex((b) => v <= b));
     const bbox = `${x0},${y0},${x1},${y1}`;
     const orto = `https://zbgisws.skgeodesy.sk/zbgis_ortofoto_wms/service.svc/get?${new URLSearchParams({ service: "WMS", version: "1.3.0", request: "GetMap", layers: "1", styles: "", crs: "EPSG:3857", format: "image/jpeg", width: String(MW), height: String(MH), bbox })}`;
     const dots = ps.map((p) => ({ p, x: ((p.m.x - x0) / w) * MW, y: ((y1 - p.m.y) / h) * MH, c: cls(usePpm ? p.ppm2 : p.cen) }));
-    return { orto, dots, usePpm, q };
+    return { orto, dots, usePpm, q, scale };
   }, [points]);
   if (!geo) return <p className="text-sm text-muted">Žiadne zmluvy s polohou.</p>;
   const fmt = (v: number) => (geo.usePpm ? ppm(v) : eur(v));
@@ -380,8 +385,8 @@ function PriceMap({ points }: { points: ContractPricePoint[] }) {
         </svg>
       </div>
       <figcaption className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
-        <span>{geo.usePpm ? "€/m²:" : "Cena:"}</span>
-        {PAL.map((col, i) => (
+        {geo.scale ? <span>{geo.usePpm ? "€/m²:" : "Cena:"}</span> : null}
+        {geo.scale && PAL.map((col, i) => (
           <span key={col} className="inline-flex items-center gap-1">
             <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: col }} />
             {i === 0 ? `do ${fmt(geo.q[0])}` : i === 4 ? `nad ${fmt(geo.q[3])}` : `${fmt(geo.q[i - 1])} – ${fmt(geo.q[i])}`}
