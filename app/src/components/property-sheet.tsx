@@ -863,6 +863,7 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
       <Sec id="up" n={num("up")} explain={ex("up")} {...asof("up")} title={tt("up", "Územný plán a zastavateľnosť")} source="Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.">
         <Grid rows={[["Funkčná zóna", prettyZone(z.name) ?? "nemáme zónu ÚP pre parcelu"]]} />
         <RequestAnswers d={d} kinds={["up_obec"]} title="Územnoplánovacia informácia od obce" isClient={isClient} />
+        <UpdVersions data={fact(c, "upd", kuKey)} />
         {mk && fact(c, "up", mk) ? (<><Sub>Zóna z výkresu ÚP (georeferencovaný výkres, orientačné)</Sub><FactsBlock grp="up" data={fact(c, "up", mk)} /></>) : null}
         {fact(c, "up", kuKey) ? <FactsBlock grp="up" data={Object.fromEntries(Object.entries(fact(c, "up", kuKey) ?? {}).filter(([k]) => ["zdroj", "dokumenty", "metoda", "presnost_m", "poznamka"].includes(k)))} /> : null}
         {d.dev ? (
@@ -1218,6 +1219,48 @@ function HistUsers({ c }: { c: SheetData["core"] }) {
       <Table head={["Parcela", "Užívateľ", "Typ", "Evidenčný list", "Parciel na EL v k.ú."]}
         rows={rows.map(({ p, f }) => [p, String(f.meno ?? "—"), String(f.typ ?? "—"), f.el != null ? String(f.el) : "—", f.parciel_na_el != null ? String(f.parciel_na_el) : "—"])} />
       <Muted>Užívateľ zapísaný k parcele v súbore popisných informácií (pôvodne evidencia nehnuteľností). Nie je to vlastník; údaj je historický a nemusí zodpovedať dnešnému stavu. Pomáha pri vysporiadaní a pri hľadaní pôvodu práv k pozemku.</Muted>
+    </>
+  );
+}
+
+// VERZIE ÚZEMNÉHO PLÁNU + STAV K DÁTUMU (2026-11-13) — registračné listy ÚPD (ÚÚPV SR) z Macu (40_UP_GEOREF/upd_versions.py,
+// údaje grp „upd" pre k.ú.). Pre zvolený deň ukáže, ktoré dokumenty platili, z ktorej verzie sú zóny na liste a ktoré
+// neskoršie platné zmeny v zónach ešte nie sú zapracované. Verejné údaje registra — rovnako aj v klientskej verzii.
+type UpdDoc = { typ: string; c: number | null; nazov: string; schvalene: string | null; vzn: string | null; ucinny_od: string | null; presne?: boolean };
+function UpdVersions({ data }: { data: Record<string, unknown> | null }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [day, setDay] = useState(today);
+  if (!data) return null;
+  const docs = (Array.isArray(data.dokumenty) ? data.dokumenty : []) as UpdDoc[];
+  if (!docs.length) return null;
+  const src = (data.zdroj_zon ?? null) as { typ?: string; nazov?: string | null; zhoda?: string; dokument?: number | null } | null;
+  const later = new Set((Array.isArray(data.nezapracovane) ? data.nezapracovane : []) as number[]);
+  const srcDoc = src && typeof src.dokument === "number" ? docs[src.dokument] : null;
+  const valid = (d: UpdDoc) => !!d.ucinny_od && d.ucinny_od <= day;
+  const missingAtDay = docs.filter((d, i) => later.has(i) && valid(d));
+  const srcNotYet = srcDoc && srcDoc.ucinny_od && srcDoc.ucinny_od > day;
+  const fmt = (x: string | null) => (x ? x.split("-").reverse().join(". ") : "—");
+  return (
+    <>
+      <Sub>Verzie územného plánu — stav k dátumu</Sub>
+      <div className="no-print flex flex-wrap items-center gap-2 text-xs text-muted">
+        Stav k <input type="date" value={day} max={today} onChange={(e) => setDay(e.target.value || today)} className="rounded border border-line bg-surface px-1.5 py-0.5 text-fg" />
+        {day !== today ? <button onClick={() => setDay(today)} className="rounded border border-line px-2 py-0.5 text-fg hover:bg-surface-2">dnes</button> : null}
+      </div>
+      <Table head={["Dokument", "Účinný od", "VZN", `K ${fmt(day)}`]}
+        rows={docs.map((d, i) => [
+          <span key="n">{d.nazov}{src && src.dokument === i ? <span className="ml-1 text-[10px] uppercase text-brand"> · zóny na liste</span> : null}</span>,
+          `${fmt(d.ucinny_od)}${d.ucinny_od && d.presne === false ? " (približne)" : ""}`, d.vzn ?? "—",
+          !d.ucinny_od ? "dátum neuvedený" : valid(d) ? (later.has(i) ? "platí — v zónach nezapracované" : "platí") : "ešte neplatil",
+        ])} />
+      {src ? (
+        <Muted>
+          Zóny na tomto liste: {src.typ === "WMS" ? "mapový portál obce (WMS) — aktualizuje obec" : `${src.nazov ?? "výkres ÚP"} (${src.zhoda ?? "verzia neurčená"})`}.
+          {missingAtDay.length ? ` K ${fmt(day)} platí aj ${missingAtDay.map((d) => d.nazov).join("; ")} — v zónach zatiaľ nie je zapracované, overte v jej výkrese.` : ""}
+          {srcNotYet ? ` K ${fmt(day)} ešte neplatila verzia, z ktorej sú zóny (účinná od ${fmt(srcDoc!.ucinny_od)}).` : ""}
+        </Muted>
+      ) : <Muted>Zóny ÚP pre toto k.ú. zatiaľ nemáme — zoznam dokumentov je z registra ÚPD.</Muted>}
+      <Muted>Zdroj: registračné listy ÚPD (Úrad pre územné plánovanie a výstavbu SR), stav registra {fmt(String(data.stav_registra ?? "") || null)}. Účinnosť „približne“ = dátum VZN, keď register účinnosť neuvádza.</Muted>
     </>
   );
 }
