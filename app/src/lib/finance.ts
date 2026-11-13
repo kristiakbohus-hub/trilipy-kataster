@@ -249,10 +249,15 @@ export function costsOf(d: SheetData, b: Basis, inp: FinInputs, insurance: Insur
   const odpad = vzn?.odpad?.eur_osoba_rok;
   if (b.kind !== "pozemok") annual.push({ label: "Poplatok za komunálny odpad", eur: typeof odpad === "number" ? r0(odpad * inp.persons) : null, note: typeof odpad === "number" ? `${odpad} € × ${inp.persons} os. (VZN obce)` : "VZN obce nemáme" });
   if (insurance && b.kind !== "pozemok") annual.push({ label: "Poistenie nehnuteľnosti a domácnosti", eur: r0(insurance.premiumMid), note: `odhad ${r0(insurance.premiumLow)}–${r0(insurance.premiumHigh)} €` });
-  if (b.kind === "byt" && b.floorM2) annual.push({ label: "Fond opráv a správa", eur: r0(b.floorM2 * FIN.byty.fondOpravEurM2Mes * 12 + FIN.byty.spravaEurMes * 12), note: `~${FIN.byty.fondOpravEurM2Mes} €/m² mesačne + správa ${FIN.byty.spravaEurMes} €` });
-  if (insurance?.rebuild && b.kind !== "byt") annual.push({ label: "Údržba a opravy (rezerva)", eur: r0(insurance.rebuild * FIN.udrzbaPct / 100), note: `${FIN.udrzbaPct} % z ceny stavby ročne` });
+  const dc = d.decl ?? {};
+  const fondMes = typeof dc.byt_fond_mes === "number" ? dc.byt_fond_mes : null, zalohyMes = typeof dc.byt_zalohy_mes === "number" ? dc.byt_zalohy_mes : null;
+  if (b.kind === "byt" && (fondMes != null || zalohyMes != null)) annual.push({ label: "Fond opráv a zálohy (podľa predávajúceho)", eur: r0(((zalohyMes ?? 0) || (fondMes ?? 0)) * 12), note: `${zalohyMes != null ? `zálohy ${zalohyMes} €/mes.` : ""}${fondMes != null ? ` fond opráv ${fondMes} €/mes.` : ""}`.trim() });
+  else if (b.kind === "byt" && b.floorM2) annual.push({ label: "Fond opráv a správa", eur: r0(b.floorM2 * FIN.byty.fondOpravEurM2Mes * 12 + FIN.byty.spravaEurMes * 12), note: `~${FIN.byty.fondOpravEurM2Mes} €/m² mesačne + správa ${FIN.byty.spravaEurMes} € (odhad)` });
+  const kol = typeof dc.kol_rok === "number" ? dc.kol_rok : null; const age = kol ? new Date().getFullYear() - kol : null;
+  const udrz = age == null ? FIN.udrzbaPct : age < 10 ? 0.75 : age < 30 ? 1.25 : age < 50 ? 2 : 2.5;
+  if (insurance?.rebuild && b.kind !== "byt") annual.push({ label: "Údržba a opravy (rezerva)", eur: r0(insurance.rebuild * udrz / 100), note: `${udrz} % z ceny stavby ročne${age != null ? ` (stavba z roku ${kol})` : " (vek stavby neznámy)"}` });
   if (b.floorM2 && b.kind !== "pozemok") {
-    const e = energyOf(b);
+    const e = energyOf(b, typeof dc.ec_potreba_kwh === "number" ? dc.ec_potreba_kwh : null, typeof dc.ec_trieda === "string" ? dc.ec_trieda : null);
     if (e) annual.push({ label: "Energie (kúrenie, voda, elektrina)", eur: e.eur, note: e.note });
   }
   const annualTotal = annual.reduce((s, x) => s + (x.eur ?? 0), 0);
@@ -332,12 +337,14 @@ export function propertyTaxOf(d: SheetData, b: Basis): { eur: number | null; det
   return { eur: sum ? r0(sum) : null, detail: `${parts.join(" · ") || "—"}${unknown ? " · časť sadzieb chýba" : ""} (VZN ${dan.vzn ?? "obce"})`, vzn: dan.vzn ?? null };
 }
 
-function energyOf(b: Basis): { eur: number; note: string } | null {
+const EC_KWH: Record<string, number> = { A0: 30, A1: 50, B: 90, C: 130, D: 170, E: 210, F: 260, G: 320 };
+function energyOf(b: Basis, potreba: number | null = null, trieda: string | null = null): { eur: number; note: string } | null {
   if (!b.floorM2) return null;
   const E = FIN.energie;
-  const heat = b.floorM2 * (b.kind === "byt" ? E.kurenieKwhM2Byt : E.kurenieKwhM2Dom);
+  const perM2 = potreba ?? (trieda && EC_KWH[trieda] ? EC_KWH[trieda] * 0.7 : b.kind === "byt" ? E.kurenieKwhM2Byt : E.kurenieKwhM2Dom);
+  const heat = b.floorM2 * perM2;
   const eur = heat * (b.kind === "byt" ? E.teploEurKwh : E.plynEurKwh) + E.elektrinaKwhRok * E.elektrinaEurKwh + E.elektrinaStalaMes * 12;
-  return { eur: r0(eur), note: `~${r0(heat)} kWh kúrenie + ${E.elektrinaKwhRok} kWh elektrina (priemerný stav stavby, ceny ${E.stavK})` };
+  return { eur: r0(eur), note: `~${r0(heat)} kWh kúrenie${potreba ? " (z energetického certifikátu)" : trieda ? ` (trieda ${trieda})` : " (priemerný stav stavby)"} + ${E.elektrinaKwhRok} kWh elektrina, ceny ${E.stavK}` };
 }
 
 /** Zemné práce: z prevýšenia pod modelovým domom 10 × 12 m (terén DMR 5.0) — výkop/násyp na vyrovnanie + základy. */
