@@ -6513,10 +6513,13 @@ export const getParcelBuyers = createServerFn({ method: "POST" })
         `SELECT id, parcel_no, lv_no, geometry_json FROM parcels WHERE dataset_id=? AND centroid_lat BETWEEN ? AND ? AND centroid_lng BETWEEN ? AND ? AND id <> ? LIMIT 1500`,
         [data.datasetId, p.centroid_lat - padLat, p.centroid_lat + padLat, p.centroid_lng - padLng, p.centroid_lng + padLng, p.id]).catch(() => []);
       const tol = 0.00003;   // ~2–3 m
+      const mine = geoRings(p.geometry_json);
       const touch = cands.filter((c) => {
         const b = geoBbox(c.geometry_json);
         return !!b && b[0] <= bb[2] + tol && bb[0] <= b[2] + tol && b[1] <= bb[3] + tol && bb[1] <= b[3] + tol;
-      }).filter((c) => c.lv_no != null && c.lv_no !== p.lv_no);
+      }).filter((c) => c.lv_no != null && c.lv_no !== p.lv_no)
+        // 2026-11-13 (GOLD v2 Stage 3): sused = SPOLOČNÁ HRANICA ≥ 0,5 m, nie len blízky obdĺžnik (parcela cez cestu, roh)
+        .filter((c) => sharedEdgeM(mine, geoRings(c.geometry_json)) >= 0.5);
       const om = await ownersOf([...new Set(touch.map((c) => c.lv_no as number))]);
       neighbors = touch.map((c) => ({ parcelNo: c.parcel_no, lvNo: c.lv_no, owners: om.get(c.lv_no as number) ?? [] }))
         .filter((n) => n.owners.length).slice(0, 40);
@@ -7837,6 +7840,27 @@ function geoRings(g: string | null): MapRing[] {
     if (o.type === "MultiPolygon") return ((o.coordinates as MapRing[][]) ?? []).flat();
   } catch { /* nič */ }
   return [];
+}
+/** Dĺžka spoločnej hranice dvoch obrysov (WGS84) v metroch: body hranice A po 0,5 m, ktoré ležia do 0,3 m
+ *  od hranice B (tolerancia kresby). Dotyk rohom ≈ 0 m. Lokálna rovinná aproximácia — stačí na susednosť. */
+function sharedEdgeM(a: MapRing[], b: MapRing[]): number {
+  if (!a.length || !b.length) return 0;
+  const lat0 = a[0][0]?.[1] ?? 0, kx = 111320 * Math.cos((lat0 * Math.PI) / 180), ky = 110540;
+  const P = (q: [number, number]) => [q[0] * kx, q[1] * ky] as const;
+  const segsB: [number, number, number, number][] = [];
+  for (const r of b) for (let i = 0; i + 1 < r.length; i++) { const [x1, y1] = P(r[i] as [number, number]), [x2, y2] = P(r[i + 1] as [number, number]); segsB.push([x1, y1, x2, y2]); }
+  const near = (x: number, y: number) => segsB.some(([x1, y1, x2, y2]) => {
+    const dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy;
+    const u = L ? Math.max(0, Math.min(1, ((x - x1) * dx + (y - y1) * dy) / L)) : 0;
+    return Math.hypot(x - (x1 + u * dx), y - (y1 + u * dy)) <= 0.3;
+  });
+  let len = 0;
+  for (const r of a) for (let i = 0; i + 1 < r.length; i++) {
+    const [x1, y1] = P(r[i] as [number, number]), [x2, y2] = P(r[i + 1] as [number, number]);
+    const L = Math.hypot(x2 - x1, y2 - y1), n = Math.max(1, Math.ceil(L / 0.5));
+    for (let k = 0; k < n; k++) { const u = (k + 0.5) / n; if (near(x1 + u * (x2 - x1), y1 + u * (y2 - y1))) len += L / n; }
+  }
+  return len;
 }
 function ringsCenter(rs: MapRing[]): { lat: number; lng: number } | null {
   const pts = rs.flat(); if (!pts.length) return null;
