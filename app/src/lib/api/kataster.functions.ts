@@ -7620,8 +7620,9 @@ export type ContractPriceRow = {
 export type ContractPricePoint = { lat: number; lon: number; ppm2: number | null; cen: number; kind: string; ds: string; lv: number; cas: string; flag: string | null };
 export type ContractPriceSearch = {
   ok: boolean; message?: string; total: number; rows: ContractPriceRow[]; ownersShown: boolean;
-  summary: { n: number; nClean: number; nFlagged: number; medCen: number | null; medPpm2: number | null; nPpm2: number; withoutGeo: number };
-  byYear: { y: number; n: number; medPpm2: number | null; medCen: number | null }[];
+  // €/m² zvlášť pre pozemky a byty — spoločný medián (desiatky € vs. tisíce €) by nič nehovoril
+  summary: { n: number; nClean: number; nFlagged: number; medCen: number | null; medLand: number | null; nLand: number; medFlat: number | null; nFlat: number; withoutGeo: number };
+  byYear: { y: number; n: number; medLand: number | null; medFlat: number | null; medCen: number | null }[];
   points: ContractPricePoint[]; truncated: boolean;
 };
 function contractPriceWhere(f: ContractPriceFilter): { sql: string; args: unknown[] } {
@@ -7662,7 +7663,7 @@ export const searchContractPrices = createServerFn({ method: "POST" })
     page: z.number().int().min(0).max(5000).optional(), pageSize: z.number().int().min(10).max(200).optional(),
   }))
   .handler(async ({ data }): Promise<ContractPriceSearch> => {
-    const empty: ContractPriceSearch = { ok: false, total: 0, rows: [], ownersShown: false, summary: { n: 0, nClean: 0, nFlagged: 0, medCen: null, medPpm2: null, nPpm2: 0, withoutGeo: 0 }, byYear: [], points: [], truncated: false };
+    const empty: ContractPriceSearch = { ok: false, total: 0, rows: [], ownersShown: false, summary: { n: 0, nClean: 0, nFlagged: 0, medCen: null, medLand: null, nLand: 0, medFlat: null, nFlat: 0, withoutGeo: 0 }, byYear: [], points: [], truncated: false };
     const u = await requireUser(data.token);
     if (!u) return { ...empty, message: "Neprihlásený." };
     const { sql, args } = contractPriceWhere(data.f);
@@ -7671,20 +7672,24 @@ export const searchContractPrices = createServerFn({ method: "POST" })
     const all = await q<{ cen: number; ppm2: number | null; cas: string; flag: string | null; lat: number | null; lon: number | null; kind: string; ds: string; lv: number }>(
       `SELECT lp.cen, lp.ppm2, lp.cas, lp.flag, lp.lat, lp.lon, lp.kind, lp.dataset_id ds, lp.lv_no lv ${from} ORDER BY lp.cas DESC LIMIT 40000`, args).catch(() => []);
     const clean = all.filter((r) => !r.flag);
-    const pp = clean.map((r) => r.ppm2).filter((x): x is number => x != null && x > 0);
-    const yr = new Map<number, { cen: number[]; pp: number[]; n: number }>();
+    const ppOf = (rs: typeof all, kind: string) => rs.filter((r) => r.kind === kind && r.ppm2 != null && r.ppm2 > 0).map((r) => r.ppm2 as number);
+    const land = ppOf(clean, "pozemok"), flat = ppOf(clean, "byt");
+    const yr = new Map<number, { cen: number[]; land: number[]; flat: number[]; n: number }>();
     for (const r of all) {
-      const y = Number(r.cas.slice(0, 4)); const g = yr.get(y) ?? { cen: [], pp: [], n: 0 };
-      g.n += 1; if (!r.flag) { g.cen.push(r.cen); if (r.ppm2) g.pp.push(r.ppm2); }
+      const y = Number(r.cas.slice(0, 4)); const g = yr.get(y) ?? { cen: [], land: [], flat: [], n: 0 };
+      g.n += 1;
+      if (!r.flag) { g.cen.push(r.cen); if (r.ppm2 && r.kind === "pozemok") g.land.push(r.ppm2); if (r.ppm2 && r.kind === "byt") g.flat.push(r.ppm2); }
       yr.set(y, g);
     }
     const r1 = (x: number | null) => (x == null ? null : Math.round(x * 10) / 10);
+    const med3 = (xs: number[]) => (xs.length >= 3 ? r1(medianOf(xs)) : null);
     const summary = {
       n: all.length, nClean: clean.length, nFlagged: all.length - clean.length,
-      medCen: clean.length ? Math.round(medianOf(clean.map((r) => r.cen)) ?? 0) : null, medPpm2: r1(medianOf(pp)), nPpm2: pp.length,
+      medCen: clean.length ? Math.round(medianOf(clean.map((r) => r.cen)) ?? 0) : null,
+      medLand: med3(land), nLand: land.length, medFlat: med3(flat), nFlat: flat.length,
       withoutGeo: all.filter((r) => r.lat == null || r.lon == null).length,
     };
-    const byYear = [...yr.entries()].sort((a, b) => a[0] - b[0]).map(([y, g]) => ({ y, n: g.n, medPpm2: g.pp.length >= 3 ? r1(medianOf(g.pp)) : null, medCen: g.cen.length >= 3 ? Math.round(medianOf(g.cen) ?? 0) : null }));
+    const byYear = [...yr.entries()].sort((a, b) => a[0] - b[0]).map(([y, g]) => ({ y, n: g.n, medLand: med3(g.land), medFlat: med3(g.flat), medCen: g.cen.length >= 3 ? Math.round(medianOf(g.cen) ?? 0) : null }));
     const points = all.filter((r) => r.lat != null && r.lon != null).slice(0, 4000)
       .map((r) => ({ lat: r.lat as number, lon: r.lon as number, ppm2: r.ppm2, cen: r.cen, kind: r.kind, ds: r.ds, lv: r.lv, cas: r.cas, flag: r.flag }));
 

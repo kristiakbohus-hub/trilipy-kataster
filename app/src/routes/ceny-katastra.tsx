@@ -206,7 +206,13 @@ function CenyKatastraPage() {
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <Stat label="Zmlúv" value={s!.n.toLocaleString("sk-SK")} sub={res.truncated ? "zobrazených prvých 40 000 — zúžte filter" : form.showFlagged ? `z toho podozrivých ${s!.nFlagged.toLocaleString("sk-SK")}` : "podozrivé ceny skryté"} />
             <Stat label="Medián ceny" value={eur(s!.medCen)} sub="za celú zmluvu, bez podozrivých" />
-            <Stat label="Medián €/m²" value={ppm(s!.medPpm2)} sub={`z ${s!.nPpm2.toLocaleString("sk-SK")} čistých zmlúv`} />
+            <Stat label="Medián €/m²"
+              value={<div className="space-y-0.5 text-lg">
+                <div>{s!.nLand ? <>pozemky {ppm(s!.medLand)}</> : null}</div>
+                <div>{s!.nFlat ? <>byty {ppm(s!.medFlat)}</> : null}</div>
+                {!s!.nLand && !s!.nFlat ? <div>—</div> : null}
+              </div>}
+              sub={[s!.nLand ? `${s!.nLand.toLocaleString("sk-SK")} čistých zmlúv o pozemkoch` : "", s!.nFlat ? `${s!.nFlat.toLocaleString("sk-SK")} o bytoch` : ""].filter(Boolean).join(" · ") || "bez čistých zmlúv"} />
             <Stat label="Na mape" value={(s!.n - s!.withoutGeo).toLocaleString("sk-SK")} sub={s!.withoutGeo ? `${s!.withoutGeo} bez polohy` : "všetky s polohou"} />
           </div>
 
@@ -292,15 +298,26 @@ function Th({ label, id, sort, dir, onSort, right }: { label: string; id: SortId
   );
 }
 
-// ——— Graf: medián €/m² (alebo medián ceny, ak €/m² chýba) po rokoch, s počtom zmlúv ———
+// ——— Graf: medián po rokoch — €/m² pozemkov, €/m² bytov alebo cena zmluvy (prepínač), s počtom zmlúv ———
+type Metric = "land" | "flat" | "cen";
+const METRIC_LABEL: Record<Metric, string> = { land: "€/m² pozemky", flat: "€/m² byty", cen: "cena zmluvy" };
 function YearChart({ rows }: { rows: ContractPriceSearch["byYear"] }) {
-  const usePpm = rows.some((r) => r.medPpm2 != null);
-  const vals = rows.map((r) => (usePpm ? r.medPpm2 : r.medCen));
+  const has = { land: rows.some((r) => r.medLand != null), flat: rows.some((r) => r.medFlat != null), cen: rows.some((r) => r.medCen != null) };
+  const avail = (["land", "flat", "cen"] as Metric[]).filter((m) => has[m]);
+  const [pick, setPick] = useState<Metric | null>(null);
+  const metric: Metric = pick && has[pick] ? pick : avail[0] ?? "cen";
+  const vals = rows.map((r) => (metric === "land" ? r.medLand : metric === "flat" ? r.medFlat : r.medCen));
   const max = Math.max(1, ...vals.map((v) => v ?? 0));
   if (!rows.length) return <p className="text-sm text-muted">Bez zmlúv.</p>;
+  const usePpm = metric !== "cen";
   const W = 420, H = 220, pad = 28, bw = (W - pad * 2) / rows.length;
   return (
     <div>
+      {avail.length > 1 ? (
+        <div className="mb-2 flex flex-wrap gap-1.5">
+          {avail.map((m) => <button type="button" key={m} onClick={() => setPick(m)} className={`rounded-full border px-2.5 py-0.5 text-xs ${m === metric ? "border-brand bg-brand/10 text-fg" : "border-line text-muted hover:text-fg"}`}>{METRIC_LABEL[m]}</button>)}
+        </div>
+      ) : null}
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Medián podľa rokov">
         {[0.25, 0.5, 0.75, 1].map((t) => <line key={t} x1={pad} x2={W - pad} y1={H - pad - t * (H - pad * 2)} y2={H - pad - t * (H - pad * 2)} stroke="currentColor" strokeOpacity="0.08" />)}
         {rows.map((r, i) => {
@@ -311,12 +328,12 @@ function YearChart({ rows }: { rows: ContractPriceSearch["byYear"] }) {
               {v == null ? <rect x={x} y={H - pad - 4} width={w} height={4} fill="currentColor" fillOpacity="0.12" /> : <rect x={x} y={H - pad - h} width={w} height={h} rx="2" fill="#5b7a58" />}
               <text x={x + w / 2} y={H - pad + 14} textAnchor="middle" fontSize="11" fill="currentColor" fillOpacity="0.6">{r.y}</text>
               {v != null ? <text x={x + w / 2} y={H - pad - h - 4} textAnchor="middle" fontSize="10" fill="currentColor" fillOpacity="0.8">{Math.round(v).toLocaleString("sk-SK")}</text> : null}
-              <title>{`${r.y}: ${r.n} zmlúv · medián ${usePpm ? ppm(r.medPpm2) : eur(r.medCen)}`}</title>
+              <title>{`${r.y}: ${r.n} zmlúv · medián ${metric === "land" ? ppm(r.medLand) : metric === "flat" ? ppm(r.medFlat) : eur(r.medCen)}`}</title>
             </g>
           );
         })}
       </svg>
-      <p className="mt-1 text-xs text-muted">{usePpm ? "Medián €/m² z čistých zmlúv" : "Medián ceny zmluvy"} po rokoch; rok s menej ako 3 zmluvami bez stĺpca. Najazdením na stĺpec uvidíte počet zmlúv.</p>
+      <p className="mt-1 text-xs text-muted">{usePpm ? `Medián ${METRIC_LABEL[metric]} z čistých zmlúv` : "Medián ceny zmluvy"} po rokoch; rok s menej ako 3 zmluvami bez stĺpca. Najazdením na stĺpec uvidíte počet zmlúv.</p>
     </div>
   );
 }
@@ -336,7 +353,9 @@ function PriceMap({ points }: { points: ContractPricePoint[] }) {
     let w = Math.max((x1 - x0) * 1.12, 600), h = Math.max((y1 - y0) * 1.12, 380);
     if (w / h > MW / MH) h = (w * MH) / MW; else w = (h * MW) / MH;
     x0 = cx - w / 2; x1 = cx + w / 2; y0 = cy - h / 2; y1 = cy + h / 2;
-    const usePpm = ps.filter((p) => p.ppm2 != null).length >= ps.length / 2;
+    // farba podľa €/m² len keď sú všetky body s €/m² jedného druhu (pozemky ALEBO byty), inak podľa ceny
+    const ppKinds = new Set(ps.filter((p) => p.ppm2 != null).map((p) => p.kind));
+    const usePpm = ppKinds.size === 1 && ps.filter((p) => p.ppm2 != null).length >= ps.length / 2;
     const vals = ps.map((p) => (usePpm ? p.ppm2 : p.cen)).filter((v): v is number => v != null).sort((a, b) => a - b);
     const q = [0.2, 0.4, 0.6, 0.8].map((t) => vals[Math.min(vals.length - 1, Math.floor(t * vals.length))] ?? 0);
     const cls = (v: number | null) => (v == null ? -1 : q.findIndex((b) => v <= b) === -1 ? 4 : q.findIndex((b) => v <= b));
