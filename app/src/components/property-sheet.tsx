@@ -182,9 +182,20 @@ export function ParcelSketch({ d, labels = "all" }: { d: SheetData; labels?: "al
       </g>
       <g transform={`translate(${pad},${pad + 4})`}><text fontSize="12" fill="#fff" stroke="#333" strokeWidth="0.4" textAnchor="middle">S</text><line x1="0" y1="4" x2="0" y2="18" stroke="#fff" /></g>
     </svg>
-    <figcaption className="text-[10px] text-muted">Letecký snímok: Ortofotomozaika SR © ÚGKK SR (ZBGIS). Obrysy parciel z katastrálnej mapy.</figcaption>
+    <figcaption className="text-[10px] text-muted">Letecký snímok: Ortofotomozaika SR © ÚGKK SR (ZBGIS){orthoDate(d) ? `, snímkované ${orthoDate(d)}` : ""}. Obrysy parciel z katastrálnej mapy.</figcaption>
     </figure>
   );
+}
+
+/** Dátum leteckého snímkovania v bode pozemku (prehľad LMS ÚGKK, 3. cyklus). */
+function orthoDate(d: SheetData): string | null {
+  const f = fact(d.core, "ortofoto", `ku:${d.core.dataset?.ku_code ?? ""}`); const la = d.core.main.lat, lo = d.core.main.lng;
+  const rows = Array.isArray(f?.snimky) ? (f?.snimky as [number, number, number, number, string][]) : [];
+  if (!rows.length) return null;
+  const hit = la != null && lo != null ? rows.filter((r) => lo >= r[0] && lo <= r[2] && la >= r[1] && la <= r[3]).map((r) => r[4]).sort() : [];
+  const ds = hit.length ? hit : rows.map((r) => r[4]).sort();
+  const fmt = (x: string) => x.split("-").reverse().map((v, i) => (i < 2 ? String(Number(v)) : v)).join(". ");
+  return ds.length === 1 || ds[0] === ds[ds.length - 1] ? fmt(ds[0]) : `${fmt(ds[0])} – ${fmt(ds[ds.length - 1])}`;
 }
 
 // ——— III. vojenské mapovanie (1869–1887), ÚGKK WMS v EPSG:3857, výrez ±650 m so stredom parcely ———
