@@ -1396,5 +1396,53 @@ export const EXT_DEFS: ExtDef[] = [
   "valueMap": {},
   "risk": false,
   "special": null
+ },
+ {
+  "key": "prir_les_polovny_revir",
+  "label": "Poľovný revír (právo poľovníctva na pozemku)",
+  "category": "Les",
+  "provider": "NLC Zvolen",
+  "method": "arcgis_query",
+  "url": "https://gis.nlcsk.org/arcgis/rest/services/Inspire/PolovneReviry/MapServer/0/query",
+  "params": {
+   "geometry": "{lon},{lat}",
+   "geometryType": "esriGeometryPoint",
+   "inSR": "4326",
+   "spatialRel": "esriSpatialRelIntersects",
+   "outFields": "NazovReviru",
+   "returnGeometry": "false",
+   "f": "json"
+  },
+  "fields": {
+   "NazovReviru": "Názov poľovného revíru"
+  },
+  "valueMap": {},
+  "risk": false,
+  "special": null
+ },
+ {
+  "key": "prir_les_cesty",
+  "label": "Lesná cesta do 100 m",
+  "category": "Les",
+  "provider": "NLC Zvolen",
+  "method": "arcgis_query",
+  "url": "https://gis.nlcsk.org/arcgis/rest/services/Inspire/LesneCesty/MapServer/2/query",
+  "params": {
+   "geometry": "{lon},{lat}",
+   "geometryType": "esriGeometryPoint",
+   "inSR": "4326",
+   "spatialRel": "esriSpatialRelIntersects",
+   "distance": "100",
+   "units": "esriSRUnit_Meter",
+   "outFields": "druh",
+   "returnGeometry": "false",
+   "f": "json"
+  },
+  "fields": {
+   "druh": "Druh lesnej cesty"
+  },
+  "valueMap": {},
+  "risk": false,
+  "special": null
  }
 ] as ExtDef[];

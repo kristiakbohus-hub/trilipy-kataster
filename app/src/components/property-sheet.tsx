@@ -12,7 +12,7 @@ import { DeclarationBlock } from "./property-decl";
 import { financeOf, hedonicOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, OkolieBlock, PhotosBlock, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
+import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -726,6 +726,11 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
               rows={rows.map(([p, sh]) => [p.parcel_no, `${sh!.dlzka} × ${sh!.sirka} m`, `${sh!.priemSirka} m`, sh!.tvar, String(sh!.osAz), m2(sh!.obalkaM2), sh!.domOk === true ? "zmestí sa" : sh!.domOk === false ? "nezmestí sa" : "hraničné"])} />
             <Muted>Orientačné z obrysu: odstup 2 m od hraníc podľa vyhl. 532/2002 § 6; ochranné pásma a regulatív ÚP môžu plochu ďalej zmenšiť. Os 0° = sever–juh, 90° = východ–západ.</Muted></>) : null;
         })()}
+        {(() => { const rows = c.parcels.filter((p) => p.register === "C").map((p) => [p.parcel_no, fact(c, "budovy", `parcel_c:${p.parcel_no}`)] as const).filter(([, f]) => f).slice(0, 12);
+          return rows.length ? (<><Sub>Budovy podľa mapy ZBGIS (skutočný stav v teréne)</Sub>
+            <Table head={["Parcela", "Budov", "Zastavaná plocha", "Hlavná budova", "Výška / podlažia", "Využitie", "Stav"]} rows={rows.map(([no, f]) => [no, String(f!.n_budov ?? "—"), m2(Number(f!.zastavana_m2 ?? 0)), m2(Number(f!.hlavna_m2 ?? 0)),
+              f!.hlavna_vyska_m != null ? `${nf(Number(f!.hlavna_vyska_m), 1)} m · ~${String(f!.hlavna_podlazia_odhad ?? "?")} podl.` : "—", String(f!.vyuzitie ?? "—"), String(f!.stav ?? "—")])} />
+            <Muted>ZBGIS kreslí obrys strechy (o odkvap väčší ako múry); podlažia sú odhad z výšky. Rozdiel oproti katastru môže znamenať nezapísanú alebo zbúranú stavbu.</Muted></>) : null; })()}
         {c.buildings.length ? (<><Sub>Stavby</Sub><Table head={["Stavba", "Súpisné č.", "Na parcele", "LV"]} rows={c.buildings.map((b) => [b.descr, b.sc ?? "—", b.on_parcel ?? "—", b.lv_no])} /></>) : null}
         {Object.entries(c.facts.stavby ?? {}).filter(([k]) => k.startsWith("building:")).slice(0, 10).map(([k, raw]) => [k, parseFact(raw)] as const).map(([k, v]) => (
           <div key={k}><Sub>Stavba {k.replace("building:", "").replace("sc:", "s.č. ").replace("p:", "na parcele ")}</Sub><FactsBlock grp="stavby" data={v} /></div>
@@ -856,7 +861,9 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
       <Sec id="siete" n={num("siete")} explain={ex("siete")} {...asof("siete")} title={tt("siete", "Siete a energie")} source="OpenStreetMap (© prispievatelia OSM), údaje o obci (vodovody, kanalizácie, plyn); presné trasy sietí potvrdí len vyjadrenie správcu.">
         {mk && fact(c, "osm", mk) ? (<>
           <FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_NET} />
-          <Sub>Ochranné pásma a okolie</Sub>
+          <Sub>Ochranné pásma podľa zákonov</Sub>
+          <ProtectionZones d={d} />
+          <Sub>Okolie (OSM)</Sub>
           <FactsBlock grp="osm" data={fact(c, "osm", mk)} only={OSM_ZONES} />
         </>) : <Muted>Siete z OpenStreetMap pre parcelu zatiaľ nie sú spočítané.</Muted>}
         {fact(c, "obec", kuKey) ? <FactsBlock grp="obec" data={Object.fromEntries(Object.entries(fact(c, "obec", kuKey) ?? {}).filter(([k]) => /vod|kanal|cov|plyn|distrib|elektr|stocn|voda/i.test(k)))} /> : null}

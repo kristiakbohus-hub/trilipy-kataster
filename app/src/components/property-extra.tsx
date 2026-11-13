@@ -204,15 +204,16 @@ export function PurchaseSteps({ d, fin }: { d: SheetData; fin: FinResult | null 
   const has = (k: string) => agg.some((v) => Number(v[k] ?? 0) > 0);
   const owners = c.owners.perLv.reduce((s, l) => s + l.count, 0);
   const steps: [string, string, string][] = [];
-  steps.push(["Overenie", "aktuálny výpis z LV a kópia mapy, obhliadka, vyjadrenia (ÚPI obce, siete)", "1–4 týždne"]);
-  if (has("obec")) steps.push(["Obec ako predávajúci", "zámer predaja, zverejnenie min. 15 dní, uznesenie zastupiteľstva (prípadne obchodná verejná súťaž)", "1–3 mesiace"]);
+  steps.push(["Overenie", "aktuálny výpis z LV a kópia mapy, obhliadka, vyjadrenia (ÚPI obce, siete); maklér overí totožnosť strán (zákon 297/2008 — realitný sprostredkovateľ je povinná osoba)", "1–4 týždne"]);
+  if (c.parcels.some((p) => /orn|trval|ttp|záhrad|zahrad/i.test(p.use_type ?? ""))) steps.push(["Nájom poľnohospodárskej pôdy", "nájom prechádza na kupujúceho; nájom na neurčito sa vypovedá k 1. novembru s ročnou lehotou, nájom na podnikanie trvá 5–15 rokov (504/2003); predkupné právo nájomcu sa dohodnúť nedá", "do 1. 11. nasl. roka"]);
+  if (has("obec")) steps.push(["Obec ako predávajúci", "obchodná verejná súťaž, dražba alebo priamy predaj (len do 40 000 € a najmenej za všeobecnú hodnotu); zámer zverejniť min. 15 dní, ponuky min. 30 dní; výnimky — pozemok pod stavbou kupujúceho, osobitný zreteľ (138/1991 § 9a)", "1–3 mesiace"]);
   if (has("stat") || has("spf")) steps.push(["Štát / SPF", "osobitný postup: žiadosť, ocenenie znaleckým posudkom, súhlas, ponuka — cena podľa predpisov", "3–12 mesiacov"]);
   if (owners > 1) steps.push(["Spoluvlastníci", `${owners} vlastníkov — podpis všetkých alebo predaj podielu s ponukou ostatným (predkupné právo)`, "podľa dohody"]);
   if (c.legal.reduce((s, l) => s + l.tarchyCount, 0)) steps.push(["Ťarchy", "dohoda s veriteľom o vyplatení a výmaze záložného práva z kúpnej ceny (úschova)", "2–6 týždňov"]);
   if (fin?.mortgage && fin.inputs.ltv > 0) steps.push(["Financovanie", "žiadosť o úver, znalecký posudok, schválenie bankou, úverová a záložná zmluva", "2–5 týždňov"]);
   steps.push(["Zmluvy", "rezervačná alebo zmluva o budúcej zmluve, kúpna zmluva, úschova kúpnej ceny (notár / advokát / banka)", "1–2 týždne"]);
   steps.push(["Vklad do katastra", `návrh na vklad (${fin ? "50 € elektronicky" : "poplatok podľa sadzobníka"}); kataster rozhodne do 30 dní, v zrýchlenom konaní do 15 dní`, "15–30 dní"]);
-  steps.push(["Zmluva a nový Občiansky zákonník", "zmluvy uzavreté pred 1. 7. 2027 sa riadia doterajším Občianskym zákonníkom; od 1. 7. 2027 platí nový (jednotná 3-ročná premlčacia lehota, zmeny v dedení) — pri dlhších zmluvách o budúcej zmluve to zohľadniť", "—"]);
+  steps.push(["Zmluva a nový Občiansky zákonník", "od 1. 7. 2027 platí nový Občiansky zákonník (zákon 260/2026): predkupné právo s účinkami voči tretím osobám až zápisom do katastra, lehota 2 mesiace pri nehnuteľnosti; zmluvy uzavreté skôr sa riadia doterajším zákonom — pri zmluve o budúcej zmluve to zohľadniť", "—"]);
   steps.push(["Po kúpe", "uvoľnenie peňazí z úschovy, priznanie k dani z nehnuteľností do 31. januára nasledujúceho roka, prepis energií, poistenie", "do 30 dní / 31. 1."]);
   return <Table head={["Krok", "Čo treba urobiť", "Lehota"]} rows={steps.map((s, i) => [<b key="k" className="font-medium">{String(i + 1).padStart(2, "0")} {s[0]}</b>, s[1], s[2]])} />;
 }
@@ -337,6 +338,40 @@ export function SalesBlock({ d }: { d: SheetData }) {
       {a.length ? (<><Sub>Pre koho je nehnuteľnosť</Sub><Table head={["Kupujúci", "Prečo"]} rows={a.map((x) => [<b key="w" className="font-medium">{x.who}</b>, x.why])} /></>) : null}
       <Sub>Časté otázky kupujúcich</Sub>
       <dl className="space-y-1.5 text-xs">{q.map(([k, v]) => <div key={k}><dt className="font-medium">{k}</dt><dd className="text-muted">{v}</dd></div>)}</dl>
+    </>
+  );
+}
+
+// ——— ochranné pásma podľa zákonov (hodnoty overené na slov-lex 13. 11. 2026) a vzdialenosti pozemku ———
+export function ProtectionZones({ d }: { d: SheetData }) {
+  const c = d.core; const mk = mainKey(c); const o = mk ? fact(c, "osm", mk) : null; const m = mk ? fact(c, "mapa", mk) : null;
+  const num = (v: unknown) => (typeof v === "number" ? v : null);
+  const inZU = m?.v_zastavanom_uzemi === true;
+  const kvW = (kv: number | null) => (kv == null ? 10 : kv <= 35 ? 10 : kv <= 110 ? 15 : kv <= 220 ? 20 : kv <= 400 ? 25 : 35);
+  const dnW = (dn: number | null) => (dn == null ? 4 : dn <= 200 ? 4 : dn <= 500 ? 8 : dn <= 700 ? 12 : 50);
+  const road = d.limits?.road; const rt = road?.trieda ?? "";
+  const roadW = /diaľ|dial|rýchl|rychl|^D|^R/i.test(rt) ? 100 : /^I\.|I\. tr|^I$/i.test(rt) ? 50 : /II\./i.test(rt) ? 25 : /III\./i.test(rt) ? 20 : null;
+  const rows: { name: string; law: string; width: string; dist: number | null; inZone: boolean | null; note?: string }[] = [];
+  const vn = num(o?.vn), vvn = num(o?.vvn);
+  if (vn != null) rows.push({ name: `Elektrické vedenie VN${num(o?.vn_kv) ? ` ${String(o?.vn_kv)} kV` : ""}`, law: "251/2012 § 43", width: `${kvW(num(o?.vn_kv))} m od krajného vodiča`, dist: vn, inZone: vn <= kvW(num(o?.vn_kv)) });
+  if (vvn != null) rows.push({ name: `Elektrické vedenie VVN${num(o?.vvn_kv) ? ` ${String(o?.vvn_kv)} kV` : ""}`, law: "251/2012 § 43", width: `${kvW(num(o?.vvn_kv) ?? 110)} m`, dist: vvn, inZone: vvn <= kvW(num(o?.vvn_kv) ?? 110) });
+  const pl = num(o?.plyn); if (pl != null) rows.push({ name: `Plynovod${num(o?.plyn_dn) ? ` DN ${String(o?.plyn_dn)}` : ""}`, law: "251/2012 § 79, § 80", width: `ochranné ${dnW(num(o?.plyn_dn))} m; bezpečnostné 10 m (nízky tlak) až 200 m (VTL)`, dist: pl, inZone: pl <= dnW(num(o?.plyn_dn)) });
+  const ze = num(o?.zel); if (ze != null) rows.push({ name: "Železnica", law: "513/2009 § 5", width: "60 m od osi krajnej koľaje (min. 30 m od obvodu dráhy)", dist: ze, inZone: ze <= 60 });
+  if (road && roadW) rows.push({ name: `Cesta ${rt}${road.cislo ? ` ${road.cislo}` : ""}`, law: "135/1961 § 11, vyhl. 35/1984 § 15", width: `${roadW} m od osi (mimo súvisle zastavaného územia)`, dist: Math.round(road.distM), inZone: inZU ? false : road.distM <= roadW, note: inZU ? "pozemok v zastavanom území — cestné pásmo sa neuplatňuje" : "vzdialenosť od stredu pozemku" });
+  const lesHit = (d.limits?.items ?? []).some((h) => h.hit && h.key === "les");
+  rows.push({ name: "Les (lesný pozemok)", law: "326/2005 § 10", width: "50 m — stavba len so záväzným stanoviskom lesného orgánu", dist: null, inZone: d.limits ? lesHit : null });
+  const ci = num(o?.cint); if (ci != null && ci <= 300) rows.push({ name: "Pohrebisko", law: "131/2010 § 15", width: "najviac 50 m, len ak ho určí VZN obce", dist: ci, inZone: ci <= 50 ? null : false, note: ci <= 50 ? "overiť VZN obce" : undefined });
+  const tok = (d.limits?.items ?? []).some((h) => h.hit && h.key === "tok");
+  rows.push({ name: "Vodný tok (pobrežný pozemok)", law: "364/2004 § 49", width: "10 m pri významnom toku, 5 m pri drobnom", dist: null, inZone: d.limits ? tok : null });
+  rows.push({ name: "Vodovod a kanalizácia", law: "442/2002 § 19", width: "1,8 m od osi (DN ≤ 500), 3 m (DN > 500) — mimo zastavaného územia", dist: null, inZone: null, note: "polohu potvrdí správca" });
+  rows.push({ name: "Elektronické komunikácie, teplovod", law: "452/2021; 657/2004 § 36", width: "0,5 m; teplovod 1–3 m", dist: null, inZone: null, note: "polohu potvrdí správca" });
+  const lps = (d.ext ?? []).find((e) => e.key === "mapa_lps_vzdusny_priestor_uas" && e.status === "hit");
+  if (lps) rows.push({ name: "Letisko / vzdušný priestor", law: "143/1998 § 29, § 30", width: "stavby od 40 m výšky aj mimo pásma, do 13 km od letiska — súhlas Dopravného úradu", dist: null, inZone: null, note: lps.value ?? undefined });
+  return (
+    <>
+      <Table head={["Ochranné pásmo", "Šírka podľa zákona", "Vzdialenosť pozemku", "Stav"]} rows={rows.map((r) => [<span key="n">{r.name}<span className="block text-[10px] text-muted">zákon {r.law}</span></span>, r.width,
+        r.dist != null ? dist(r.dist) : "—", <span key="s" style={{ color: r.inZone ? "#9c4a40" : r.inZone === false ? "#3f5a3c" : "#888", fontWeight: r.inZone ? 600 : 400 }}>{r.inZone ? "v pásme" : r.inZone === false ? "mimo pásma" : "overiť"}{r.note ? <span className="block text-[10px] font-normal text-muted">{r.note}</span> : null}</span>])} />
+      <Muted>Šírky pásiem podľa platných zákonov (overené 13. 11. 2026). Polohy vedení sú z OpenStreetMap (presnosť ±5–10 m) — rozhoduje vyjadrenie správcu siete. V pásme sa dá stavať len so súhlasom prevádzkovateľa alebo príslušného orgánu.</Muted>
     </>
   );
 }

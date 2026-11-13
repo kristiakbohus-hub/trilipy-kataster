@@ -87,9 +87,10 @@ export function basisOf(d: SheetData, inp: Partial<FinInputs>): Basis {
     kind = "dom";
     const b = c.buildings[0];
     const p = c.parcels.find((x) => x.parcel_no === b.on_parcel);
-    footprint = p?.area_m2 && /zastav/i.test(p.use_type ?? "") ? Math.min(p.area_m2, 2000) : null;
+    const zb = b.on_parcel ? fact(c, "budovy", `parcel_c:${b.on_parcel}`) : null;     // ZBGIS: obrys strechy a výška
+    footprint = typeof zb?.hlavna_m2 === "number" && (zb.hlavna_m2 as number) > 15 ? (zb.hlavna_m2 as number) * 0.92 : p?.area_m2 && /zastav/i.test(p.use_type ?? "") ? Math.min(p.area_m2, 2000) : null;
     const sf = Object.entries(c.facts.stavby ?? {}).map(([, raw]) => { try { return JSON.parse(raw) as Record<string, unknown>; } catch { return null; } }).find(Boolean);
-    floors = typeof sf?.najvyssie_podlazie === "number" ? Math.max(1, sf.najvyssie_podlazie as number) : null;
+    floors = typeof sf?.najvyssie_podlazie === "number" ? Math.max(1, sf.najvyssie_podlazie as number) : typeof zb?.hlavna_podlazia_odhad === "number" ? (zb.hlavna_podlazia_odhad as number) : null;
     const descr = `${b.descr ?? ""} ${String(sf?.druh ?? "")}`.toLowerCase();
     buildingType = /bytov/.test(descr) ? "bd" : /garáž|garaz/.test(descr) ? "garaz" : /chat|rekrea/.test(descr) ? "chata"
       : /hal|sklad|výrob|vyrob|priemys|dieln|prevádz|prevadz|autopark|kotol|kotolň|dielň|technick|poľnohosp|polnohosp|maštaľ|mastal|stodol|silo/.test(descr) ? "hala"

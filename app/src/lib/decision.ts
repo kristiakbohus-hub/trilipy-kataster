@@ -96,7 +96,7 @@ export function verdict(d: SheetData, fin: FinResult | null, sc: Scenario[]): { 
 
 // ——— povoľovanie (nový stavebný zákon 25/2025 v znení 243/2026) ———
 export type Study = { name: string; why: string; cost: string; weeks: string };
-export function permits(d: SheetData): { studies: Study[]; timeline: { rd: string; bd: string; upChange: boolean }; notes: string[] } {
+export function permits(d: SheetData): { studies: Study[]; timeline: { rd: string; bd: string; upChange: boolean }; notes: string[]; legal: [string, string][]; konania: { title: string; url: string | null; date: string | null }[]; uzavera: boolean } {
   const c = d.core; const mk = mainKey(c); const t = mk ? fact(c, "teren", mk) : null; const studies: Study[] = [];
   const sk = typeof t?.sklon_avg === "number" ? (t.sklon_avg as number) : 0;
   const slide = (d.limits?.items ?? []).some((h) => h.hit && h.key === "zosuvy") || (d.ext ?? []).some((e) => e.key === "geo_nachylnost_svahove_pohyby" && riskyHit(e));
@@ -112,11 +112,22 @@ export function permits(d: SheetData): { studies: Study[]; timeline: { rd: strin
   const z = zoneOf(d).name ?? "";
   return {
     studies,
-    timeline: { rd: "4–9 mesiacov (pri dobrom podklade), pesimisticky 12", bd: "9–18 mesiacov, pesimisticky 24+", upChange: !!z && NONBUILD.test(z) },
+    timeline: { rd: "zákonné lehoty ~2–4 mesiace; v praxi 4–9 mesiacov (pesimisticky 12) vrátane projektu a stanovísk — odhad", bd: "v praxi 9–18 mesiacov, pesimisticky 24+ — odhad", upChange: !!z && NONBUILD.test(z) },
+    legal: [
+      ["Záväzné stanovisko dotknutého orgánu", "30 dní, pri zložitých stavbách 60 dní; ak orgán nevydá, platí, že nemá pripomienky (25/2025 § 21 ods. 9)"],
+      ["Konanie o stavebnom zámere", "30 / 60 dní, vyhradené a líniové stavby 90 dní (§ 58)"],
+      ["Ohlásenie stavby / overenie projektu", "30 dní (§ 63) / 30 dní (§ 65)"],
+      ["Správny poplatok — rozhodnutie o stavebnom zámere", "rodinný dom 300 €, bytový dom 3–10 bytov 1 000 €, 11–50 bytov 2 000 € (145/1995 pol. 59, stav 1. 11. 2026); kolaudácia 30 % sadzby"],
+      ["Územnoplánovacia informácia", "vydáva obec (200/2022 § 40 ods. 13); nie je záväzným stanoviskom, lehotu ani poplatok zákon neurčuje"],
+    ],
+    konania: (c.obec.changes ?? []).concat(c.obec.upChanges.map((x) => ({ ...x, relevance: "up" })))
+      .filter((x) => /stavebn|povolen|kolaud|zámer|zamer|uzáver|uzaver|asanác|odstránen/i.test(x.title ?? "")).slice(0, 8)
+      .map((x) => ({ title: x.title ?? "oznámenie", url: x.url, date: x.detected_at })),
+    uzavera: [...c.obec.changes, ...c.obec.upChanges].some((x) => /stavebn\w* uzáver|stavebn\w* uzaver/i.test(x.title ?? "")),
     notes: [
-      "Od 1. 4. 2025 platí nový stavebný zákon 25/2025: namiesto územného a stavebného konania je jedno rozhodnutie o stavebnom zámere; zámer sa konzultuje so stavebným úradom a dotknutými orgánmi vopred.",
-      "Novela 243/2026 (väčšina od 1. 1. 2027): drobné stavby najviac 50 m² a 5 m výšky, kolaudácia po etapách, dodatočné povolenie stavieb postavených do 31. 3. 2025 možné do 31. 12. 2040.",
-      "Lehoty a poplatky v praxi kolíšu podľa úradu — čísla v tejto kapitole sú odhad z praxe, nie zákonné lehoty.",
+      "Od 1. 4. 2025 platí stavebný zákon 25/2025: namiesto územného a stavebného konania je jedno rozhodnutie o stavebnom zámere; zámer sa konzultuje so stavebným úradom a dotknutými orgánmi vopred.",
+      "Novela 243/2026 (vyhlásená 7. 10. 2026, zmeny stavebného zákona od 1. 1. 2027): dodatočné povolenie stavieb postavených do 31. 3. 2025 do 31. 12. 2040 (dnes do 31. 3. 2029), užšie drobné stavby (oplotenie do 2 m; budovy pre obchod a služby už nie sú drobné), kolaudácia po etapách.",
+      "Verejný register stavebných konaní podľa parcely zatiaľ neexistuje (Portál výstavby ÚÚPV — register stavieb len po prihlásení); konania v okolí sledujeme na úradnej tabuli obce.",
     ],
   };
 }

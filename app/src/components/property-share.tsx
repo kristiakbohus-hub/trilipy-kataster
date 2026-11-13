@@ -24,7 +24,7 @@ export function shareChecks(sheet: SheetData, notes: string): { warn: string[]; 
   if (!sheet.fin) warn.push("trhové sadzby sa nenačítali — hypotéka použije predvolenú sadzbu");
   if (!sheet.ext) warn.push("úradné registre (geológia, voda, príroda) sa ešte nenačítali");
   if (c.legal.some((l) => !l.hasData)) warn.push("časť B/C niektorého LV nemáme");
-  if ((c.buildings.length || c.kind === "byt") && !sheet.decl?.ec_trieda) warn.push("chýba trieda energetického certifikátu — pri predaji budovy alebo bytu musí byť v inzeráte (zákon 555/2005)");
+  if ((c.buildings.length || c.kind === "byt") && !sheet.decl?.ec_trieda) warn.push("chýba trieda energetického certifikátu — certifikát musí byť ku dňu zmluvy a ukazovateľ v zverejnenej ponuke (555/2005 § 8; pokuta 500–3 000 €)");
   if ((sheet.photos?.length ?? 0) < 4) warn.push("menej ako 4 fotky — kvalitné fotografie (ideálne 20+ v online galérii) zvyšujú šancu predaja");
   const block = phraseIssues([notes]).map((i) => `poznámka: „${i.sample}“ — ${i.claim} (použite: ${i.use})`);
   return { warn, block };

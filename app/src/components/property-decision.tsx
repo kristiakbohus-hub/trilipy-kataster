@@ -43,6 +43,11 @@ export function PermitsBody({ d }: { d: SheetData }) {
   return (
     <div className="space-y-3">
       <Table head={["Štúdia / úkon", "Prečo", "Náklad (odhad)", "Týždne"]} rows={pm.studies.map((s) => [s.name, <span key="w" className="text-muted">{s.why}</span>, s.cost, s.weeks])} />
+      <Sub>Zákonné lehoty a poplatky</Sub>
+      <Grid rows={pm.legal} />
+      {pm.uzavera ? <div className="text-xs font-semibold" style={{ color: "#9c4a40" }}>Na úradnej tabuli obce je oznámenie o stavebnej uzávere — overiť, či sa týka pozemku.</div> : null}
+      {pm.konania.length ? (<><Sub>Stavebné konania a oznámenia v obci (úradná tabuľa)</Sub><ul className="text-xs">{pm.konania.map((k, i) => <li key={i} className="border-b border-line/40 py-0.5">{k.date ? k.date.slice(0, 10).split("-").reverse().join(". ") + " · " : ""}{k.url ? <a href={k.url} target="_blank" rel="noopener noreferrer" className="text-brand underline">{k.title}</a> : k.title}</li>)}</ul></>) : null}
+      <Sub>Čas povolenia v praxi</Sub>
       <Grid rows={[["Povolenie rodinného domu", pm.timeline.rd], ["Povolenie bytového / komerčného projektu", pm.timeline.bd], ["Zmena územného plánu", pm.timeline.upChange ? "potrebná — spravidla 12–36 mesiacov, výsledok neistý" : "podľa zóny nepotrebná (overiť ÚPI)"]]} />
       <ul className="list-disc space-y-0.5 pl-5 text-xs text-muted">{pm.notes.map((t) => <li key={t}>{t}</li>)}</ul>
     </div>

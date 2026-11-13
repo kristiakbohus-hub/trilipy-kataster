@@ -240,7 +240,7 @@ export function checklist(d: SheetData): { text: string; why: string }[] {
   const agri = c.parcels.some((p) => /orn|trval|záhrad|zahrad|vinic|chmel|ovocn/i.test(p.use_type ?? ""));
   if (agri) {
     add("Poľnohospodárska pôda: pred stavbou vyňatie z pôdneho fondu a odvod", c.parcels.find((p) => p.odnatie_eur)?.odnatie_eur ? "odvod podľa BPEJ" : "druh pozemku");
-    add("Prevod poľnohospodárskeho pozemku mimo zastavaného územia — overiť aktuálne podmienky podľa zákona 140/2014 Z. z. v platnom znení", "zákonný postup prevodu");
+    add("Poľnohospodársky pozemok: povinné zverejnenie ponuky podľa zákona 140/2014 zrušil Ústavný súd (33/2019 Z. z.); overiť nájom (504/2003) a predkupné práva podielov v pozemkovom spoločenstve (97/2013)", "zákonný postup prevodu");
   }
   for (const e of d.ext ?? []) {
     if (e.status !== "hit") continue;

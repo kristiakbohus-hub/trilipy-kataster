@@ -118,6 +118,49 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "note": "[{kod, pct}] max 3"
     }
   },
+  "budovy": {
+    "n_budov": {
+      "label": "Počet budov na parcele (ZBGIS)",
+      "kind": "num"
+    },
+    "zastavana_m2": {
+      "label": "Zastavaná plocha budovami",
+      "unit": "m²",
+      "kind": "num",
+      "note": "obrys strechy zo ZBGIS — o odkvap väčší než múry"
+    },
+    "hlavna_m2": {
+      "label": "Hlavná budova — pôdorys",
+      "unit": "m²",
+      "kind": "num"
+    },
+    "hlavna_vyska_m": {
+      "label": "Hlavná budova — výška nad terénom",
+      "unit": "m",
+      "kind": "num"
+    },
+    "hlavna_podlazia_odhad": {
+      "label": "Odhad počtu podlaží (z výšky)",
+      "kind": "num"
+    },
+    "max_vyska_m": {
+      "label": "Najvyššia budova",
+      "unit": "m",
+      "kind": "num"
+    },
+    "vyuzitie": {
+      "label": "Využitie hlavnej budovy (ZBGIS)",
+      "kind": "text"
+    },
+    "stav": {
+      "label": "Stav budovy (ZBGIS)",
+      "kind": "text"
+    },
+    "vedlajsie": {
+      "label": "Vedľajšie stavby (garáž, šopa)",
+      "kind": "num"
+    }
+  },
   "byty": {
     "druh": {
       "label": "Druh priestoru",
@@ -2565,5 +2608,5 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
 export const FACT_GROUP_LABEL: Record<string, string> = {
   teren: "Terén", slnko: "Slnko a svetlo", stavby: "Stavby", byty: "Byty a nebytové priestory", pristup: "Prístup z cesty",
   susedia: "Susedné parcely", mapa: "Z katastrálnej mapy", bpej: "Pôda (BPEJ)", vlastnici: "Vlastníci — súhrn",
-  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci", up: "Územný plán z výkresu", adresa: "Adresa a spádová škola", vzn: "Dane a poplatky obce (VZN)", financie: "Sadzby bánk", okolie: "Zastávky, zberné dvory (OSM)", pamiatky: "Pamiatky v okolí (OSM)", doprava: "Intenzita dopravy (SSC)", voda: "Pitná voda (SEVAK)",
+  osm: "Siete, doprava a vybavenosť (OSM)", obec: "Obec a ľudia", klima: "Klíma", normy: "Stavebné normy lokality", eia: "Zámery EIA/SEA v obci", up: "Územný plán z výkresu", adresa: "Adresa a spádová škola", budovy: "Budovy podľa mapy ZBGIS", vzn: "Dane a poplatky obce (VZN)", financie: "Sadzby bánk", okolie: "Zastávky, zberné dvory (OSM)", pamiatky: "Pamiatky v okolí (OSM)", doprava: "Intenzita dopravy (SSC)", voda: "Pitná voda (SEVAK)",
 };
