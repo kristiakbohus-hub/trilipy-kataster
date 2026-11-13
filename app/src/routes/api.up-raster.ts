@@ -15,7 +15,7 @@ export const Route = createFileRoute("/api/up-raster")({
         if (!row) return new Response("not found", { status: 404 });
         const obj = await STORAGE.get(row.r2_key);
         if (!obj) return new Response("not found", { status: 404 });
-        return new Response(obj.body, { headers: { "content-type": row.mime ?? "image/jpeg", "cache-control": "public, max-age=3600" } });
+        return new Response(await obj.arrayBuffer(), { headers: { "content-type": row.mime ?? "image/jpeg", "cache-control": "public, max-age=3600" } });
       },
     },
   },
