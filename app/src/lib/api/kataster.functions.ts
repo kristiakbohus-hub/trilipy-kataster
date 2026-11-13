@@ -8243,7 +8243,7 @@ export const ingestFacts = createServerFn({ method: "POST" })
 // zo všetkých tabuliek D1 (predpočítané údaje z Mac modulov sú v property_facts). Mená vlastníkov len pre rolu
 // s plným prístupom a mimo suppression; ostatní dostanú len počty. Externé služby (limity, dostupnosť, AVM, ÚP
 // zóna) volá stránka zvlášť — tu je len to, čo je v databáze.
-export type PropertyKind = "parcela" | "lv" | "stavba" | "byt";
+export type PropertyKind = "parcela" | "lv" | "stavba" | "byt" | "vyber";
 export type PropParcel = {
   parcel_no: string; register: "C" | "E"; area_m2: number | null; use_type: string | null; lv_no: number | null;
   settled: number | null; ekn_ref: string | null; bpej: string | null; bpej_skupina: number | null; odnatie_eur: number | null;
@@ -8256,6 +8256,8 @@ export type PropListing = { source: string | null; url: string | null; title: st
 export type PropertyCore = {
   ok: boolean; message?: string;
   kind: PropertyKind; title: string; subtitle: string; celokNote: string;
+  /** pôvodný odkaz listu (pri vlastnom celku zoznam položiek „C:1500/2;lv:123;sc:45") — zdieľanie a obnovenie */
+  ref?: string;
   dataset: { id: string; ku_code: string | null; ku_name: string | null; region: string | null; okres: string | null; updated_at: string | null } | null;
   main: { parcelNo: string | null; register: "C" | "E" | null; lvNo: number | null; lat: number | null; lng: number | null; sc: string | null; flat: string | null };
   parcels: PropParcel[]; lvs: number[]; buildings: PropBuilding[];
@@ -8346,8 +8348,8 @@ function pctl(xs: number[], p: number): number | null {
 
 export const getPropertyCore = createServerFn({ method: "POST" })
   .validator(z.object({
-    token: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt"]),
-    ref: z.string().min(1).max(60), register: z.enum(["C", "E"]).optional(),
+    token: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt", "vyber"]),
+    ref: z.string().min(1).max(400), register: z.enum(["C", "E"]).optional(),
   }))
   .handler(async ({ data }): Promise<PropertyCore> => {
     const u = await requireUser(data.token);
@@ -8371,6 +8373,7 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
     // ——— 1) zostavenie celku ———
     let kind = data.kind; let mainNo: string | null = null; let mainReg: "C" | "E" | null = null; let sc: string | null = null; let flat: string | null = null;
     let lvNo: number | null = null; let celokNote = "";
+    const vyberLvs: number[] = []; const vyberScs: string[] = [];
     const parcels: PropParcel[] = []; const seen = new Set<string>();
     const addP = (p: PropParcel) => { const k = `${p.register}:${p.parcel_no}`; if (!seen.has(k)) { seen.add(k); parcels.push(p); } };
     const factsFor = async (stype: string, refs: string[], grp: string) =>
@@ -8395,6 +8398,35 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
         if (r) { addP(toP(r, "pozemok pod domom")); mainNo = r.parcel_no; mainReg = "C"; }
       }
       celokNote = "Byt s podielom na spoločných častiach domu a na pozemku pod domom.";
+    } else if (kind === "vyber") {
+      // VLASTNÝ CELOK (2026-11-13, zadanie vlastníka): ručne spojené nehnuteľnosti jedného k.ú. — až 10 položiek
+      // „C:1500/2", „E:9-120/1", „lv:123" (všetky parcely LV), „sc:45" (stavba so súpisným číslom a pozemok pod ňou).
+      const items = [...new Set(data.ref.split(";").map((x) => x.trim()).filter(Boolean))].slice(0, 10);
+      for (const it of items) {
+        const m = it.match(/^(C|E|lv|sc):(.{1,40})$/);
+        if (!m) continue;
+        if (m[1] === "lv") {
+          const n = Number(m[2]);
+          if (!Number.isFinite(n)) continue;
+          vyberLvs.push(n);
+          const rows = await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.lv_no=? ORDER BY (p.kn_type LIKE 'E%'), p.area_m2 DESC LIMIT 300`, [ds.id, n]);
+          rows.forEach((r) => addP(toP(r, `parcela LV ${n}`)));
+        } else if (m[1] === "sc") {
+          if (!sc) sc = m[2];
+          vyberScs.push(m[2]);
+          const b = (await q<{ on_parcel: string | null }>("SELECT on_parcel FROM lv_buildings WHERE dataset_id=? AND supisne_cislo=? LIMIT 1", [ds.id, m[2]]))[0];
+          const r = b?.on_parcel ? (await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? AND (p.kn_type IS NULL OR p.kn_type NOT LIKE 'E%') LIMIT 1`, [ds.id, b.on_parcel]))[0] : undefined;
+          if (r) addP(toP(r, `pozemok pod stavbou s.č. ${m[2]}`));
+        } else {
+          const wantE = m[1] === "E";
+          const r = (await q<PRow>(`SELECT ${PCOLS} FROM parcels p WHERE p.dataset_id=? AND p.parcel_no=? AND ${wantE ? "p.kn_type LIKE 'E%'" : "(p.kn_type IS NULL OR p.kn_type NOT LIKE 'E%')"} LIMIT 1`, [ds.id, m[2]]))[0];
+          if (r) addP(toP(r, "vybraná parcela"));
+        }
+      }
+      if (!parcels.length) return fail("Z výberu sa v katastrálnom území nenašla žiadna parcela.");
+      const big = [...parcels].sort((a, b) => (a.register === b.register ? (b.area_m2 ?? 0) - (a.area_m2 ?? 0) : a.register === "C" ? -1 : 1))[0];
+      mainNo = big.parcel_no; mainReg = big.register; lvNo = big.lv_no;
+      celokNote = `Vlastný celok zostavený ručne: ${items.map((x) => x.replace(/^lv:/, "LV ").replace(/^sc:/, "s.č. ").replace(/^([CE]):/, "$1 ")).join(", ")}.`;
     } else if (kind === "lv") {
       lvNo = Number(data.ref);
       if (!Number.isFinite(lvNo)) return fail("Neplatné číslo LV.");
@@ -8466,6 +8498,12 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
     const buildings = kind === "lv"
       ? await q<PropBuilding>("SELECT descr, on_parcel, supisne_cislo AS sc, lv_no FROM lv_buildings WHERE dataset_id=? AND lv_no=? LIMIT 200", [ds.id, lvNo])
       : await qIn<PropBuilding>((ph) => `SELECT descr, on_parcel, supisne_cislo AS sc, lv_no FROM lv_buildings WHERE dataset_id=? AND on_parcel IN (${ph}) LIMIT 200`, [ds.id], cNos);
+    if (kind === "vyber") {   // stavby zapísané na vybraných LV aj tie, ktoré stoja na cudzích parcelách
+      for (const lvx of vyberLvs) for (const b of await q<PropBuilding>("SELECT descr, on_parcel, supisne_cislo AS sc, lv_no FROM lv_buildings WHERE dataset_id=? AND lv_no=? LIMIT 100", [ds.id, lvx]))
+        if (!buildings.some((x) => x.sc === b.sc && x.on_parcel === b.on_parcel)) buildings.push(b);
+      for (const s2 of vyberScs) for (const b of await q<PropBuilding>("SELECT descr, on_parcel, supisne_cislo AS sc, lv_no FROM lv_buildings WHERE dataset_id=? AND supisne_cislo=? LIMIT 5", [ds.id, s2]))
+        if (!buildings.some((x) => x.sc === b.sc && x.on_parcel === b.on_parcel)) buildings.push(b);
+    }
     if (sc && !buildings.some((b) => b.sc === sc)) buildings.push(...await q<PropBuilding>("SELECT descr, on_parcel, supisne_cislo AS sc, lv_no FROM lv_buildings WHERE dataset_id=? AND supisne_cislo=? LIMIT 5", [ds.id, sc]));
     const zones = await qIn<{ parcel_no: string; register: string; zone: string | null; verdict: string | null }>(
       (ph) => `SELECT parcel_no, register, zone, verdict FROM parcel_zoning WHERE kod_ku=? AND parcel_no IN (${ph})`, [kod], parcels.map((p) => p.parcel_no));
@@ -8706,6 +8744,7 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       try { fd = JSON.parse(facts.byty?.[`flat:${flat}`] ?? '{}') as Record<string, unknown>; } catch { /* poškodené */ }
       title = `Byt${fd.cislo != null ? ` č. ${String(fd.cislo)}` : ""}${fd.vchod != null ? `, vchod ${String(fd.vchod)}` : ""}${sc ? `, dom s.č. ${sc}` : ""}`;
     } else if (kind === "lv") title = `List vlastníctva č. ${lvNo}`;
+    else if (kind === "vyber") title = `Vlastný celok — ${plural(parcels.length, "parcela", "parcely", "parciel")}${buildings.length ? ` a ${plural(buildings.length, "stavba", "stavby", "stavieb")}` : ""}`;
     else if (house) {
       // popisy z katastra bývajú verzálkami („ADMIN.BUDOVA") → bežné písmo, číslo stavby ostáva
       let dsc = house.descr.replace(/\s+/g, " ").trim();
@@ -8720,7 +8759,7 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       lvs.length ? `LV ${lvs.slice(0, 6).join(", ")}${lvs.length > 6 ? "…" : ""}` : null].filter(Boolean).join(" · ");
 
     return {
-      ok: true, kind, title, subtitle, celokNote,
+      ok: true, kind, ref: data.ref, title, subtitle, celokNote,
       dataset: { id: ds.id, ku_code: ds.ku_code, ku_name: ds.ku_name, region: ds.region, okres, updated_at: ds.updated_at },
       main: { parcelNo: main?.parcel_no ?? null, register: main?.register ?? null, lvNo: main?.lv_no ?? lvNo, lat: main?.lat ?? null, lng: main?.lng ?? null, sc, flat },
       parcels, lvs, buildings, facts, factMeta,
@@ -9059,7 +9098,7 @@ function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid
 }
 
 export const createPropertyShare = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), kind: z.string().max(10), ref: z.string().max(60), title: z.string().max(200), snapshot: z.string().max(3_000_000), days: z.number().int().min(1).max(60).optional() }))
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), kind: z.string().max(10), ref: z.string().max(400), title: z.string().max(200), snapshot: z.string().max(3_000_000), days: z.number().int().min(1).max(60).optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; path?: string; expiresAt?: string; message?: string }> => {
     const u = await requireUser(data.token);
     if (!u || !canExport(u.role as Role)) return { ok: false, message: "Bez oprávnenia na export." };
@@ -9080,7 +9119,7 @@ export const createPropertyShare = createServerFn({ method: "POST" })
     return { ok: true, path: `/n/${tok}`, expiresAt: exp };
   });
 export const listPropertyShares = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), kind: z.string().max(10), ref: z.string().max(60) }))
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), kind: z.string().max(10), ref: z.string().max(400) }))
   .handler(async ({ data }): Promise<{ ok: boolean; rows: { token: string; expiresAt: string; views: number; lastView: string | null; revoked: boolean; createdAt: string }[] }> => {
     if (!(await requireUser(data.token))) return { ok: false, rows: [] };
     const rows = await q<{ token: string; expires_at: string; views: number; last_view: string | null; revoked: number; created_at: string }>(
@@ -9092,7 +9131,7 @@ export const listPropertyShares = createServerFn({ method: "POST" })
 // Rovnaké dáta ako stránka: jadro (bez mien), limity, dostupnosť, ÚP zóna, AVM, registre, development, dokumenty ÚP.
 export const buildClientShare = createServerFn({ method: "POST" })
   .validator(z.object({
-    secret: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt"]), ref: z.string().min(1).max(60),
+    secret: z.string(), datasetId: z.string().max(40), kind: z.enum(["parcela", "lv", "stavba", "byt", "vyber"]), ref: z.string().min(1).max(400),
     register: z.enum(["C", "E"]).optional(), days: z.number().int().min(1).max(60).optional(), client: z.string().max(120).optional(),
     broker: z.object({ name: z.string().max(80).optional(), firma: z.string().max(80).optional(), phone: z.string().max(40).optional(), email: z.string().max(80).optional() }).optional(),
     notes: z.string().max(2000).optional(), hide: z.array(z.string().max(20)).max(30).optional(), lang: z.enum(["sk", "en"]).optional(),

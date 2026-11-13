@@ -22,7 +22,7 @@ import type { FinInputs } from "../lib/finance";
 import { loadPhotos } from "../lib/photos";
 import { DeclarationForm } from "../components/property-decl";
 
-type Search = { ds?: string; p?: string; reg?: "C" | "E"; lv?: string; sc?: string; byt?: string };
+type Search = { ds?: string; p?: string; reg?: "C" | "E"; lv?: string; sc?: string; byt?: string; vyber?: string; seed?: string };
 export const Route = createFileRoute("/nehnutelnost")({
   head: () => ({ meta: [{ title: "List nehnuteľnosti — TRI LIPY KATASTER CORE" }] }),
   validateSearch: (s: Record<string, unknown>): Search => ({
@@ -32,6 +32,8 @@ export const Route = createFileRoute("/nehnutelnost")({
     lv: typeof s.lv === "string" || typeof s.lv === "number" ? String(s.lv) : undefined,
     sc: typeof s.sc === "string" || typeof s.sc === "number" ? String(s.sc) : undefined,
     byt: typeof s.byt === "string" ? s.byt : undefined,
+    vyber: typeof s.vyber === "string" ? s.vyber : undefined,
+    seed: typeof s.seed === "string" ? s.seed : undefined,
   }),
   component: PropertyPage,
 });
@@ -40,8 +42,8 @@ function PropertyPage() {
   const s = Route.useSearch();
   const { token } = useAuth();
   const { role } = useRole();
-  const kind = s.byt ? "byt" : s.sc ? "stavba" : s.lv ? "lv" : s.p ? "parcela" : null;
-  const ref = s.byt ?? s.sc ?? s.lv ?? s.p ?? null;
+  const kind = s.vyber ? "vyber" : s.byt ? "byt" : s.sc ? "stavba" : s.lv ? "lv" : s.p ? "parcela" : null;
+  const ref = s.vyber ?? s.byt ?? s.sc ?? s.lv ?? s.p ?? null;
   const [core, setCore] = useState<PropertyCore | null>(null);
   const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null, fin: null, shade: null, photos: null, decl: null });
   const [rawZone, setRawZone] = useState<Awaited<ReturnType<typeof getParcelZone>>>(null);
@@ -102,7 +104,7 @@ function PropertyPage() {
   }, [ready, sheet]);
 
   if (!token) return <div className="p-6 text-sm text-muted">Prihlás sa.</div>;
-  if (!s.ds || !kind || !ref) return <Picker />;
+  if (!s.ds || !kind || !ref) return <Picker initDs={s.ds} seed={s.seed} />;
   if (!core) return <div className="p-6 text-sm text-muted">Zostavujem list nehnuteľnosti…</div>;
   if (!core.ok || !sheet) return <div className="p-6 text-sm text-muted">{core.message ?? "List nie je dostupný."} <Link to="/nehnutelnost" className="text-brand underline">Otvoriť iný</Link></div>;
 
@@ -130,6 +132,7 @@ function PropertyPage() {
             <Link to="/ziadosti" search={{ ds: core.dataset!.id, p: mainC ?? undefined, lv: lv != null ? String(lv) : undefined }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Žiadosti (siete, ÚPI)</Link>
             {lv != null ? <Link to="/obhliadka" search={{ ds: core.dataset!.id, lv: String(lv), p: mainC ?? undefined }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Obhliadka (mobil)</Link> : null}
             {core.signals.briefs.length ? <Link to="/porovnanie" search={{ brief: String(core.signals.briefs[0].brief_id) }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Porovnať s kandidátmi zadania #{core.signals.briefs[0].brief_id}</Link> : null}
+            <Link to="/nehnutelnost" search={{ ds: core.dataset!.id, seed: core.kind === "vyber" ? core.ref : core.kind === "lv" ? `lv:${lv}` : core.kind === "stavba" && core.main.sc ? `sc:${core.main.sc}` : core.parcels.slice(0, 10).map((x) => `${x.register}:${x.parcel_no}`).join(";") }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Spojiť s ďalšími nehnuteľnosťami</Link>
             <button onClick={downloadJson} disabled={!ready} className="rounded-md border border-line px-3 py-1.5 hover:border-ink disabled:opacity-50">Stiahnuť JSON</button>
             {lv != null ? <WatchButton subjectType="lv" subjectId={`${core.dataset!.id}:${lv}`} label={core.title} /> : null}
             {lv != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: core.dataset!.id, lvNo: String(lv) }} search={{ typ: "vypis" as const }} className="text-brand underline">Výpis LV {lv}</Link> : null}
@@ -152,19 +155,37 @@ function PropertyPage() {
 }
 
 /** Otvorenie listu bez odkazu: k.ú. + parcela / LV / súpisné číslo. */
-function Picker() {
+/** „1500/2, E 120/1, LV 123, s.č. 45" → „C:1500/2;E:120/1;lv:123;sc:45" (vlastný celok, najviac 10 položiek). */
+function parseVyber(txt: string): string[] {
+  const out: string[] = [];
+  for (const raw of txt.split(/[,;\n]+/)) {
+    const x = raw.trim().replace(/\s+/g, " ");
+    if (!x) continue;
+    let m: RegExpMatchArray | null;
+    if ((m = x.match(/^(?:lv|list vlastníctva|l\.v\.)\s*(?:č\.?\s*)?(\d+)$/i))) out.push(`lv:${m[1]}`);
+    else if ((m = x.match(/^(?:s\.?\s*č\.?|súp\.?\s*č\.?|sc:)\s*(\d+)$/i))) out.push(`sc:${m[1]}`);
+    else if ((m = x.match(/^(?:([CE])(?:-?KN)?[\s:]+)?(\d+(?:-\d+)?(?:\/\d+)?)$/i))) out.push(`${(m[1] ?? "C").toUpperCase()}:${m[2]}`);
+    else if ((m = x.match(/^(C|E|lv|sc):(.+)$/))) out.push(`${m[1]}:${m[2]}`);
+  }
+  return [...new Set(out)].slice(0, 10);
+}
+const vyberText = (seed?: string) => (seed ?? "").split(";").filter(Boolean).map((x) => x.replace(/^lv:/, "LV ").replace(/^sc:/, "s.č. ").replace(/^C:/, "").replace(/^E:/, "E ")).join(", ");
+
+function Picker({ initDs, seed }: { initDs?: string; seed?: string }) {
   const nav = useNavigate();
   const [dss, setDss] = useState<{ id: string; ku_name: string | null }[]>([]);
-  const [ds, setDs] = useState("");
-  const [kind, setKind] = useState<"p" | "lv" | "sc">("p");
-  const [ref, setRef] = useState("");
+  const [ds, setDs] = useState(initDs ?? "");
+  const [kind, setKind] = useState<"p" | "lv" | "sc" | "vyber">(seed ? "vyber" : "p");
+  const [ref, setRef] = useState(vyberText(seed) ? vyberText(seed) + ", " : "");
   const [reg, setReg] = useState<"C" | "E">("C");
   useEffect(() => { getDatasets().then((r) => setDss(r.map((x) => ({ id: x.id, ku_name: x.ku_name })))).catch(() => {}); }, []);
   function go(e: FormEvent) {
     e.preventDefault();
     if (!ds || !ref.trim()) return;
     const v = ref.trim();
-    const search: Search = kind === "p" ? { ds, p: v, ...(reg === "E" ? { reg: "E" as const } : {}) } : kind === "lv" ? { ds, lv: v } : { ds, sc: v };
+    const items = kind === "vyber" ? parseVyber(v) : [];
+    if (kind === "vyber" && !items.length) return;
+    const search: Search = kind === "vyber" ? { ds, vyber: items.join(";") } : kind === "p" ? { ds, p: v, ...(reg === "E" ? { reg: "E" as const } : {}) } : kind === "lv" ? { ds, lv: v } : { ds, sc: v };
     void nav({ to: "/nehnutelnost", search });
   }
   return (
@@ -179,12 +200,19 @@ function Picker() {
           </select>
         </label>
         <div className="flex flex-wrap gap-3">
-          {([["p", "Parcela"], ["lv", "List vlastníctva"], ["sc", "Súpisné číslo"]] as const).map(([k, l]) => (
+          {([["p", "Parcela"], ["lv", "List vlastníctva"], ["sc", "Súpisné číslo"], ["vyber", "Vlastný celok (spojiť viac)"]] as const).map(([k, l]) => (
             <label key={k} className="flex items-center gap-1"><input type="radio" checked={kind === k} onChange={() => setKind(k)} /> {l}</label>
           ))}
           {kind === "p" ? <select value={reg} onChange={(e) => setReg(e.target.value as "C" | "E")} className="rounded border border-line bg-surface px-1 py-0.5 text-xs"><option value="C">register C</option><option value="E">register E</option></select> : null}
         </div>
-        <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder={kind === "p" ? "napr. 1234/5" : kind === "lv" ? "napr. 812" : "napr. 345"} className="w-full rounded border border-line bg-surface px-2 py-1.5" />
+        {kind === "vyber" ? (
+          <>
+            <textarea value={ref} onChange={(e) => setRef(e.target.value)} rows={3} placeholder="napr. 1500/2, 1500/3, E 120/1, LV 812, s.č. 345" className="w-full rounded border border-line bg-surface px-2 py-1.5" />
+            <p className="text-xs text-muted">Až 10 položiek v jednom katastrálnom území, oddelených čiarkou: parcely C (len číslo), parcely E („E 120/1“), celé listy vlastníctva („LV 812“) alebo stavby („s.č. 345“ — aj s pozemkom pod ňou). Rozpoznané: {parseVyber(ref).length ? parseVyber(ref).map((x) => x.replace(/^lv:/, "LV ").replace(/^sc:/, "s.č. ").replace(/^([CE]):/, "$1 ")).join(" · ") : "—"}</p>
+          </>
+        ) : (
+          <input value={ref} onChange={(e) => setRef(e.target.value)} placeholder={kind === "p" ? "napr. 1234/5" : kind === "lv" ? "napr. 812" : "napr. 345"} className="w-full rounded border border-line bg-surface px-2 py-1.5" />
+        )}
         <button type="submit" className="rounded-md bg-ink px-4 py-1.5 font-medium text-cream">Otvoriť list</button>
       </form>
     </div>

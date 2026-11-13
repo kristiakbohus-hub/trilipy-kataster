@@ -33,7 +33,7 @@ export function shareChecks(sheet: SheetData, notes: string): { warn: string[]; 
 export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: boolean }) {
   const { token } = useAuth();
   const c = sheet.core;
-  const kind = c.kind; const ref = kind === "byt" ? c.main.flat ?? "" : kind === "stavba" ? c.main.sc ?? "" : kind === "lv" ? String(c.main.lvNo ?? "") : `${c.main.register === "E" ? "E:" : ""}${c.main.parcelNo ?? ""}`;
+  const kind = c.kind; const ref = kind === "vyber" ? c.ref ?? "" : kind === "byt" ? c.main.flat ?? "" : kind === "stavba" ? c.main.sc ?? "" : kind === "lv" ? String(c.main.lvNo ?? "") : `${c.main.register === "E" ? "E:" : ""}${c.main.parcelNo ?? ""}`;
   const ds = c.dataset?.id ?? "";
   const [rows, setRows] = useState<Awaited<ReturnType<typeof listPropertyShares>>["rows"]>([]);
   const [msg, setMsg] = useState<string | null>(null);
