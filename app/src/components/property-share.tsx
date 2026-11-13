@@ -6,6 +6,7 @@ import { createPropertyShare, listPropertyShares, revokePropertyShare } from "..
 import { useAuth } from "../lib/auth-context";
 import { zoneOf, type SheetData } from "../lib/property-eval";
 import { phraseIssues } from "../lib/phrases";
+import { loadPhotos } from "../lib/photos";
 
 const CHAPTERS: [string, string][] = [["vlastnictvo", "Vlastníctvo"], ["pravo", "Právny stav"], ["historia", "Časová os"], ["limity", "Limity a riziká"], ["teren", "Terén a slnko"], ["klima", "Klíma a normy"],
   ["siete", "Siete"], ["doprava", "Doprava"], ["hodnota", "Hodnota"], ["predikcia", "Predikcia"], ["trh", "Trh"], ["financovanie", "Hypotéka"], ["naklady", "Náklady a dane"],
@@ -41,6 +42,7 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
   const [broker, setBroker] = useState<Broker>({});
   const [hide, setHide] = useState<string[]>([]);
   const [days, setDays] = useState(30);
+  const [withPhotos, setWithPhotos] = useState(true);
   useEffect(() => { setBroker(loadBroker()); }, []);
   const load = () => { if (token && ds) listPropertyShares({ data: { token, datasetId: ds, kind, ref } }).then((r) => setRows(r.rows)).catch(() => {}); };
   useEffect(load, [token, ds, kind, ref]);
@@ -50,7 +52,8 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
     setBusy(true);
     try { localStorage.setItem("tl-broker", JSON.stringify(broker)); } catch { /* bez úložiska */ }
     try {
-      const snap: SheetData = { ...sheet, client: client.trim() || sheet.client || null, notes: notes.trim() || null, broker, hide };
+      const photos = withPhotos ? (sheet.photos?.length ? sheet.photos : await loadPhotos(ds, c.main.lvNo ?? c.lvs[0] ?? null)) : [];
+      const snap: SheetData = { ...sheet, client: client.trim() || sheet.client || null, notes: notes.trim() || null, broker, hide, photos };
       const r = await createPropertyShare({ data: { token, datasetId: ds, kind, ref, title: c.title, snapshot: JSON.stringify(snap), days } });
       if (r.ok && r.path) {
         const url = `${window.location.origin}${r.path}`;
@@ -79,6 +82,7 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
           <label className="text-muted">Telefón<input className={inp} value={broker.phone ?? ""} maxLength={40} onChange={(e) => setBroker({ ...broker, phone: e.target.value })} /></label>
           <label className="text-muted">E-mail<input className={inp} value={broker.email ?? ""} maxLength={80} onChange={(e) => setBroker({ ...broker, email: e.target.value })} /></label>
           <label className="text-muted sm:col-span-2">Poznámka pre klienta (zobrazí sa na začiatku listu)<textarea className={inp} rows={3} maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
+          <label className="flex items-center gap-1 text-muted sm:col-span-2"><input type="checkbox" checked={withPhotos} onChange={(e) => setWithPhotos(e.target.checked)} />Pridať fotky z obhliadky (max 4, zmenšené)</label>
           <fieldset className="sm:col-span-2"><legend className="text-muted">Kapitoly v klientskej verzii (odškrtnuté sa vynechajú)</legend>
             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">{CHAPTERS.map(([id, l]) => (
               <label key={id} className="flex items-center gap-1"><input type="checkbox" checked={!hide.includes(id)} onChange={(e) => setHide((h) => (e.target.checked ? h.filter((x) => x !== id) : [...h, id]))} />{l}</label>

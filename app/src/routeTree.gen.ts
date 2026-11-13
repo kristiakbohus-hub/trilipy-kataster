@@ -29,6 +29,8 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as ObhliadkaRouteImport } from './routes/obhliadka'
+import { Route as PorovnanieRouteImport } from './routes/porovnanie'
 import { Route as ZiadostiRouteImport } from './routes/ziadosti'
 import { Route as ApiPropertyShareBuildRouteImport } from './routes/api.property-share-build'
 import { Route as ApiExtProbeRouteImport } from './routes/api.ext-probe'
@@ -196,6 +198,16 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ObhliadkaRoute = ObhliadkaRouteImport.update({
+  id: '/obhliadka',
+  path: '/obhliadka',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PorovnanieRoute = PorovnanieRouteImport.update({
+  id: '/porovnanie',
+  path: '/porovnanie',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ZiadostiRoute = ZiadostiRouteImport.update({
@@ -572,6 +584,8 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/obhliadka': typeof ObhliadkaRoute
+  '/porovnanie': typeof PorovnanieRoute
   '/ziadosti': typeof ZiadostiRoute
   '/api/property-share-build': typeof ApiPropertyShareBuildRoute
   '/api/ext-probe': typeof ApiExtProbeRoute
@@ -662,6 +676,8 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/obhliadka': typeof ObhliadkaRoute
+  '/porovnanie': typeof PorovnanieRoute
   '/ziadosti': typeof ZiadostiRoute
   '/api/property-share-build': typeof ApiPropertyShareBuildRoute
   '/api/ext-probe': typeof ApiExtProbeRoute
@@ -753,6 +769,8 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/obhliadka': typeof ObhliadkaRoute
+  '/porovnanie': typeof PorovnanieRoute
   '/ziadosti': typeof ZiadostiRoute
   '/api/property-share-build': typeof ApiPropertyShareBuildRoute
   '/api/ext-probe': typeof ApiExtProbeRoute
@@ -845,6 +863,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/obhliadka'
+    | '/porovnanie'
     | '/ziadosti'
     | '/api/property-share-build'
     | '/api/ext-probe'
@@ -935,6 +955,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/obhliadka'
+    | '/porovnanie'
     | '/ziadosti'
     | '/api/property-share-build'
     | '/api/ext-probe'
@@ -1025,6 +1047,8 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/obhliadka'
+    | '/porovnanie'
     | '/ziadosti'
     | '/api/property-share-build'
     | '/api/ext-probe'
@@ -1112,6 +1136,8 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  ObhliadkaRoute: typeof ObhliadkaRoute
+  PorovnanieRoute: typeof PorovnanieRoute
   ZiadostiRoute: typeof ZiadostiRoute
   ApiPropertyShareBuildRoute: typeof ApiPropertyShareBuildRoute
   ApiExtProbeRoute: typeof ApiExtProbeRoute
@@ -1437,6 +1463,20 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/obhliadka': {
+      id: '/obhliadka'
+      path: '/obhliadka'
+      fullPath: '/obhliadka'
+      preLoaderRoute: typeof ObhliadkaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/porovnanie': {
+      id: '/porovnanie'
+      path: '/porovnanie'
+      fullPath: '/porovnanie'
+      preLoaderRoute: typeof PorovnanieRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/ziadosti': {
@@ -1827,6 +1867,8 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  ObhliadkaRoute: ObhliadkaRoute,
+  PorovnanieRoute: PorovnanieRoute,
   ZiadostiRoute: ZiadostiRoute,
   ApiPropertyShareBuildRoute: ApiPropertyShareBuildRoute,
   ApiExtProbeRoute: ApiExtProbeRoute,

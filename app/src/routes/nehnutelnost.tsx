@@ -19,6 +19,7 @@ import { DocumentsPanel } from "../components/documents-panel";
 import { PropertyShareBox } from "../components/property-share";
 import type { SheetData } from "../lib/property-eval";
 import type { FinInputs } from "../lib/finance";
+import { loadPhotos } from "../lib/photos";
 
 type Search = { ds?: string; p?: string; reg?: "C" | "E"; lv?: string; sc?: string; byt?: string };
 export const Route = createFileRoute("/nehnutelnost")({
@@ -41,7 +42,7 @@ function PropertyPage() {
   const kind = s.byt ? "byt" : s.sc ? "stavba" : s.lv ? "lv" : s.p ? "parcela" : null;
   const ref = s.byt ?? s.sc ?? s.lv ?? s.p ?? null;
   const [core, setCore] = useState<PropertyCore | null>(null);
-  const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null, fin: null, shade: null });
+  const [env, setEnv] = useState<Omit<SheetData, "core" | "dev" | "generatedAt">>({ limits: null, access: null, zone: null, avm: null, medPoz: null, upDocs: [], ext: null, fin: null, shade: null, photos: null });
   const [rawZone, setRawZone] = useState<Awaited<ReturnType<typeof getParcelZone>>>(null);
   const [ready, setReady] = useState(false);
   const [hash, setHash] = useState<string | null>(null);
@@ -69,6 +70,7 @@ function PropertyPage() {
       jobs.push(getPropertyExt({ data: { token, lat, lng, datasetId: core.dataset!.id } }).then((r) => patch({ ext: r.ok ? r.items : null })).catch(() => {}));
       jobs.push(getShading({ data: { token, lat, lng } }).then((r) => patch({ shade: r.shade })).catch(() => {}));
     }
+    jobs.push(loadPhotos(core.dataset!.id, core.main.lvNo ?? core.lvs[0] ?? null).then((photos) => patch({ photos })).catch(() => {}));
     jobs.push(getFinanceMarket({ data: { token } }).then((r) => patch({ fin: r.market })).catch(() => {}));
     jobs.push(getUpDocs({ data: { datasetId: core.dataset!.id } }).then((d) => patch({ upDocs: d.map((x) => ({ id: x.id, title: x.title, url: x.url, kind: x.kind })) })).catch(() => {}));
     const okres = core.dataset?.okres ?? (core.dataset?.ku_name ?? "").replace(/^k\.ú\.\s*/i, "");
@@ -123,6 +125,8 @@ function PropertyPage() {
             <button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">Tlačiť / uložiť PDF</button>
             <button onClick={() => setTeaser(true)} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Teaser (1 strana)</button>
             <Link to="/ziadosti" search={{ ds: core.dataset!.id, p: mainC ?? undefined, lv: lv != null ? String(lv) : undefined }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Žiadosti (siete, ÚPI)</Link>
+            {lv != null ? <Link to="/obhliadka" search={{ ds: core.dataset!.id, lv: String(lv), p: mainC ?? undefined }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Obhliadka (mobil)</Link> : null}
+            {core.signals.briefs.length ? <Link to="/porovnanie" search={{ brief: String(core.signals.briefs[0].brief_id) }} className="rounded-md border border-line px-3 py-1.5 hover:border-ink">Porovnať s kandidátmi zadania #{core.signals.briefs[0].brief_id}</Link> : null}
             <button onClick={downloadJson} disabled={!ready} className="rounded-md border border-line px-3 py-1.5 hover:border-ink disabled:opacity-50">Stiahnuť JSON</button>
             {lv != null ? <WatchButton subjectType="lv" subjectId={`${core.dataset!.id}:${lv}`} label={core.title} /> : null}
             {lv != null ? <Link to="/vypis/$datasetId/$lvNo" params={{ datasetId: core.dataset!.id, lvNo: String(lv) }} search={{ typ: "vypis" as const }} className="text-brand underline">Výpis LV {lv}</Link> : null}

@@ -31,6 +31,8 @@ export type SheetData = {
   hide?: string[] | null;
   /** tienenie z budov a stromov (DMP 1.0) — horizont objektov v 16 smeroch, výšky okolia */
   shade?: ShadeResult | null;
+  /** fotografie (zmenšené JPEG data URL, max 4) — z obhliadky / dokumentov LV */
+  photos?: { name: string; src: string }[] | null;
   /** „teaser" = jednostránková ponuka */
   variant?: "teaser" | null;
 };

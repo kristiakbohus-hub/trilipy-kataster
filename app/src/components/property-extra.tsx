@@ -289,3 +289,14 @@ export function OkolieBlock({ d }: { d: SheetData }) {
     </>
   );
 }
+
+// ——— fotografie (obhliadka / dokumenty) ———
+export function PhotosBlock({ d }: { d: SheetData }) {
+  const ph = (d.photos ?? []).filter((p) => /^data:image\/jpeg;base64,/.test(p.src)).slice(0, 4);
+  if (!ph.length) return null;
+  return (
+    <div className="ps-photos grid grid-cols-2 gap-2">
+      {ph.map((p, i) => <figure key={i} className="space-y-0.5"><img src={p.src} alt={p.name} className="h-auto w-full rounded-md border border-line object-cover" style={{ aspectRatio: "4 / 3" }} /><figcaption className="text-[10px] text-muted">{p.name.replace(/^Obhliadka\s+/, "obhliadka ")}</figcaption></figure>)}
+    </div>
+  );
+}

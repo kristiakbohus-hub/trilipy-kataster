@@ -9,7 +9,7 @@ import { qrMatrix } from "../lib/qr";
 import { financeOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, OkolieBlock, PurchaseSteps, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
+import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, OkolieBlock, PhotosBlock, PurchaseSteps, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -679,6 +679,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
 
       <Sec id="prehlad" n={num("prehlad")} explain={ex("prehlad")} {...asof("prehlad")} title="Prehľad" source={<>Kataster ÚGKK SR (stav k {date(c.dataset?.updated_at)}); obrysy z katastrálnej mapy (VGI).</>}>
         <div className="ps-screen-only"><ParcelSketch d={d} /></div>
+        {d.photos?.length ? <><Sub>Fotografie</Sub><PhotosBlock d={d} /></> : null}
         {c.main.lat != null && c.main.lng != null ? <HistoricMap lat={c.main.lat} lng={c.main.lng} /> : null}
         <Grid rows={[
           ["Adresa", addressOf(c)?.adresa ? `${String(addressOf(c)?.adresa)}${addressOf(c)?.presna === false ? ` (najbližšia adresa, ${String(addressOf(c)?.vzdialenost_m ?? "?")} m)` : ""}` : "—"],
