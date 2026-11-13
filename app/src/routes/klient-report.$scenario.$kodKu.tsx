@@ -35,8 +35,8 @@ const SCENARIO_META: Record<string, ScenarioMeta> = {
   settlement: {
     back: "/vysporiadanie",
     method: [["Vlastníctvo a druh pozemku", "SPI import (register C/E)"],
-             ["Párovanie stavba ↔ pozemok", "zhodné parcelné číslo C↔E (geometria E-parciel nie je k dispozícii)"],
-             ["Odhad odkupu", "trhová cena obce × výmera podielu"]],
+             ["Párovanie stavba ↔ pozemok", "mapa určeného operátu: parcela E pod parcelou stavby (zhodné číslo C↔E sa nepoužíva)"],
+             ["Odhad odkupu", "plocha pod stavbou × orientačná sadzba €/m² podľa druhu pozemku"]],
     scope: "Prehľadané boli stavby evidované v uvedenom k.ú. Pozemky pod stavbami bez dohľadateľnej E-parcely sa spárovať nedajú.",
     sortNote: "zoradené podľa skóre",
   },

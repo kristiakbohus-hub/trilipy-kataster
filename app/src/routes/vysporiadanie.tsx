@@ -285,8 +285,9 @@ function SettlementPage() {
 
       <Disclaimer>
         Kandidáti sú odvodení z lokálneho SPI importu (stavba s vlastným LV vs. vlastníci podložnej C/E parcely).
-        E-parcely sa napájajú cez zhodné parcelné číslo (nesubdivovaná parcela = tá istá zem) — geometrický
-        prienik nie je možný (E polygóny nie sú). „Vlastník stavby ≠ vlastník pozemku" je signál na overenie
+        E-parcely sa napájajú podľa mapy určeného operátu — berie sa parcela E, ktorá leží pod parcelou stavby. Zhodné
+        parcelné číslo C↔E sa ako dôkaz nepoužíva (číslovanie E a C je nezávislé); ak sa parcela E nedá na mape overiť,
+        kandidát ostáva na preskúmanie. „Vlastník stavby ≠ vlastník pozemku" je signál na overenie
         LV/EKN vzťahov a titulu, nie tvrdenie o právnom (ne)vysporiadaní. Neslúži na právne ani investičné rozhodnutia.
       </Disclaimer>
     </div>
