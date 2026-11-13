@@ -1,3 +1,4 @@
+import { EN_TPL } from "./i18n-en-tpl";
 // SLOVNÍK SK → EN pre anglickú verziu listu nehnuteľnosti (2026-11-13): popisy údajov (FACT_SCHEMA) a nadpisy / stĺpce tabuliek.
 // Použitie: v režime lang=en sa po vykreslení preložia texty s presnou zhodou (translateDom).
 export const EN_DICT: Record<string, string> = {
@@ -970,7 +971,8 @@ export const EN_DICT: Record<string, string> = {
 };
 
 /** Preloží texty v DOM listu s presnou zhodou podľa slovníka (len režim EN; tabuľky, nadpisy, popisy údajov). */
-const EN_PATTERNS: [RegExp, string][] = [
+type Rep = string | ((...m: string[]) => string);
+const EN_PATTERNS: [RegExp, Rep][] = [
   [/^Pozemok parc\. č\. (.+) s (\d+) priľahlými parcelami$/, "Plot no. $1 with $2 adjacent parcels"],
   [/^Pozemok parc\. č\. (.+) s priľahlou parcelou$/, "Plot no. $1 with an adjacent parcel"],
   [/^Pozemok parc\. č\. (.+)$/, "Plot no. $1"],
@@ -990,23 +992,84 @@ const EN_PATTERNS: [RegExp, string][] = [
   [/^Pre nadmorskú výšku ~(\d+) m(.*)$/, "For elevation ~$1 m$2"],
   [/^snímkované (.+)$/, "captured $1"],
   [/^v inzercii za (.+)$/, "listed for $1"], [/^zmena ceny na (.+)$/, "price changed to $1"], [/^zmluva s cenou (.+)$/, "contract price $1"],
+  // úrady, obce a okresy — mená ostávajú, preloží sa len typ
+  [/^k\. ?ú\. (.+)$/, "cadastral area $1"],
+  [/^· okres (.+)$/, "· district $1"], [/^okres (.+)$/, "district $1"],
+  [/^Obec (\p{Lu}[\p{L} .-]+)$/u, "Municipality of $1"],
+  [/^Okresný úrad (.+), katastrálny odbor$/, "District Office $1, cadastral department"],
+  [/^Okresný úrad (.+), pozemkový a lesný odbor \(príslušnosť overiť\)$/, "District Office $1, land and forestry department (verify competence)"],
+  [/^Okresný úrad (.+), odbor starostlivosti o životné prostredie$/, "District Office $1, environmental department"],
+  [/^OR PZ (.+?) \(okresy (.+)\)$/, "District Police $1 (districts $2)"], [/^OR PZ (.+)$/, "District Police $1"],
+  [/^kraj (\S+) zistených trestných činov na (\S+) obyvateľov \((.+?)\); OR PZ (.+)$/, (_m, a, b, c, d) =>
+    `region ${a} recorded crimes per ${b} residents (${c}); District Police ${d.replace("(okresy ", "(districts ").replace("objasnenosť", "clearance rate")}`],
+  [/^Úradné registre hlásia: (.+)\. Podrobnosti a dopad na poistenie v kapitole Poistenie a riziká\.$/, (_m, a) =>
+    `Official registers report: ${listEn(a)}. Details and the impact on insurance in the Insurance and risks chapter.`],
+  [/^(?:Územný plán|Zoning plan): (.+?)\. Bývanie je v zóne spravidla prípustné; potvrdí ho územnoplánovacia informácia obce\.$/, (_m, a) => `Zoning plan: ${enText(a)}. Housing is usually permitted in this zone; the municipality's zoning information confirms it.`],
+  [/^(?:Územný plán|Zoning plan): (.+?)\. Pred kúpou na stavbu overiť územnoplánovaciu informáciu obce\.$/, (_m, a) => `Zoning plan: ${enText(a)}. Before buying to build, verify the municipality's zoning information.`],
+  [/^(.+) \(pracovné miesta, ale aj doprava a hluk\)$/, (_m, a) => `${enText(a)} (jobs, but also traffic and noise)`],
+  [/^(.+) — ÚP z výkresu — orientačné$/, (_m, a) => `${enText(a)} — zoning from a drawing — indicative`],
+  [/^pozemky ~(.+?) € \((.+)\)$/, "land ~€$1 ($2)"],
+  // názvy stavieb z katastra (druh stavby + číslo)
+  [/^(rozostavaný rodinný dom|rozost\. ?rod\. ?dom|rodinný dom|rod\. ?dom|obytný dom|obytny dom|hospodárska budova|rekreačná chata|záhradná chatka|výrobná hala|silážna jama|garáž|garaz|sklad|dom|trafostanica)(?=[\s.,]|$)([^·|]*)$/i, (_m, a, rest) => {
+    const k = a.toLowerCase().replace(/\s+/g, " "); const en = BUILDING_EN[k] ?? BUILDING_EN[k.replace(/\. ?/g, ". ")] ?? a;
+    const r = rest.replace(/bez súp\.? ?(čísla|č\.)/i, "without reg. no.").replace(/bez čs\./i, "without no.").replace(/\bčs\.|č\.s\.|ČS\./gi, "no.");
+    return (a === a.toUpperCase() ? en.toUpperCase() : a[0] === a[0].toUpperCase() ? en[0].toUpperCase() + en.slice(1) : en) + r;
+  }],
 ];
-/** Preklad jedného textu (slovník alebo vzor) — napr. názov nehnuteľnosti do hlavičky strán. */
-export function enText(k: string): string {
-  if (EN_DICT[k]) return EN_DICT[k];
-  for (const [re, rep] of EN_PATTERNS) if (re.test(k)) return k.replace(re, rep);
-  return k;
+const BUILDING_EN: Record<string, string> = { "rozostavaný rodinný dom": "family house under construction", "rozost. rod. dom": "family house under construction", "rozost.rod.dom": "family house under construction",
+  "rodinný dom": "family house", "rod. dom": "family house", "rod.dom": "family house", "obytný dom": "residential house", "obytny dom": "residential house", "hospodárska budova": "farm building",
+  "rekreačná chata": "holiday cottage", "záhradná chatka": "garden hut", "výrobná hala": "production hall", "silážna jama": "silage pit", "garáž": "garage", "garaz": "garage", "sklad": "store", "dom": "house", "trafostanica": "transformer station" };
+// Čísla v texte → {0}, {1}… aby jeden riadok šablóny (i18n-en-tpl.ts) platil pre ľubovoľné výmery, dátumy a sumy.
+const NUM = /\d+(?:[   ]\d{3})*(?:[.,]\d+)?/g;
+const SP = /[   ]/g;
+function tplOf(s: string): [string, string[]] {
+  const nums: string[] = [];
+  const k = s.replace(NUM, (m) => `{${nums.push(m) - 1}}`).replace(SP, " ");
+  return [k, nums];
 }
+function lookup(k: string): string | undefined {
+  const e = EN_DICT[k]; if (e) return e;
+  if (k.endsWith(":") && EN_DICT[k.slice(0, -1)]) return `${EN_DICT[k.slice(0, -1)]}:`;
+  const [t, nums] = tplOf(k); const x = EN_TPL[t];
+  if (x) return x.replace(/\{(\d+)\}/g, (_m, i) => nums[Number(i)] ?? "");
+  for (const [re, rep] of EN_PATTERNS) if (re.test(k)) return k.replace(re, rep as never);
+  return undefined;
+}
+function listEn(a: string): string { return a.split(", ").map((x) => lookup(x) ?? x).join(", "); }
+/** Zložený text („Popis: hodnota · Popis: hodnota", „+ výhoda · − nevýhoda", zoznam s čiarkami) — preloží sa po častiach. */
+function bySegments(k: string): string | undefined {
+  const sep = k.includes(" · ") ? " · " : k.includes(" | ") ? " | " : null;
+  let any = false;
+  const out = (sep ? k.split(sep) : [k]).map((p) => {
+    const m = /^([+−-] )?([\s\S]*)$/.exec(p); const pre = m?.[1] ?? ""; const body = m?.[2] ?? p;
+    let t = lookup(body);
+    if (t == null && body.includes(": ")) {
+      const i = body.indexOf(": "); const a = lookup(body.slice(0, i)); const b = lookup(body.slice(i + 2));
+      if (a != null || b != null) t = `${a ?? body.slice(0, i)}: ${b ?? body.slice(i + 2)}`;
+    }
+    if (t == null && body.includes(", ")) { const xs = body.split(", ").map(lookup); if (xs.every((y) => y != null)) t = xs.join(", "); }
+    if (t != null) any = true;
+    return pre + (t ?? body);
+  });
+  return any ? out.join(sep ?? "") : undefined;
+}
+/** Preklad jedného textu (slovník, šablóna s číslami, vzor, alebo po častiach) — napr. názov nehnuteľnosti do hlavičky strán. */
+export function enText(k: string): string {
+  return lookup(k) ?? bySegments(k) ?? k;
+}
+const done = new WeakMap<Text, string>();
 export function translateDom(root: HTMLElement | null): void {
   if (!root || typeof document === "undefined") return;
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const nodes: Text[] = [];
   while (w.nextNode()) nodes.push(w.currentNode as Text);
   for (const n of nodes) {
-    const t = n.nodeValue ?? ""; const k = t.trim();
-    if (!k || k.length > 120) continue;
-    const e = EN_DICT[k] ?? (k.endsWith(":") ? (EN_DICT[k.slice(0, -1)] ? `${EN_DICT[k.slice(0, -1)]}:` : undefined) : undefined);
-    if (e) { n.nodeValue = t.replace(k, e); continue; }
-    for (const [re, rep] of EN_PATTERNS) { if (re.test(k)) { n.nodeValue = t.replace(k, k.replace(re, rep)); break; } }
+    const t = n.nodeValue ?? ""; if (done.get(n) === t) continue;
+    const k = t.trim();
+    if (k && k.length <= 3000 && /\p{L}/u.test(k)) {
+      const e = lookup(k) ?? bySegments(k);
+      if (e != null && e !== k) { const v = t.replace(k, () => e); n.nodeValue = v; done.set(n, v); continue; }
+    }
+    done.set(n, t);
   }
 }

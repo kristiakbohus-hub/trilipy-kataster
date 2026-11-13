@@ -27,9 +27,9 @@ function PublicPropertyPage() {
         : (
           <div className="mx-auto max-w-4xl space-y-3 rounded-xl border border-line bg-paper p-6 print:max-w-none print:rounded-none print:border-0 print:p-0">
             <div className="no-print flex flex-wrap items-center justify-between gap-2 text-xs text-muted">
-              <span>Odkaz platí do {(d.expiresAt ?? "").slice(0, 10).split("-").reverse().join(". ")}</span>
-              <span className="flex gap-2"><button onClick={() => setTeaser((t) => !t)} className="rounded-md border border-line px-3 py-1.5">{teaser ? "Celý list" : "Teaser (1 strana)"}</button>
-              <button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">Tlačiť / uložiť PDF</button></span>
+              <span>{d.snapshot.lang === "en" ? "Link valid until" : "Odkaz platí do"} {(d.expiresAt ?? "").slice(0, 10).split("-").reverse().join(". ")}</span>
+              <span className="flex gap-2"><button onClick={() => setTeaser((t) => !t)} className="rounded-md border border-line px-3 py-1.5">{d.snapshot.lang === "en" ? (teaser ? "Full sheet" : "Teaser (1 page)") : teaser ? "Celý list" : "Teaser (1 strana)"}</button>
+              <button onClick={() => window.print()} className="rounded-md bg-ink px-3 py-1.5 font-medium text-cream">{d.snapshot.lang === "en" ? "Print / save PDF" : "Tlačiť / uložiť PDF"}</button></span>
             </div>
             <PropertySheet d={teaser ? { ...d.snapshot, variant: "teaser" } : d.snapshot} mode="client" />
           </div>

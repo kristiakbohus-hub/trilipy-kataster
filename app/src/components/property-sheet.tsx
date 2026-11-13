@@ -474,7 +474,7 @@ function PrintCover({ d, lights, isClient, fin, en = false }: { d: SheetData; li
         <h1 className="ps-cover-title">{c.title}</h1>
         {addressOf(c)?.adresa ? <p className="ps-cover-addr">{String(addressOf(c)?.adresa)}{addressOf(c)?.presna === false ? " (najbližšia adresa)" : ""}</p> : null}
         {c.celokNote && !en ? <p className="ps-cover-note">{c.celokNote}</p> : null}
-        {en ? <p className="ps-cover-note">English edition. Values copied from official registers (land types, place names, zoning categories, register texts) are kept in Slovak as officially recorded.</p> : null}
+        {en ? <p className="ps-cover-note">English edition. Names of places, projects and documents, and some descriptive texts copied from official registers, are kept in Slovak as officially recorded.</p> : null}
       </div>
       <div className="ps-cover-map"><ParcelSketch d={d} labels="main" /></div>
       <div className="ps-kpis">{kpis.map(([k, v]) => <div key={k} className="ps-kpi"><div className="ps-kpi-v">{v}</div><div className="ps-kpi-k">{k}</div></div>)}</div>
@@ -645,6 +645,14 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
   const en = d.lang === "en";
   const rootRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => { if (en) translateDom(rootRef.current); });
+  // obsah, ktorý sa dokreslí neskôr (grafy, tiene, živé sadzby), sa preloží tiež — sleduje zmeny v liste
+  useEffect(() => {
+    const r = rootRef.current; if (!en || !r || typeof MutationObserver === "undefined") return;
+    let raf = 0;
+    const mo = new MutationObserver(() => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; translateDom(r); }); });
+    mo.observe(r, { subtree: true, childList: true, characterData: true });
+    return () => { mo.disconnect(); if (raf) cancelAnimationFrame(raf); };
+  }, [en]);
   const ex = (id: string) => (en ? enExplain(id, d, fin) : explain(id, d, fin));
   const tt = (id: string, sk: string) => (en ? EN_TITLES[id] ?? sk : sk);
   const setFin = (p: Partial<FinInputs>) => setFinIn((o) => { const n = { ...o, ...p }; onFinInputs?.(n); return n; });

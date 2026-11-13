@@ -239,7 +239,7 @@ export function costsOf(d: SheetData, b: Basis, inp: FinInputs, insurance: Insur
   if (withMortgage) oneOff.push({ label: "Znalecký posudok pre banku", eur: b.kind === "byt" ? F.znalecByt : b.kind === "pozemok" ? F.znalecPozemok : F.znalecDom, note: "pri hypotéke ho vyžaduje banka" },
     { label: "Poplatok banky za úver a vklad záložného práva", eur: F.vkladEl + F.bankaPoplatok, note: "mnohé banky poplatok za poskytnutie neúčtujú" });
   if (c.parcels.length > 1 && c.parcels.some((p) => p.register === "E")) oneOff.push({ label: "Geometrický plán (ak sa delí alebo zlučuje)", eur: F.geometrickyPlan, note: "len ak sa mení hranica" });
-  oneOff.push({ label: "Provízia realitnej kancelárie (ak ju platí kupujúci)", eur: null, note: `bežne ${F.proviziaText}, často ju platí predávajúci` });
+  oneOff.push({ label: "Provízia realitnej kancelárie (ak ju platí kupujúci)", eur: null, note: F.proviziaText });
   const oneOffTotal = oneOff.reduce((s, x) => s + (x.eur ?? 0), 0);
   // daň z nehnuteľností
   const propertyTax = propertyTaxOf(d, b);

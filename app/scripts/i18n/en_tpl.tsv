@@ -1,0 +1,801 @@
+EIA (stavba, činnosť)	EIA (building, activity)
+Akcia je ukončená v procese EIA	Procedure completed within EIA
+zákon	Act
+bez prieniku	no overlap
+sadzba „od“	rate “from”
+Oznámenie o zmene	Notice of change
+pozemok	land
+Právny stav	Legal status
+Klíma	Climate
+Mená vlastníkov sa v tejto verzii neuvádzajú.	Owner names are not shown in this version.
+Pre nadmorskú výšku ~	For elevation ~
+rokov	years
+nedostupné	unavailable
+zastavaná	built-up
+ŠGÚDŠ (Register ložísk)	ŠGÚDŠ (Register of mineral deposits)
+málo údajov na hodnotenie	too little data to rate
+SEA (plán, program, ÚP)	SEA (plan, programme, zoning plan)
+ŠOP SR (kópia na SVP, popis „Chránené územia {0}“)	ŠOP SR (copy at SVP, layer “Protected areas {0}”)
+Akcia je ukončená v procese SEA	Procedure completed within SEA
+druh pozemku	land type
+ŠGÚDŠ (Atlas krajiny)	ŠGÚDŠ (Landscape Atlas)
+Letecký snímok: Ortofotomozaika SR © ÚGKK SR (ZBGIS)	Aerial image: Slovak orthophoto mosaic © ÚGKK SR (ZBGIS)
+. Obrysy parciel z katastrálnej mapy.	. Parcel outlines from the cadastral map.
+Výroba / technická	Industry / technical
+Záplavové riziko (APSFR)	Flood risk (APSFR)
+EEA (ML model kvality ovzdušia, AQModelViewer)	EEA (ML air-quality model, AQModelViewer)
+Horší	Worse
+Základný	Base
+Lepší	Better
+pre niektoré LV ich nemáme — stav neznámy	missing for some title deeds — status unknown
+zónu ÚP nemáme	zoning not available
+Bez priameho prístupu z cesty — treba vecné bremeno alebo kúpu prístupu.	No direct access from a road — an easement or purchase of access is needed.
+bez priameho prístupu	no direct access
+Odkaz platí do	Link valid until
+Tlačiť / uložiť PDF	Print / save PDF
+list nehnuteľnosti	property sheet
+Limity a riziká	Constraints and risks
+Chata / rekreácia	Cottage / recreation
+Investícia (prenájom)	Investment (rental)
+Skóre je orientačné poradie z údajov v tomto liste ({0}–{1}); chýbajúci údaj nepridáva ani neuberá body.	The score is an indicative ranking from the data in this sheet ({0}–{1}); missing data neither adds nor subtracts points.
+Prehľad	Overview
+Od predávajúceho	From the seller
+Vlastníctvo	Ownership
+Časová os	Timeline
+ÚP	Zoning
+Terén a slnko	Terrain and sun
+Hypotéka	Mortgage
+Náklady a dane	Costs and taxes
+Poistenie a riziká	Insurance and risks
+Výnos a vyjednávanie	Yield and negotiation
+Postup kúpy	Purchase steps
+Čo overiť	What to verify
+Kataster (výpis LV, vklad)	Cadastre (title deed extract, registration)
+Vyňatie z pôdneho fondu, lesy	Removal from farmland, forests
+Životné prostredie, vodné stavby	Environment, water structures
+Územný plán, daň z nehnuteľností	Zoning plan, property tax
+Stavebné konanie	Building permit procedure
+Stavebný úrad príslušný pre obec — overiť na obecnom úrade	Building authority competent for the municipality — verify at the municipal office
+Kataster ÚGKK SR (stav k	Cadastre ÚGKK SR (as of
+); obrysy z katastrálnej mapy (VGI).	); outlines from the cadastral map (VGI).
+SPI a VGI (ÚGKK SR); zóna ÚP z našich územnoplánovacích podkladov.	SPI and VGI (ÚGKK SR); zoning from our zoning plan data.
+Vyhlásenie predávajúceho (zadané maklérom); energetický certifikát podľa zákona {0}/{1} Z. z.	Seller's declaration (entered by the agent); energy certificate under Act {0}/{1}.
+Časť B LV (ÚGKK SR); nadobudnutia z titulov; finančné údaje firiem z RÚZ.	Title deed part B (ÚGKK SR); acquisitions from deeds of title; company financials from RÚZ.
+Časť B a C LV, poznámky a plomby (SPI); dražby z verejných registrov dražieb; stavby bez zápisu porovnaním ZBGIS a katastra.	Title deed parts B and C, notes and pending-change flags (SPI); auctions from public auction registers; unregistered buildings by comparing ZBGIS with the cadastre.
+Čo sa s nehnuteľnosťou dialo: zmeny vlastníkov, zmluvy s cenou, inzercia, dražby a zámery obce. Pomáha odhadnúť, prečo a za koľko sa predáva.	What has happened to the property: owner changes, contracts with prices, listings, auctions and municipal projects. Helps judge why and for how much it is being sold.
+Kataster (tituly, zmluvy s cenou, poznámky), verejná inzercia, registre dražieb, úradná tabuľa obce, Enviroportál.	Cadastre (deeds of title, contracts with prices, notes), public listings, auction registers, municipal notice board, Enviroportál.
+Spôsob využívania pozemkov (SPI) a spoločné hranice z katastrálnej mapy; cesty z OpenStreetMap a SSC.	Land-use codes (SPI) and shared boundaries from the cadastral map; roads from OpenStreetMap and SSC.
+Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.	Municipal zoning plan (vector/WMS or a drawing georeferenced in the app); regulations from the zoning plan or derived; municipal zoning documents.
+Inžinierskogeologický prieskum	Engineering-geological survey
+Vyjadrenia správcov sietí a záväzné stanoviská dotknutých orgánov	Utility operators' statements and binding opinions of the authorities concerned
+podmienka rozhodnutia o stavebnom zámere	prerequisite for the building project decision
+spravidla bez poplatku	usually free of charge
+Záväzné stanovisko dotknutého orgánu	Binding opinion of an authority concerned
+{0} dní, pri zložitých stavbách {1} dní; ak orgán nevydá, platí, že nemá pripomienky ({2}/{3} § {4} ods. {5})	{0} days, {1} days for complex buildings; if the authority does not respond, it is deemed to have no objections ({2}/{3} § {4}({5}))
+Konanie o stavebnom zámere	Building project procedure
+{0} / {1} dní, vyhradené a líniové stavby {2} dní (§ {3})	{0} / {1} days, reserved and linear structures {2} days (§ {3})
+Ohlásenie stavby / overenie projektu	Building notification / design verification
+{0} dní (§ {1}) / {2} dní (§ {3})	{0} days (§ {1}) / {2} days (§ {3})
+Správny poplatok — rozhodnutie o stavebnom zámere	Administrative fee — building project decision
+rodinný dom {0} €, bytový dom {1}–{2} bytov {3} €, {4}–{5} bytov {6} € ({7}/{8} pol. {9}, stav {10}. {11}. {12}); kolaudácia {13} % sadzby	family house €{0}, apartment building {1}–{2} units €{3}, {4}–{5} units €{6} ({7}/{8} item {9}, as of {10}. {11}. {12}); occupancy approval {13} % of the fee
+Územnoplánovacia informácia	Zoning information (ÚPI)
+vydáva obec ({0}/{1} § {2} ods. {3}); nie je záväzným stanoviskom, lehotu ani poplatok zákon neurčuje	issued by the municipality ({0}/{1} § {2}({3})); not a binding opinion, the law sets no deadline or fee
+zákonné lehoty ~{0}–{1} mesiace; v praxi {2}–{3} mesiacov (pesimisticky {4}) vrátane projektu a stanovísk — odhad	statutory deadlines ~{0}–{1} months; in practice {2}–{3} months (pessimistic {4}) including design and opinions — estimate
+podľa zóny nepotrebná (overiť ÚPI)	not needed for this zone (verify ÚPI)
+Od {0}. {1}. {2} platí stavebný zákon {3}/{4}: namiesto územného a stavebného konania je jedno rozhodnutie o stavebnom zámere; zámer sa konzultuje so stavebným úradom a dotknutými orgánmi vopred.	Since {0}. {1}. {2} the Building Act {3}/{4} applies: instead of separate zoning and building permits there is a single decision on the building project; the project is consulted with the building authority and the authorities concerned in advance.
+Novela {0}/{1} (vyhlásená {2}. {3}. {4}, zmeny stavebného zákona od {5}. {6}. {7}): dodatočné povolenie stavieb postavených do {8}. {9}. {10} do {11}. {12}. {13} (dnes do {14}. {15}. {16}), užšie drobné stavby (oplotenie do {17} m; budovy pre obchod a služby už nie sú drobné), kolaudácia po etapách.	Amendment {0}/{1} (published {2}. {3}. {4}, Building Act changes from {5}. {6}. {7}): retrospective permits for buildings built before {8}. {9}. {10} possible until {11}. {12}. {13} (currently until {14}. {15}. {16}), narrower minor structures (fences up to {17} m; retail and service buildings no longer minor), occupancy approval in stages.
+Verejný register stavebných konaní podľa parcely zatiaľ neexistuje (Portál výstavby ÚÚPV — register stavieb len po prihlásení); konania v okolí sledujeme na úradnej tabuli obce.	There is no public register of building procedures by parcel yet (ÚÚPV construction portal — building register only after login); we track nearby procedures on the municipal notice board.
+Stavebný zákon {0}/{1} Z. z. v znení novely {2}/{3} Z. z.; náklady a lehoty štúdií — odhad z praxe.	Building Act {0}/{1} as amended by {2}/{3}; study costs and timelines — practice estimate.
+Hydromeliorácie š.p. / VÚVH (cez SVP)	Hydromeliorácie (state enterprise) / VÚVH (via SVP)
+Úradné registre:	Official registers:
+. Bez prieniku = v použitej vrstve a dostupnom pokrytí sa nič nenašlo.	. No overlap = nothing found in the layer used and its available coverage.
+Digitálny model reliéfu DMR {0} (ÚGKK SR, CC BY {1}); poloha slnka (výpočet NOAA) s horizontom z terénu.	Digital terrain model DMR {0} (ÚGKK SR, CC BY {1}); sun position (NOAA algorithm) with the terrain horizon.
+Validácia voči normálom SHMÚ {0}–{1} (Dolný Hričov {2} m, Liesek {3} m): ročný priemer −{4} až {5} °C, január chladnejší o {6}–{7} °C, júl teplejší o {8}–{9} °C, zrážky vyššie o {10}–{11} %	Validated against SHMÚ normals {0}–{1} (Dolný Hričov {2} m, Liesek {3} m): annual mean −{4} to {5} °C, January colder by {6}–{7} °C, July warmer by {8}–{9} °C, precipitation higher by {10}–{11} %
+s_k = a + A/b [kN/m²], A = nadm. výška [m] (do {0} m)	s_k = a + A/b [kN/m²], A = elevation [m] (up to {0} m)
+overené ({0} nezávislé verejné zdroje)	verified ({0} independent public sources)
+neoverené – zóna z digitalizácie mapy treťou stranou (Dlubal), overiť v mape NA{0}	unverified – zone from a third-party map digitisation (Dlubal), check on the NA{0} map
+do {0} m podľa mapy: oblasť {1} = {2} m/s, oblasť {3} = {4} m/s; {5}–{6} m = {7} m/s; nad {8} m = {9} m/s	up to {0} m per map: area {1} = {2} m/s, area {3} = {4} m/s; {5}–{6} m = {7} m/s; above {8} m = {9} m/s
+overené (designforms + Dlubal)	verified (designforms + Dlubal)
+neoverené – oblasť {0}/{1} z digitalizácie mapy (Dlubal); výška z DMR {2}	unverified – area {0}/{1} from map digitisation (Dlubal); elevation from DMR {2}
+legenda mapy NA: nad {0} m v orograficky členitom teréne sú potrebné špeciálne hodnotenia	NA map legend: above {0} m in rugged terrain special assessments are required
+STN EN {0}-{1}/NA (mapa zo Z{2}:{3}-{4})	STN EN {0}-{1}/NA (map from Z{2}:{3}-{4})
+overené (úrovne a_gR)	verified (a_gR levels)
+neoverené – zaradenie z digitalizácie mapy (Dlubal); tabuľka obcí v NA nevidená	unverified – classification from map digitisation (Dlubal); NA municipality table not seen
+Ref obec	Ref. municipality
+overené pre referenčnú obec okresu	verified for the district's reference municipality
+slovenské pravidlo výškovej korekcie θe sa vo verejných zdrojoch nenašlo — pre parcely výrazne nad ref. výškou overiť u projektanta	no Slovak altitude correction rule for θe found in public sources — for parcels well above the reference elevation check with the designer
+{0}–{1} (+ štrkové lôžko {2})	{0}–{1} (+ gravel bed {2})
+overené (sekundárny zdroj STU {0})	verified (secondary source STU {0})
+závislosť hĺbky premŕzania od nadmorskej výšky sa vo verejných SK zdrojoch nenašla	no dependence of frost depth on elevation found in public Slovak sources
+vyhláška MH SR {0}/{1} Z. z. § {2}	Decree of the Ministry of Economy {0}/{1} § {2}
+overené (slov-lex.sk)	verified (slov-lex.sk)
+; normy STN EN (národné prílohy).	; STN EN standards (national annexes).
+Existenciu a polohu sietí potvrdí správca vo „vyjadrení k existencii sietí" (elektrina, plyn, voda, telekomunikácie); cenu prípojok určí projekt a cenník správcu.	The existence and position of utilities is confirmed by each operator's “statement on existing networks” (electricity, gas, water, telecoms); connection costs follow from the design and the operator's price list.
+OpenStreetMap (© prispievatelia OSM), údaje o obci (vodovody, kanalizácie, plyn); presné trasy sietí potvrdí len vyjadrenie správcu.	OpenStreetMap (© OSM contributors), municipal data (water mains, sewers, gas); exact routes are confirmed only by the operator's statement.
+OpenStreetMap; časy jazdy odhadom po cestnej sieti.	OpenStreetMap; drive times estimated on the road network.
+Porovnateľné predaje zo zmlúv (	Comparable sales from contracts (
+Vývoj cien zo zmlúv v okrese (	Contract price trend in the district (
+Ceny zo zmlúv zapísaných v katastri (SPI, od {0}); automatický odhad z ponúk a predajov v okrese; ponuky z verejnej inzercie. Orientačné — nie znalecký posudok.	Prices from contracts registered in the cadastre (SPI, since {0}); automated estimate from district listings and sales; listings from public advertising. Indicative — not an expert valuation.
+Trend cien zo zmlúv v katastri (okres), mzdy v okrese (ŠÚ SR), index cien bývania a inflácia (ECB/Eurostat)	Contract price trend in the cadastre (district), district wages (ŠÚ SR), house price index and inflation (ECB/Eurostat)
+. Modelový výpočet, nie prísľub ceny.	. Model calculation, not a price promise.
+Verejná inzercia (denný zber), satelitné snímky Copernicus (nová zástavba), Centrálny register zmlúv.	Public listings (daily collection), Copernicus satellite images (new construction), Central Register of Contracts.
+Kúpna cena (€)	Purchase price (€)
+Úver z ceny	Loan share of price
+bez úveru	no loan
+Splatnosť (roky)	Term (years)
+rok	year
+Vek žiadateľa	Applicant's age
+Dospelí / deti	Adults / children
+Nájom mesačne (€)	Monthly rent (€)
+Výpočty sa prepočítajú hneď. Do PDF idú zadané hodnoty.	Calculations update instantly. The PDF uses the values entered.
+Jednorazové náklady kúpy ~	One-off purchase costs ~
+Návrh na vklad do katastra	Application for registration in the cadastre
+elektronicky (listinne {0} €; do {1} dní {2} €)	electronic (paper €{0}; within {1} days €{2})
+Overenie podpisov predávajúcich	Certification of sellers' signatures
+{0} € za podpis na matrike (u notára {1} €)	€{0} per signature at the registry office (€{1} at a notary)
+Notárska úschova kúpnej ceny	Notarial escrow of the purchase price
+odmena notára podľa sadzobníka + DPH (advokát alebo banka podľa dohody)	notary's fee per tariff + VAT (lawyer or bank by agreement)
+Znalecký posudok pre banku	Expert valuation for the bank
+pri hypotéke ho vyžaduje banka	required by the bank for a mortgage
+Poplatok banky za úver a vklad záložného práva	Bank loan fee and mortgage registration
+mnohé banky poplatok za poskytnutie neúčtujú	many banks charge no arrangement fee
+Provízia realitnej kancelárie (ak ju platí kupujúci)	Estate agency commission (if paid by the buyer)
+Ročné náklady vlastníctva ~	Annual ownership costs ~
+sadzby ECB/NBS ({0}-{1}); verejné sadzby {2} bánk ({3}. {4}. {5}); Opatrenie NBS č. {6}/{7} v znení noviel (LTV {8} %, DTI {9} a pokles od {10} r., DSTI {11} % so stresom +{12} b. max. {13} %); opatrenie NBS {14}/{15} — LTV od {16}. {17}. {18}; Životné minimum od {19}. {20}. {21}: {22} / {23} / {24} €; Zákon {25}/{26} Z. z. — vklad {27} € elektronicky / {28} € listinne; Vyhláška {29}/{30} Z. z. (odmena notára za úschovu) — pravdepodobné; Zákon {31}/{32} Z. z. — sadzby {33}/{34}/{35}/{36} %, oslobodenie predaja po {37} rokoch, prenájom {38} €; Zákon {39}/{40} Z. z. § {41} — DPH {42} %, oslobodenie stavby po {43} rokoch od kolaudácie; § {44}a zákona {45}/{46} — bonus {47} % úrokov, max. {48} € ročne, {49} rokov, {50}–{51} rokov; Zákon {52}/{53} Z. z. o ŠFRB — podmienky úveru; Zákon {54}/{55} Z. z. prílohy č. {56} a {57} — hodnota pôdy podľa k.ú. a podľa veľkosti obce; Náklady stavby, poistné, údržba, prípojky, znalec, geodet — trhové odhady {58} (bez autoritatívneho cenníka); parametre k {59}. {60}. {61}	ECB/NBS rates ({0}-{1}); published rates of {2} banks ({3}. {4}. {5}); NBS Decree No. {6}/{7} as amended (LTV {8} %, DTI {9} decreasing from age {10}, DSTI {11} % with stress +{12} pp, max. {13} %); NBS decree {14}/{15} — LTV from {16}. {17}. {18}; subsistence minimum from {19}. {20}. {21}: €{22} / €{23} / €{24}; Act {25}/{26} — registration €{27} electronic / €{28} paper; Decree {29}/{30} (notary escrow fee) — probable; Act {31}/{32} — rates {33}/{34}/{35}/{36} %, sale exempt after {37} years, rental €{38}; Act {39}/{40} § {41} — VAT {42} %, building exempt {43} years after occupancy approval; § {44}a of Act {45}/{46} — bonus {47} % of interest, max. €{48} a year, {49} years, ages {50}–{51}; Act {52}/{53} on ŠFRB — loan conditions; Act {54}/{55} annexes {56} and {57} — land value by cadastral area and municipality size; construction, insurance, maintenance, connections, valuer, surveyor — market estimates {58} (no authoritative price list); parameters as of {59}. {60}. {61}
+bežne bežne {0}–{1} % z ceny + DPH, často ju platí predávajúci, často ju platí predávajúci	usually {0}–{1} % of the price + VAT, often paid by the seller
+bežne {0}–{1} % z ceny + DPH, často ju platí predávajúci	usually {0}–{1} % of the price + VAT, often paid by the seller
+mesačne)	a month)
+Daň z nehnuteľností	Property tax
+spravidla bez DPH	usually without VAT
+Predaj pozemku fyzickou osobou je bez DPH. Ak predáva platiteľ DPH stavebný pozemok, pripočíta sa {0} % DPH.	A sale of land by a private individual is VAT-free. If a VAT payer sells building land, {0} % VAT is added.
+neplatí sa	not payable
+Náklady pred stavbou ~	Pre-construction costs ~
+Prípojka elektriny (poplatok distribučke + kábel)	Electricity connection (distributor fee + cable)
+Prípojka vody	Water connection
+Kanalizácia (prípojka alebo ČOV/žumpa)	Sewage (connection or treatment plant / cesspit)
+ak je v ulici verejná kanalizácia	if there is a public sewer in the street
+Prípojka plynu (ak je plyn v ulici)	Gas connection (if gas is in the street)
+voliteľné	optional
+Projekt, inžinierska činnosť, geodet, povolenie	Design, permitting services, surveyor, permit
+orientačne pre rodinný dom	indicative for a family house
+Zákon {0}/{1} (vklad), zákon {2}/{3} a VZN obce (daň z nehnuteľností, odpad), zákon {4}/{5} (daň z príjmov), zákon {6}/{7} (DPH); cenníky služieb a správcov sietí — orientačne.	Act {0}/{1} (registration), Act {2}/{3} and municipal ordinance (property tax, waste), Act {4}/{5} (income tax), Act {6}/{7} (VAT); service and utility price lists — indicative.
+pozemok bez stavby — poistenie zodpovednosti vlastníka	land without a building — owner's liability insurance
+stavba; prirážka za riziká lokality ×{0}	building; location risk surcharge ×{0}
+zosuv poistky často kryjú len obmedzene; pri stavbe inžinierskogeologický prieskum	policies often cover landslides only partly; for construction an engineering-geological survey
+otvorený zdroj s modelom pre parcelu zatiaľ nemáme	no open source with a parcel-level model yet
+Riziká z úradných registrov v tomto liste (záplavy, zosuvy, radón, seizmicita STN EN {0}, kriminalita MV SR, hasiči OSM); náklady obnovy stavby a sadzby poistného — modelový odhad.	Risks from the official registers in this sheet (floods, landslides, radon, seismicity STN EN {0}, crime MV SR, fire stations OSM); rebuild cost and premium rates — model estimate.
+nájom pre tento typ nemáme	no rent data for this type
+. Pri pozemku sa výnos počíta z rozvoja (nižšie) — alebo zadajte nájom vyššie.	. For land the yield is calculated from development (below) — or enter a rent above.
+Fyzická osoba	Private individual
+Daň z nájmu	Tax on rent
+{0} % (pri vysokých príjmoch až {1} %) zo zisku nad {2} € ročne; len preukázateľné výdavky	{0} % (up to {1} % for high incomes) on profit above €{2} a year; only documented expenses
+{0} % (príjmy do {1} €), {2} %, {3} % (nad {4} mil. €); výplata zisku: daň z dividend {5} % + zdravotné {6} %	{0} % (income up to €{1}), {2} %, {3} % (over €{4} m); profit distribution: dividend tax {5} % + health levy {6} %
+Odpisy stavby	Building depreciation
+nie (ak nehnuteľnosť nie je v podnikaní)	no (unless the property is used in business)
+áno — budova na bývanie {0} rokov ({1}. skupina), iné budovy {2} alebo {3} rokov	yes — residential building {0} years (group {1}), other buildings {2} or {3} years
+spravidla oslobodený od dane	usually tax-exempt
+zisk sa zdaňuje ({0} % (príjmy do {1} €), {2} %, {3} % (nad {4} mil. €))	profit is taxed ({0} % (income up to €{1}), {2} %, {3} % (over €{4} m))
+platiteľ DPH: predaj novostavby do {0} rokov s DPH; prenájom bytov spravidla oslobodený	VAT payer: sale of a new building within {0} years with VAT; residential rent usually exempt
+Náklady správy	Administration costs
+účtovníctvo, závierka, daňové priznanie	bookkeeping, annual accounts, tax return
+Nájmy a ponuky z verejnej inzercie (denný zber), náklady z tohto listu, regulatív ÚP a náklady výstavby; dane zjednodušene. Nie investičné poradenstvo.	Rents and listings from public advertising (daily collection), costs from this sheet, zoning regulations and construction costs; taxes simplified. Not investment advice.
+cieľová cena	target price
+Verdikt je modelové odporúčanie z údajov listu pre kupujúceho, nie investičné poradenstvo. „Najviac" = cena, nad ktorú sa kúpa podľa porovnateľných predajov a najlepšieho využitia neoplatí.	The verdict is a model recommendation for the buyer based on this sheet's data, not investment advice. “At most” = the price above which buying does not pay off according to comparable sales and the best use.
+Čas (mes.)	Time (months)
+Predať / kúpiť v súčasnom stave	Sell / buy as is
+hodnota z porovnateľných predajov	value from comparable sales
+Výpočty z údajov listu (porovnateľné predaje, regulatív ÚP, náklady a ceny — parametre upraviteľné); Monte Carlo {0} simulácií. Modelový výpočet, nie investičné poradenstvo.	Calculations from this sheet's data (comparable sales, zoning regulations, costs and prices — parameters editable); Monte Carlo {0} simulations. Model calculation, not investment advice.
+Žilinský kraj	Žilina region
+{0} €/rok	€{0}/year
+Do {0}	Before {0}
+Od {0}	From {0}
+ŠÚ SR STATdat SODB {0} om{1}rr, om{2}rr, om{3}rr, om{4}rr, om{5}rr	ŠÚ SR STATdat census {0} om{1}rr, om{2}rr, om{3}rr, om{4}rr, om{5}rr
+ŠÚ SR pr{0}rr, pr{1}rr, np{2}rr; ÚPSVR mesačná štatistika {3}/{4} Tab{5}	ŠÚ SR pr{0}rr, pr{1}rr, np{2}rr; ÚPSVR monthly statistics {3}/{4} Tab{5}
+Byt vystavba	Housing construction
+ŠÚ SR st{0}rr (okres)	ŠÚ SR st{0}rr (district)
+MF SR open data – dlh a dlhová služba obcí k {0}.{1}	MF SR open data – municipal debt and debt service as of {0}.{1}
+Voda	Water
+PRVV ŽSK {0} (enviroportal.sk {1}/{2}); ÚRSO cenové rozhodnutia	PRVV ŽSK {0} (enviroportal.sk {1}/{2}); ÚRSO price decisions
+ÚRSO povolenie {0}E {1} (SSD)	ÚRSO licence {0}E {1} (SSD)
+MV SR mapa kriminality okresov {0}Q/{1} (rozpätie), XML {2}/{3} (kraj)	MV SR district crime map {0}Q/{1} (range), XML {2}/{3} (region)
+ŠÚ SR STATdat (+SODB {0}), ÚPSVR {1}/{2}, MF SR {3}, ÚRSO, PRVV ŽSK {4}, MV SR {5}	ŠÚ SR STATdat (+census {0}), ÚPSVR {1}/{2}, MF SR {3}, ÚRSO, PRVV ŽSK {4}, MV SR {5}
+Kroky od rozhodnutia po zápis do katastra, upravené podľa toho, kto predáva a či kupujete s hypotékou. Lehoty sú bežné, nie garantované.	Steps from decision to registration in the cadastre, adjusted to who is selling and whether you buy with a mortgage. Timeframes are typical, not guaranteed.
+aktuálny výpis z LV a kópia mapy, obhliadka, vyjadrenia (ÚPI obce, siete); maklér overí totožnosť strán (zákon {0}/{1} — realitný sprostredkovateľ je povinná osoba)	current title deed extract and map copy, viewing, statements (municipal ÚPI, utilities); the agent verifies the parties' identity (Act {0}/{1} — estate agents are obliged entities)
+{0}–{1} týždne	{0}–{1} weeks
+rezervačná alebo zmluva o budúcej zmluve, kúpna zmluva, úschova kúpnej ceny (notár / advokát / banka)	reservation agreement or preliminary contract, purchase contract, escrow of the purchase price (notary / lawyer / bank)
+návrh na vklad ({0} € elektronicky); kataster rozhodne do {1} dní, v zrýchlenom konaní do {2} dní	application for registration (€{0} electronic); the cadastre decides within {1} days, {2} days in the expedited procedure
+{0}–{1} dní	{0}–{1} days
+od {0}. {1}. {2} platí nový Občiansky zákonník (zákon {3}/{4}): predkupné právo s účinkami voči tretím osobám až zápisom do katastra, lehota {5} mesiace pri nehnuteľnosti; zmluvy uzavreté skôr sa riadia doterajším zákonom — pri zmluve o budúcej zmluve to zohľadniť	from {0}. {1}. {2} the new Civil Code (Act {3}/{4}) applies: a pre-emption right binds third parties only once registered in the cadastre, {5}-month period for real estate; contracts concluded earlier follow the previous law — take this into account in a preliminary contract
+uvoľnenie peňazí z úschovy, priznanie k dani z nehnuteľností do {0}. januára nasledujúceho roka, prepis energií, poistenie	release of escrow funds, property tax return by {0} January of the following year, transfer of utilities, insurance
+do {0} dní / {1}. {2}.	within {0} days / {1}. {2}.
+Katastrálny zákon {0}/{1} (lehota na vklad), zákon o majetku obcí {2}/{3}, zákon {4}/{5} (priznanie k dani); bežná prax.	Cadastral Act {0}/{1} (registration deadline), Municipal Property Act {2}/{3}, Act {4}/{5} (tax return); common practice.
+Zostavené automaticky zo zistení v tomto liste — nie je to právne poradenstvo.	Compiled automatically from the findings in this sheet — not legal advice.
+SSC — celoštátne sčítanie dopravy {0}–{1} · {2}. {3}. {4}	SSC — national traffic census {0}–{1} · {2}. {3}. {4}
+Zámery EIA/SEA v obci	EIA/SEA projects in the municipality
+STN EN {0}-{1}-{2}/NA{3}, {4}-{5}-{6}/NA, {7}-{8}/NA (zóny: Dlubal KML, neoverené), STN {9}{10}-{11}, STN {12}{13} · {14}. {15}. {16}	STN EN {0}-{1}-{2}/NA{3}, {4}-{5}-{6}/NA, {7}-{8}/NA (zones: Dlubal KML, unverified), STN {9}{10}-{11}, STN {12}{13} · {14}. {15}. {16}
+Obec a ľudia	Municipality and people
+ŠÚ SR STATdat (+SODB {0}), ÚPSVR {1}/{2}, MF SR {3}, ÚRSO, PRVV ŽSK {4}, MV SR {5} · {6}. {7}. {8}	ŠÚ SR STATdat (+census {0}), ÚPSVR {1}/{2}, MF SR {3}, ÚRSO, PRVV ŽSK {4}, MV SR {5} · {6}. {7}. {8}
+Zastávky, zberné dvory (OSM)	Stops, collection yards (OSM)
+Dátum leteckého snímkovania (ÚGKK)	Aerial survey date (ÚGKK)
+Dane a poplatky obce (VZN)	Municipal taxes and fees (VZN)
+List je orientačný podklad z verejných a katastrálnych dát — nie znalecký posudok, právny ani geodetický záver. Údaje „odvodené" sú výpočty appky; „nevieme" znamená, že zdroj chýba, nie že je všetko v poriadku.	This sheet is an indicative document from public and cadastral data — not an expert valuation, legal or survey opinion. “Derived” values are the app's calculations; “unknown” means the source is missing, not that everything is fine.
+náš záznam je k {0}-{1}-{2}	our record is as of {0}-{1}-{2}
+zákonný postup prevodu	statutory transfer procedure
+pre založenie stavby	for foundation design
+N/A (bez mimoriadneho snehu)	N/A (no exceptional snow)
+verejná kanalizácia SEVAK ({0} z {1} obyv.)	public sewer SEVAK ({0} of {1} residents)
+OR PZ Žilina (okresy Žilina + Bytča)	District Police Žilina (districts Žilina + Bytča)
+Rok nadobudnutia nepoznáme — over na výpise z LV (časť B, tituly).	Year of acquisition unknown — check the title deed extract (part B, titles).
+mimo známych záplavových území	outside known flood areas
+Rozpätie výsledku developera (rodinný dom, {0} simulácií)	Developer outcome range (family house, {0} simulations)
+P{0} -{1} € · P{2} {3} € · P{4} {5} € · strata v {6} % prípadov	P{0} -€{1} · P{2} €{3} · P{4} €{5} · loss in {6} % of cases
+P{0} {1} € · P{2} {3} € · P{4} {5} € · strata v {6} % prípadov	P{0} €{1} · P{2} €{3} · P{4} €{5} · loss in {6} % of cases
+overené	verified
+SEVAK — tvrdosť pitnej vody ({0}/{1}) · {2}. {3}. {4}	SEVAK — drinking water hardness ({0}/{1}) · {2}. {3}. {4}
+VZN obce (web obce) · {0}. {1}. {2}	Municipal ordinance (municipal website) · {0}. {1}. {2}
+prístup nie je spočítaný	access not calculated
+Časť B/C nemáme pre všetky LV — stav neznámy.	Parts B/C are missing for some title deeds — status unknown.
+, snímkované {0}. {1}. {2}	, captured {0}. {1}. {2}
+Iný dôvod ukončenia posudzovania	Assessment ended for another reason
+OR PZ Čadca (okresy Čadca + Kysucké Nové Mesto)	District Police Čadca (districts Čadca + Kysucké Nové Mesto)
+bez právneho prístupu z verejnej cesty	no legal access from a public road
+Okolie pred ~{0} rokmi — III. vojenské mapovanie ({1}–{2}), © ÚGKK SR, CC BY {3}. Krúžok = stred parcely.	Surroundings ~{0} years ago — 3rd Military Survey ({1}–{2}), © ÚGKK SR, CC BY {3}. Circle = parcel centre.
+mimo zastavaného územia obce	outside the municipality's built-up area
+Regulatív (odvodený, nie z ÚP)	Regulation (derived, not from the zoning plan)
+Radónový prieskum pozemku	Radon survey of the land
+radónové riziko: stredné riziko – odporúča sa protiradónová izolácia	radon risk: medium – radon-proof membrane recommended
+Archeologický výskum (rozhodne krajský pamiatkový úrad)	Archaeological survey (decided by the regional monuments office)
+pamiatka alebo historické jadro v okolí	monument or historic core nearby
+od stoviek po desaťtisíce € (platí stavebník)	from hundreds to tens of thousands € (paid by the developer)
+Vyňatie z poľnohospodárskeho pôdneho fondu	Removal from agricultural land fund
+poľnohospodárska pôda	agricultural land
+odvod podľa BPEJ + poplatky	levy by BPEJ + fees
+Zosuv / svahová deformácia	Landslide / slope deformation
+Environmentálna záťaž	Contaminated site
+Skládka odpadu	Waste landfill
+Staré banské dielo	Old mine working
+Les / ochranné pásmo ({0} m)	Forest / protection zone ({0} m)
+Vodný tok / ochranné pásmo ({0} m)	Watercourse / protection zone ({0} m)
+Register environmentálnych záťaží ({0} m)	Register of contaminated sites ({0} m)
+Chránené územie / Natura {0}	Protected area / Natura {0}
+Ochranné pásmo cesty (mimo zastavaného územia)	Road protection zone (outside built-up area)
+Geológia a podložie	Geology and subsoil
+Geologická mapa SR {0}:{1} – horninový podklad	Geological map of Slovakia {0}:{1} – bedrock
+Kvartérny pokryv – typ sedimentov ({0}:{1})	Quaternary cover – sediment type ({0}:{1})
+Hrúbka kvartérneho pokryvu ({0}:{1})	Quaternary cover thickness ({0}:{1})
+Inžinierskogeologická rajonizácia {0}:{1}	Engineering-geological zoning {0}:{1}
+Radónové riziko z podložia (prognózna mapa)	Radon risk from subsoil (forecast map)
+stredné riziko – odporúča sa protiradónová izolácia	medium risk – radon-proof membrane recommended
+Prírodná rádioaktivita hornín (letecká gama spektrometria)	Natural rock radioactivity (airborne gamma spectrometry)
+Chránené ložiskové územie (CHLÚ) – do {0} km	Protected deposit area (CHLÚ) – within {0} km
+Dobývací priestor (DP) – do {0} km	Mining area (DP) – within {0} km
+Ložisko nevyhradeného nerastu – do {0} km	Non-reserved mineral deposit – within {0} km
+Náchylnosť územia na svahové pohyby ({0}:{1})	Landslide susceptibility ({0}:{1})
+Kontaminácia pôd (mapa {0}:{1})	Soil contamination (map {0}:{1})
+Zdroje minerálnych vôd – do {0} km	Mineral water sources – within {0} km
+Vrty a podzemná voda	Boreholes and groundwater
+Hydrogeologická mapa {0}:{1} – zvodnenec a produktivita	Hydrogeological map {0}:{1} – aquifer and yield
+Základná hydrogeologická mapa {0}:{1} – vrchný kolektor	Basic hydrogeological map {0}:{1} – upper aquifer
+Hĺbka hladiny podzemnej vody pod terénom (GIB-GES grid)	Groundwater depth below surface (GIB-GES grid)
+regionálny odhad z vrtov — lokálne overiť vrtom	regional estimate from boreholes — verify locally with a borehole
+Kvalita podzemných vôd (hydrogeochemická mapa {0}:{1})	Groundwater quality (hydrogeochemical map {0}:{1})
+Register hydrogeologických vrtov (Geofond) – okolie {0} m	Register of hydrogeological boreholes (Geofond) – within {0} m
+Register ostatných vrtov (IG prieskum) – hladina vody, hĺbka – okolie {0} m	Register of other boreholes (geotechnical) – water level, depth – within {0} m
+Voda a povodne	Water and floods
+Ochranná hrádza – do {0} m	Flood dike – within {0} m
+Chránená vodohospodárska oblasť (CHVO)	Protected water management area (CHVO)
+VÚVH (cez SVP)	VÚVH (via SVP)
+Ochranné pásmo vodárenského zdroja (OPVZ / PHO)	Water source protection zone (OPVZ / PHO)
+VÚVH (cez NPPC-VÚPOP)	VÚVH (via NPPC-VÚPOP)
+Zraniteľná oblasť (nitrátová smernica)	Vulnerable zone (Nitrates Directive)
+Hydromelioračný závlahový kanál – do {0} m	Irrigation canal – within {0} m
+registrov práve neodpovedalo — stav pri nich je neznámy.	registers did not respond just now — their status is unknown.
+ŠGÚDŠ, NLC, SVP, SAŽP, ŠOP SR, SSC, ŠGÚDŠ (Atlas krajiny SR), ŠGÚDŠ Geofond, ŠGÚDŠ (Register ložísk), ŠGÚDŠ (Geochemický atlas SR, časť V), ŠGÚDŠ (Atlas krajiny), SVP š.p. (INSPIRE), SVP š.p., VÚVH (cez SVP), VÚVH (cez NPPC-VÚPOP), NPPC-VÚPOP, Hydromeliorácie š.p. / VÚVH (cez SVP), ŠOP SR (kópia na SVP, popis „Chránené územia {0}“), ŠOP SR – Mapa ekosystémov a ekosystémových služieb {1}, NLC Zvolen, NPPC-VÚPOP (pre PPA), SAŽP / MŽP SR (IS PZPH), SAŽP / SIŽP, EEA (ML model kvality ovzdušia, AQModelViewer), EC JRC – PVGIS {2}, ÚGKK SR / GKÚ Bratislava – INSPIRE Elevation (DSM), Letové prevádzkové služby SR, š.p. (LPS SR) – gis.lps.sk, Úrad pre reguláciu elektronických komunikácií a poštových služieb (RÚ) – BCO portál, RÚ – BCO portál	ŠGÚDŠ, NLC, SVP, SAŽP, ŠOP SR, SSC, ŠGÚDŠ (Landscape Atlas of Slovakia), ŠGÚDŠ Geofond, ŠGÚDŠ (Register of mineral deposits), ŠGÚDŠ (Geochemical Atlas of Slovakia, part V), ŠGÚDŠ (Landscape Atlas), SVP (INSPIRE), SVP, VÚVH (via SVP), VÚVH (via NPPC-VÚPOP), NPPC-VÚPOP, Hydromeliorácie / VÚVH (via SVP), ŠOP SR (copy at SVP, layer “Protected areas {0}”), ŠOP SR – Ecosystems and ecosystem services map {1}, NLC Zvolen, NPPC-VÚPOP (for PPA), SAŽP / MŽP SR (IS PZPH), SAŽP / SIŽP, EEA (ML air-quality model, AQModelViewer), EC JRC – PVGIS {2}, ÚGKK SR / GKÚ Bratislava – INSPIRE Elevation (DSM), Air Navigation Services of Slovakia (LPS SR) – gis.lps.sk, Regulatory Authority for Electronic Communications and Postal Services (RÚ) – BCO portal, RÚ – BCO portal
+os pozemku, smer	plot axis, bearing
+° od vyššieho konca · prevýšenie	° from the higher end · height difference
+Rez terénom pozdĺž dlhšej osi pozemku z DMR {0} (ÚGKK SR); výškové meradlo je zväčšené.	Terrain section along the plot's longer axis from DMR {0} (ÚGKK SR); vertical scale exaggerated.
+sivá = terén (horizont)	grey = terrain (horizon)
+, prerušovaná = budovy a stromy	, dashed = buildings and trees
+, čiary = dráha slnka	, lines = sun path
+máj	May
+jún	Jun
+júl	Jul
+Hodiny priameho slnka v strede pozemku {0}. dňa každého mesiaca (sýta žltá)	Hours of direct sun at the plot centre on day {0} of each month (deep yellow)
+— s tieňom terénu aj okolitých budov a stromov (svetlá žltá = len terén)	— with shading by terrain and surrounding buildings and trees (light yellow = terrain only)
+; sivá = dĺžka dňa.	; grey = day length.
+voľná plocha	open area
+{0} dni/rok	{0} days/year
+{0} dni	{0} days
+{0} m od krajného vodiča	{0} m from the outermost conductor
+{0} m od osi krajnej koľaje (min. {1} m od obvodu dráhy)	{0} m from the outer track axis (min. {1} m from the railway boundary)
+{0} m — stavba len so záväzným stanoviskom lesného orgánu	{0} m — building only with a binding opinion of the forestry authority
+{0} m pri významnom toku, {1} m pri drobnom	{0} m for a major watercourse, {1} m for a minor one
+{0} m od osi (DN ≤ {1}), {2} m (DN > {3}) — mimo zastavaného územia	{0} m from the axis (DN ≤ {1}), {2} m (DN > {3}) — outside built-up area
+športovisko	sports ground
+zastávka autobusu	bus stop
+základná škola	primary school
+materská škola	kindergarten
+lekáreň	pharmacy
+lekár	doctor
+pošta	post office
+železničná stanica	railway station
+Hodnotenie škôl v okolí:	Rating of nearby schools:
+INEKO (ZŠ do {0} km)	INEKO (primary schools within {0} km)
+strategické hlukové mapy	strategic noise maps
+(len obrázky, preto len odkaz)	(images only, hence just a link)
+€/m², rozpätie	€/m², range
+predajov prepočítaných na dnešné ceny (trend	sales adjusted to today's prices (trend
+% ročne), na rozdiel vo výmere a vážených blízkosťou	% a year), for size difference and weighted by proximity
+Čísla = poradie v tabuľke porovnateľných predajov (poloha podľa prvej parcely v zmluve). Letecký snímok © ÚGKK SR.	Numbers = order in the comparable sales table (position of the first parcel in the contract). Aerial image © ÚGKK SR.
+{0} % ročne	{0} % a year
+výnos k {0}-{1}; bez rizika nehnuteľnosti, bez nájmu	yield as of {0}-{1}; without property risk, without rent
+sadzby +{0} bod = o {1} % menší úver pri rovnakej splátke (tlak na ceny)	rates +{0} pp = {1} % smaller loan for the same payment (pressure on prices)
+Predikcia nie je prísľub budúcej ceny.	The forecast is not a promise of a future price.
+banka požičia najviac {0} % z hodnoty (limit NBS)	the bank lends at most {0} % of the value (NBS limit)
+{0} rokov / {1} rokov	{0} years / {1} years
+platí nové opatrenie NBS: úver najviac	a new NBS rule applies: loan at most
+% len mladí do {0} rokov pri prvom bývaní,	% only for under-{0}s buying their first home,
+% pri tretej a ďalšej nehnuteľnosti). Ak úver čerpáte v roku {0}, počítajte s vyšším podielom vlastných zdrojov.	% for a third or further property). If you draw the loan in {0}, plan for a larger down payment.
+Typ úveru:	Loan type:
+na pozemok banky požičiavajú spravidla len na stavebný pozemok (ÚP na bývanie, v zastavanom území) — často spolu so stavebným úverom na dom, ktorý sa čerpá po etapách podľa postupu stavby	for land, banks usually lend only on building land (zoned residential, within the built-up area) — often together with a construction loan for the house, drawn in stages as building progresses
+Vlastné zdroje spolu	Own funds in total
+pri {0} dosp. a {1} deťoch; rozhoduje splátka voči príjmu	for {0} adults and {1} children; the payment-to-income ratio decides
+splátka musí byť najviac {0} % z príjmu po odpočítaní životného minima ({1} €)	the payment must be at most {0} % of income after subtracting the subsistence minimum (€{1})
+limit {0}-násobok ročného čistého príjmu	limit {0}× annual net income
+Daňový bonus na zaplatené úroky (mladí)	Tax bonus on interest paid (young buyers)
+Úver zo Štátneho fondu rozvoja bývania	State Housing Development Fund loan
+Štátny fond rozvoja bývania požičiava na kúpu bytu alebo domu až {0} % ceny (najviac {1} €) na {2} rokov s nízkym úrokom — pre mladých do {3} rokov a rodiny; byt do {4} m²  rodinný dom do {5} m²; žiadosti v termínoch výzvy fondu.	The State Housing Development Fund lends up to {0} % of the price (max. €{1}) for a flat or house over {2} years at low interest — for under-{3}s and families; flat up to {4} m², family house up to {5} m²; applications within the Fund's call periods.
+Priemer nových úverov v SR — spolu	Average new loans in Slovakia — total
+Priemer nových úverov v SR — pohyblivá a fixácia do {0} roka	Average new loans in Slovakia — floating and fixed up to {0} year
+Priemer nových úverov v SR — fixácia {0}–{1} rokov	Average new loans in Slovakia — fixed {0}–{1} years
+Priemer nových úverov v SR — fixácia nad {0} rokov	Average new loans in Slovakia — fixed over {0} years
+Sadzby bánk sú prehľad verejne uvedených sadzieb z webov bánk	Bank rates are an overview of rates published on bank websites
+(spravidla „od“ pri splnení podmienok banky); priemery sú štatistika ECB/NBS. Nejde o odporúčanie konkrétneho produktu — ponuku na mieru dá banka alebo finančný agent.	(usually “from” when the bank's conditions are met); averages are ECB/NBS statistics. Not a recommendation of a specific product — a tailored offer comes from a bank or a financial agent.
+Odvod za vyňatie z pôdneho fondu	Farmland removal levy
+BPEJ neznáme	BPEJ unknown
+seizmické zrýchlenie podložia {0} m/s² (STN EN {1})	seismic ground acceleration {0} m/s² (STN EN {1})
+nepoisťuje sa — rieši sa izoláciou a vetraním	not insurable — handled by a membrane and ventilation
+Základ	Base
+Nájom −{0} %	Rent −{0} %
+Nájom +{0} %	Rent +{0} %
+povolený stavebný pozemok býva o ~{0}–{1} % drahší (odhad); náklady projekt + štúdie ~{2} €	a permitted building plot is typically ~{0}–{1} % more valuable (estimate); design + studies cost ~€{2}
+Postaviť {0} rodinný dom ({1} m²)	Build {0} family house ({1} m²)
+predaj {0} €/m², stavba {1} €/m²	sale €{0}/m², construction €{1}/m²
+Ponechať ako poľnohospodársku pôdu	Keep as agricultural land
+nájom prechádza na kupujúceho; nájom na neurčito sa vypovedá k {0}. novembru s ročnou lehotou, nájom na podnikanie trvá {1}–{2} rokov ({3}/{4}); predkupné právo nájomcu sa dohodnúť nedá	the lease passes to the buyer; an open-ended lease is terminated as of {0} November with one year's notice, a farming lease runs {1}–{2} years ({3}/{4}); a tenant's pre-emption right cannot be agreed
+do {0}. {1}. nasl. roka	by {0}. {1}. of the following year
+žiadosť o úver, znalecký posudok, schválenie bankou, úverová a záložná zmluva	loan application, expert valuation, bank approval, loan and mortgage agreements
+{0}–{1} týždňov	{0}–{1} weeks
+Radónové riziko z podložia (prognózna mapa): stredné riziko – odporúča sa protiradónová izolácia	Radon risk from subsoil (forecast map): medium risk – radon-proof membrane recommended
+Siete, doprava a vybavenosť (OSM)	Utilities, transport and amenities (OSM)
+Prístup z cesty	Road access
+ÚGKK DMR {0} (CC BY {1}), Terrain Tiles mimo SR, NOAA · {2}. {3}. {4}	ÚGKK DMR {0} (CC BY {1}), Terrain Tiles outside Slovakia, NOAA · {2}. {3}. {4}
+Terén	Terrain
+bez zóny	no zone
+Zónu ÚP pre parcelu nemáme.	We have no zoning for this parcel.
+podľa výmery a polohy	by size and location
+Zónu územného plánu nemáme — potvrdí ju obec (územnoplánovacia informácia).	Zoning not available — the municipality confirms it (zoning information).
+V našom zázname nie — rozhoduje aktuálny výpis z LV pri podpise.	Not in our record — the current title deed extract at signing is decisive.
+O tomto LV nemáme záznam časti B/C.	We have no part B/C record for this title deed.
+Nie je to potvrdenie, že je bez tiarch	This does not confirm it is free of encumbrances
+— stav je neznámy, over ho na úradnom výpise.	— status unknown, check it on the official extract.
+nemáme zónu ÚP pre parcelu	no zoning for this parcel
+zónu ÚP nemáme — overiť územnoplánovacou informáciou	zoning not available — verify with zoning information
+{0} vlastníkov	{0} owners
+Bývanie – rodinné domy — ÚP z výkresu — orientačné	Housing – family houses — zoning from a drawing — indicative
+k. ú. Žilina	cadastral area Žilina
+· okres Žilina	· district Žilina
+(najbližšia adresa)	(nearest address)
+, snímkované {0}. {1}. {2} – {3}. {4}. {5}	, captured {0}. {1}. {2} – {3}. {4}. {5}
+ochranné pásmo {0} kV podľa OSM (poloha ±{1}–{2} m)	{0} kV protection zone per OSM (position ±{1}–{2} m)
+{0}× ťarcha alebo poznámka	{0}× encumbrance or note
+Okresný úrad Žilina, katastrálny odbor	District Office Žilina, cadastral department
+Okresný úrad Žilina, pozemkový a lesný odbor (príslušnosť overiť)	District Office Žilina, land and forestry department (verify competence)
+Okresný úrad Žilina, odbor starostlivosti o životné prostredie	District Office Žilina, environmental department
+Obec Žilina	Municipality of Žilina
+vlastník	owner
+štát/SSC/kraj	state/SSC/region
+orná	arable
+Poľnohospodárska pôda (nezastavateľné) (IZP {0} · KZ {1} · IPP {2})	Agricultural land (not buildable) (plot coverage {0} · green ratio {1} · FAR {2})
+Charakteristika: Územia prevažne stabilné, resp. územia s veľmi nízkym stupňom náchylnosti ku vzniku svahových deformácií (v morfologicky priaznivých územiach s nedostatočnou preskúmanosťou sa sporadická existencia svahových deformácií ako aj lokálny vznik nov	Description: mostly stable areas, or areas with very low susceptibility to slope deformations (in morphologically favourable but poorly surveyed areas, sporadic slope deformations or local new ones cannot be ruled out)
+Rajón stabilných území	Zone of stable areas
+Geochemický atlas – As, Cd, Pb, Hg v pôde (A-horizont)	Geochemical atlas – As, Cd, Pb, Hg in soil (A horizon)
+ŠGÚDŠ (Geochemický atlas SR, časť V)	ŠGÚDŠ (Geochemical Atlas of Slovakia, part V)
+Geotermálna štruktúra – teplota a kolektor geotermálnych vôd	Geothermal structure – temperature and geothermal aquifer
+Klimatickogeografický typ (teploty jan/júl, zrážky)	Climate-geographic type (Jan/Jul temperatures, precipitation)
+Záplavové územie pri prietoku Q{0} / Q{1} / Q{2} / Q{3} / Q{4} (mapy povodňového ohrozenia)	Flood area at discharge Q{0} / Q{1} / Q{2} / Q{3} / Q{4} (flood hazard maps)
+mimo mapovaných záplavových území Q{0}–Q{1}	outside mapped flood areas Q{0}–Q{1}
+SVP š.p. (INSPIRE)	SVP (INSPIRE)
+Hydromelioračný odvodňovací kanál – do {0} m	Drainage canal – within {0} m
+Príroda a pôda	Nature and soil
+Veľkoplošné chránené územie (NP/CHKO) a zóna = stupeň ochrany	Large protected area (national park / PLA) and zone = protection level
+{0}. stupeň ochrany (mimo veľkoplošného chráneného územia)	protection level {0} (outside a large protected area)
+Maloplošné chránené územie (PR, NPR, PP, CHA) a jeho ochranné pásmo	Small protected area (nature reserve, monument, protected site) and its buffer zone
+Natura {0} – územie európskeho významu (ÚEV)	Natura {0} – Site of Community Importance (SCI)
+Natura {0} – chránené vtáčie územie (CHVÚ)	Natura {0} – Special Protection Area for birds (SPA)
+LPIS – diel pôdneho bloku a kultúra (do {0} m)	LPIS – land parcel block and crop type (within {0} m)
+NPPC-VÚPOP (pre PPA)	NPPC-VÚPOP (for PPA)
+Hranice užívania (deklarácia plodín, stav {0}.{1})	Land use boundaries (crop declaration, as of {0}.{1})
+Vodná erózia pôdy (aktuálna, kategória {0}–{1})	Water erosion of soil (actual, category {0}–{1})
+Veterná erózia pôdy (podľa BPEJ)	Wind erosion of soil (by BPEJ)
+Index degradácie pôdy dielu LPIS (erózia, zhutnenie, kontaminácia, acidifikácia)	Soil degradation index of the LPIS block (erosion, compaction, contamination, acidification)
+Lesný porast (JPRL) – kategória lesa, LHC, platnosť PSL	Forest stand (JPRL) – forest category, forest management unit, management plan validity
+Typ lesa podľa zmiešania drevín	Forest type by tree species mix
+Lesný typ, vegetačný stupeň, kategória lesa	Forest type, vegetation zone, forest category
+Poľovný revír (právo poľovníctva na pozemku)	Hunting ground (hunting rights on the land)
+Lesná cesta do {0} m	Forest road within {0} m
+Životné prostredie	Environment
+Seveso podniky (závažné priemyselné havárie) – do {0} km	Seveso sites (major industrial accidents) – within {0} km
+IPKZ prevádzky (integrované povoľovanie – priemysel, veľkochovy) – do {0} km	IPPC installations (integrated permits – industry, large livestock farms) – within {0} km
+Kvalita ovzdušia – PM{0} ročný priemer (µg/m³, model EEA {1} km)	Air quality – PM{0} annual mean (µg/m³, EEA model {1} km)
+Kvalita ovzdušia – NO{0} ročný priemer (µg/m³, model EEA {1} km)	Air quality – NO{0} annual mean (µg/m³, EEA model {1} km)
+Klíma a slnko	Climate and sun
+Fotovoltický potenciál (PVGIS) – ročná výroba FVE na {0} kWp	Photovoltaic potential (PVGIS) – annual PV output per {0} kWp
+Výšky a vzdušný priestor	Heights and airspace
+Digitálny model povrchu DMP {0} – výška povrchu (strechy, koruny stromov)	Digital surface model DMP {0} – surface height (roofs, tree crowns)
+bez stromov či budovy v strede parcely	no trees or building at the parcel centre
+Obmedzenia pre drony – vzdušné priestory pri zemi (CTR, ATZ, P/R/D, TRA, ochrana fauny)	Drone restrictions – low-level airspace (CTR, ATZ, P/R/D, TRA, wildlife protection)
+Internet a mobilný signál	Internet and mobile signal
+Širokopásmové pokrytie v štvorci {0} m (fix + mobil, RÚ geoprieskum {1})	Broadband coverage in a {0} m square (fixed + mobile, RÚ survey {1})
+Mobilné technológie v obci ({0}G/{1}G/{2}G, RÚ {3})	Mobile technologies in the municipality ({0}G/{1}G/{2}G, RÚ {3})
+max. {0}/{1} Mbit/s (deklarované operátormi, údaje RÚ)	max. {0}/{1} Mbit/s (declared by operators, RÚ data)
+v obci: {0}G, {1}G SA	in the municipality: {0}G, {1}G SA
+RÚ – BCO portál	RÚ – BCO portal
+{0} noci/rok	{0} nights/year
+{0} K·deň	{0} K·day
+Elektrické vedenie VVN {0} kV	Extra-high-voltage line {0} kV
+{0} mmol/l ({1} °dH) — mäkká	{0} mmol/l ({1} °dH) — soft
+poľná / lesná cesta	field / forest track
+{0} dní ({1} inzerátov)	{0} days ({1} listings)
+{0} príležitostí · {1} pôda na bývanie	{0} opportunities · {1} residential land
+Zemné práce pre dom {0} × {1} m	Earthworks for a {0} × {1} m house
+Sadzby diferencované podľa {0} k.ú. (kľúč = kód k.ú. z Prílohy č. {1} VZN). POZOR: kódy k.ú. v zadaní ({2} Závodie, {3} Žilinská Lehota) sa líšia od Prílohy VZN: {4} = Budatín, {5} = Závodie, {6} = Žilinská Lehota; v súbore sú použité kódy z VZN. Top-level hodnoty = k.ú. Žilina {7}. …	Rates differ by {0} cadastral areas (key = cadastral area code from Annex {1} of the ordinance). Note: some cadastral area codes differ from the ordinance annex ({2} Závodie, {3} Žilinská Lehota; ordinance: {4} = Budatín, {5} = Závodie, {6} = Žilinská Lehota); the ordinance codes are used. Base values = cadastral area Žilina {7}. …
+snehová oblasť {0} (zaťaženie {1}–{2} kN/m²) podľa STN EN {3}-{4}-{5} — vyššia oblasť = pevnejšia strecha	snow zone {0} (load {1}–{2} kN/m²) per STN EN {3}-{4}-{5} — higher zone = stronger roof
+kraj {0} zistených trestných činov na {1} obyvateľov ({2}); OR PZ Žilina (okresy Žilina + Bytča): {3}–{4}, objasnenosť {5} %	region {0} recorded crimes per {1} residents ({2}); District Police Žilina (districts Žilina + Bytča): {3}–{4}, clearance rate {5} %
+kraj {0} zistených trestných činov na {1} obyvateľov ({2}); OR PZ Čadca (okresy Čadca + Kysucké Nové Mesto): {3}–{4}, objasnenosť {5} %	region {0} recorded crimes per {1} residents ({2}); District Police Čadca (districts Čadca + Kysucké Nové Mesto): {3}–{4}, clearance rate {5} %
+ochranné pásmo elektrického vedenia {0} kV cez pozemok ({1}/{2} § {3}) — zmenšuje zastavateľnú plochu, preložka na náklady investora	{0} kV power line protection zone crosses the plot ({1}/{2} § {3}) — reduces the buildable area, relocation at the developer's cost
+Ponechať {0} rokov (land-banking)	Hold {0} years (land banking)
+cesta, prípojky, geometrický plán, povolenie delenia	road, connections, survey plan, subdivision permit
+podľa dohody	by agreement
+Adresa a spádová škola	Address and catchment school
+Vlastníci — súhrn	Owners — summary
+ÚGKK — prehľad LMS ortofotomozaiky (CC BY {0}) · {1}. {2}. {3}	ÚGKK — orthophoto LMS overview (CC BY {0}) · {1}. {2}. {3}
+List vlastníctva č. {0}	Title deed no. {0}
+Prístup z cesty zatiaľ nie je spočítaný — overiť na mape.	Road access not yet calculated — check on the map.
+Na odhad chýbajú porovnateľné predaje.	Not enough comparable sales for an estimate.
+Overiť na mape a v teréne.	Verify on the map and on site.
+V sledovaných úradných registroch bez zásahu.	No hits in the monitored official registers.
+vlastníci	owners
+NEDÁ SA POSÚDIŤ	CANNOT BE ASSESSED
+chýba odhad hodnoty aj porovnateľné predaje	no value estimate and no comparable sales
+{0} z {1} oblastí s údajmi	{0} of {1} areas with data
+parcely a výmery, vlastníci, tituly a ťarchy, ceny zo zmlúv (LV), ponuky v okolí, automatický odhad (AVM), limity z registrov, dostupnosť, zóna ÚP, terén, slnko, prístup z cesty, susedia, katastrálna mapa (VB, zastavané územie), siete a vybavenosť (OSM), pôda (BPEJ), geológia, voda a ďalšie registre	parcels and areas, owners, titles and encumbrances, contract prices (title deed), nearby listings, automated valuation (AVM), register constraints, accessibility, zoning, terrain, sun, road access, neighbours, cadastral map (easements, built-up area), utilities and amenities (OSM), soil (BPEJ), geology, water and other registers
+· okres Čadca	· district Čadca
+najbližšia cesta {0} m	nearest road {0} m
+Okresný úrad Čadca, katastrálny odbor	District Office Čadca, cadastral department
+Okresný úrad Čadca, pozemkový a lesný odbor (príslušnosť overiť)	District Office Čadca, land and forestry department (verify competence)
+Okresný úrad Čadca, odbor starostlivosti o životné prostredie	District Office Čadca, environmental department
+ÚP z výkresu — orientačné	zoning from a drawing — indicative
+Zóna je odvodená z rastrového/PDF výkresu ÚP (nie z vektorových dát). Na hraniciach plôch a pri malých parcelách over vo výkrese; záväzný je schválený ÚP a jeho záväzná časť (VZN).	The zone is derived from a raster/PDF zoning drawing (not vector data). Near zone boundaries and for small parcels check the drawing; the approved zoning plan and its binding part (ordinance) are decisive.
+Útvar (kvartér, paleogén…)	Unit (Quaternary, Palaeogene…)
+Vek (oddelenie)	Age (series)
+Vek (podrobne)	Age (detail)
+Index v legende	Legend index
+Inžinierskogeologický rajón	Engineering-geological zone
+Formácia	Formation
+flyš	flysch
+eocén	Eocene
+kvartér	Quaternary
+pleistocén	Pleistocene
+stredný pleistocén	Middle Pleistocene
+stredný - mladší eocén	Middle–Upper Eocene
+rajón flyšoidných hornín	flysch rock zone
+flyšová formácia	flysch formation
+rajón eolických spraší	aeolian loess zone
+formácia kvartérnych sedimentov	Quaternary sediment formation
+vsetínske vrstvy: bystrické ílovce, pieskovce s glaukonitom, arkózové pieskovce a zlepence (flyš)	Vsetín beds: Bystrica claystones, glauconitic sandstones, arkosic sandstones and conglomerates (flysch)
+nekontaminovaná pôda, geogénne podmienený obsah niektorých rizikových prvkov dosahuje limitné hodnoty A	uncontaminated soil, naturally occurring content of some risk elements reaches limit values A
+Elektrické vedenie VN {0} kV	High-voltage line {0} kV
+verejná kanalizácia SEVAK, vlastná ČOV Turzovka ({0} z {1} obyv.)	public sewer SEVAK, own treatment plant Turzovka ({0} of {1} residents)
+mzdy v okrese rastú ~{0} % ročne	district wages grow ~{0} % a year
+Vážený priemer: rast miezd v okrese {0} % ({1} %), index cien bývania SR {2} % za {3} rokov ({4} %), trend cien zo zmlúv v okrese -{5} % ({6} %, orezaný na −{7} až +{8} %); výsledok najviac {9} % ročne; rozpätie z kolísania trendu (±{10} bodu).	Weighted average: district wage growth {0} % ({1} %), Slovak house price index {2} % over {3} years ({4} %), district contract price trend -{5} % ({6} %, clipped to −{7} to +{8} %); result at most {9} % a year; range from trend volatility (±{10} pp).
+Vážený priemer: rast miezd v okrese {0} % ({1} %), index cien bývania SR {2} % za {3} rokov ({4} %), trend cien zo zmlúv v okrese {5} % ({6} %, orezaný na −{7} až +{8} %); výsledok najviac {9} % ročne; rozpätie z kolísania trendu (±{10} bodu).	Weighted average: district wage growth {0} % ({1} %), Slovak house price index {2} % over {3} years ({4} %), district contract price trend {5} % ({6} %, clipped to −{7} to +{8} %); result at most {9} % a year; range from trend volatility (±{10} pp).
+NEKÚPIŤ	DO NOT BUY
+kúpiť až po vyriešení vylučujúcich podmienok	buy only after the blocking conditions are resolved
+Získať povolenie stavby a predať	Obtain a building permit and sell
+úradnú cenu pôdy nemáme	official land price not available
+Chránená vodohospodárska oblasť (CHVO): CHVO Beskydy a Javorníky	Protected water management area (CHVO): CHVO Beskydy a Javorníky
+Územný plán z výkresu	Zoning plan from a drawing
+verejná kanalizácia ({0} z {1} obyv.; vlastník/prevádzkovateľ v tabuľke {2} „SCP“)	public sewer ({0} of {1} residents; owner/operator in table {2} “SCP”)
+Komplexný výkres priestorového usporiadania a funkčné využívanie územia	Comprehensive drawing of spatial arrangement and land use
+Vyhodnotenie budúceho možného použitia PP na stavebné a iné zámery	Assessment of possible future use of agricultural land for construction and other projects
+verejná kanalizácia SEVAK, vlastná ČOV Čadca ({0} z {1} obyv. pripojených)	public sewer SEVAK, own treatment plant Čadca ({0} of {1} residents connected)
+Zoning plan: výroba/technická (Slovak zoning category).	Zoning plan: industry/technical (Slovak zoning category).
+cadastral area Žilina · okres Žilina · {0} parcely · {1} m² · LV {2}, {3}	cadastral area Žilina · district Žilina · {0} parcels · {1} m² · title deeds {2}, {3}
+cadastral area Žilina · okres Žilina · {0} parcely · {1} m² · LV {2}	cadastral area Žilina · district Žilina · {0} parcels · {1} m² · title deed {2}
+cadastral area Turzovka · okres Čadca · {0} parcela · {1} m²	cadastral area Turzovka · district Čadca · {0} parcel · {1} m²
+Celok: zvolená parcela + priľahlé parcely tých istých vlastníkov (podľa spoločnej hranice z katastrálnej mapy).	Unit: the selected parcel + adjacent parcels of the same owners (by shared boundary in the cadastral map).
+Radónové riziko z podložia (prognózna mapa), Ochranná hrádza – do {0} m, Seveso podniky (závažné priemyselné havárie) – do {1} km	Radon risk from subsoil (forecast map), Flood dike – within {0} m, Seveso sites (major industrial accidents) – within {1} km
+Radónové riziko z podložia (prognózna mapa), Chránená vodohospodárska oblasť (CHVO)	Radon risk from subsoil (forecast map), Protected water management area (CHVO)
+vodovod v obci · kanalizácia v obci ({0} % domov) · plyn v obci · trafostanica {1} m	water mains in the municipality · sewer in the municipality ({0} % of homes) · gas in the municipality · transformer {1} m
+vodovod v obci · kanalizácia v obci ({0} % domov) · plyn v obci	water mains in the municipality · sewer in the municipality ({0} % of homes) · gas in the municipality
+škola {0} m · ihrisko {1} m · priamy prístup z cesty, mierny sklon	school {0} m · playground {1} m · direct road access, gentle slope
+zastávka do {0} m, Žilina {1} min	stop within {0} m, Žilina {1} min
+prístup z cesty, mierny sklon, zastávka blízko	road access, gentle slope, stop nearby
+slnko v zime, lyžiarske stredisko do {0} km	winter sun, ski resort within {0} km
+slnko v zime, južná orientácia, lyžiarske stredisko do {0} km	winter sun, south-facing, ski resort within {0} km
+priamy prístup z cesty	direct road access
+mierny sklon	gentle slope
+{0} h slnka v decembri	{0} h of sun in December
+škola do {0} km	school within {0} km
+ochranné pásmo vedenia	power line protection zone
+slnko v zime	winter sun
+lyžiarske stredisko do {0} km	ski resort within {0} km
+zastávka do {0} m	stop within {0} m
+Žilina {0} min	Žilina {0} min
+prístup z cesty	road access
+zastávka blízko	stop nearby
+{0} m² na viac jednotiek	{0} m² for several units
+južná orientácia	south-facing
+bez prístupu	no access
+sklon {0} %	slope {0} %
+Územný plán: výroba/technická. Pred kúpou na stavbu overiť územnoplánovaciu informáciu obce.	Zoning plan: industry/technical. Before buying to build, verify the municipality's zoning information.
+vodovod v obci ({0} % domov), kanalizácia ({1} %), plyn v obci, trafostanica {2} m. Presné napojenie potvrdia správcovia sietí (vzor žiadostí je pripravený).	water mains in the municipality ({0} % of homes), sewer ({1} %), gas in the municipality, transformer {2} m. Exact connections are confirmed by the operators (request templates are ready).
+vodovod v obci ({0} % domov), kanalizácia ({1} %), plyn v obci. Presné napojenie potvrdia správcovia sietí (vzor žiadostí je pripravený).	water mains in the municipality ({0} % of homes), sewer ({1} %), gas in the municipality. Exact connections are confirmed by the operators (request templates are ready).
+{0}× encumbrance or note on title deed — vysvetlené v kapitole Právny stav; pred podpisom sa riešia výmazom alebo prevzatím.	{0}× encumbrance or note on title deed — explained in the Legal status chapter; resolved by deletion or assumption before signing.
+Úradné registre hlásia: Radónové riziko z podložia (prognózna mapa), Ochranná hrádza – do {0} m, Seveso podniky (závažné priemyselné havárie) – do {1} km. Podrobnosti a dopad na poistenie v kapitole Poistenie a riziká.	Official registers report: radon risk from subsoil (forecast map), flood dike within {0} m, Seveso sites (major industrial accidents) within {1} km. Details and the impact on insurance in the Insurance and risks chapter.
+Úradné registre hlásia: Radónové riziko z podložia (prognózna mapa), Chránená vodohospodárska oblasť (CHVO). Podrobnosti a dopad na poistenie v kapitole Poistenie a riziká.	Official registers report: radon risk from subsoil (forecast map), protected water management area (CHVO). Details and the impact on insurance in the Insurance and risks chapter.
+Žilina autom ~{0} min, autobusová zastávka {1} m.	Žilina ~{0} min by car, bus stop {1} m.
+priľahlá parcela (rovnaký LV)	adjacent parcel (same title deed)
+priľahlá parcela (LV {0}, rovnakí vlastníci)	adjacent parcel (title deed {0}, same owners)
+× zapísaná ťarcha alebo poznámka	× registered encumbrance or note
+komunikácia	road
+cesta I. triedy {0} · {1} m	class I road {0} · {1} m
+Hluková štúdia	Noise study
+cesta cesta I. triedy vo vzdialenosti {0} m	class I road at {0} m
+cesta I. triedy {0} vo vzdialenosti {1} m	class I road {0} at {1} m
+Cesta cesta I. triedy {0}	Class I road {0}
+{0} €/m² (VÚPOP (vyhl. {1}/{2}))	€{0}/m² (VÚPOP (Decree {1}/{2}))
+fluviálne sedimenty: piesčité štrky a štrky nižších stredných terás s pokryvom spraší a nerozlíšených deluviálnych hlín a splachov	fluvial sediments: sandy gravels and gravels of lower middle terraces covered by loess and undifferentiated deluvial loams and slope wash
+Popis sedimentov	Sediment description
+piesky, piesčité štrky až piesky v terasách bez pokryvu	sands, sandy gravels to sands in terraces without cover
+fluviálne sedimenty	fluvial sediments
+Draslík K (%)	Potassium K (%)
+Ekvivalentný urán eU (ppm)	Equivalent uranium eU (ppm)
+Ekvivalentné tórium eTh (ppm)	Equivalent thorium eTh (ppm)
+Celková prírodná rádioaktivita (Ur, ppm eU)	Total natural radioactivity (Ur, ppm eU)
+Dávkový príkon gama vo vzduchu (nGy/h)	Gamma dose rate in air (nGy/h)
+relatívne čistá pôda	relatively clean soil
+Arzén As (mg/kg)	Arsenic As (mg/kg)
+Kadmium Cd (mg/kg)	Cadmium Cd (mg/kg)
+Olovo Pb (mg/kg)	Lead Pb (mg/kg)
+Ortuť Hg (mg/kg)	Mercury Hg (mg/kg)
+Hlavný kolektor	Main aquifer
+triasové karbonáty	Triassic carbonates
+Teplota vody (°C)	Water temperature (°C)
+Podtyp	Subtype
+mierne teplá	moderately warm
+Priem. teplota január od (°C)	Mean January temperature from (°C)
+Priem. teplota júl do (°C)	Mean July temperature up to (°C)
+Ročné zrážky od (mm)	Annual precipitation from (mm)
+Teplotná suma	Temperature sum
+{0} až {1}	{0} to {1}
+kotlinová klíma	basin climate
+Produktivita zvodnenca (text)	Aquifer productivity
+Rozsiahle a hydrogeologicky vysoko produktívne zvodnence	Extensive, hydrogeologically highly productive aquifers
+Hornina kolektora	Aquifer rock
+Štrky	Gravels
+Popis (priepustnosť, hladina, spojitosť s tokom)	Description (permeability, water table, connection to the river)
+Typ priepustnosti	Permeability type
+medzizrnová	intergranular
+Funkcia (kolektor/izolátor)	Function (aquifer/aquitard)
+kolektor	aquifer
+Transmisivita T (m²/s)	Transmissivity T (m²/s)
+Variabilita / storativita	Variability / storativity
+fluviálne sedimenty terás  na ľavobreží Váhu: štrky, piesčité štrky, piesky	fluvial terrace sediments on the left bank of the Váh: gravels, sandy gravels, sands
+{0} m pod terénom	{0} m below ground
+Prekročené ukazovatele: Fe, Mn, (NO{0})	Exceeded parameters: Fe, Mn, (NO{0})
+hĺbka {0} m, úzkoprofilový vrt s obyčajnou pitnou a úžitkovou vodou	depth {0} m, narrow borehole with ordinary drinking and service water
+{0} vrty do {1} m	{0} boreholes within {1} m
+hĺbka {0} m, hydrogeologický	depth {0} m, hydrogeological
+hĺbka {0} m, inžiniersko-geologický	depth {0} m, geotechnical
+{0} objektov v okolí	{0} objects nearby
+Breh	Bank
+vľavo	left
+vpravo	right
+Riečny km od	River km from
+Dĺžka (m)	Length (m)
+Kód BPEJ: {0}	BPEJ code: {0}
+bez erózie	no erosion
+Kategória (A nižší / B vyšší stupeň)	Category (A lower / B higher tier)
+Obec	Municipality
+{0} µg/m³ (ročný priemer {1})	{0} µg/m³ (annual mean {1})
+optimálny sklon {0}°, azimut -{1}° od juhu · ožiarenie {2} kWh/m² · celkové straty {3} %	optimal tilt {0}°, azimuth -{1}° from south · irradiation {2} kWh/m² · total losses {3} %
+optimálny sklon {0}°, azimut {1}° od juhu · ožiarenie {2} kWh/m² · celkové straty {3} %	optimal tilt {0}°, azimuth {1}° from south · irradiation {2} kWh/m² · total losses {3} %
+{0} kWh za rok z {1} kWp	{0} kWh a year from {1} kWp
+Mobilný – max. sťahovanie (Mbit/s)	Mobile – max. download (Mbit/s)
+Mobilný – max. odosielanie (Mbit/s)	Mobile – max. upload (Mbit/s)
+Pevný internet – max. sťahovanie (Mbit/s)	Fixed internet – max. download (Mbit/s)
+Pevný internet – max. odosielanie (Mbit/s)	Fixed internet – max. upload (Mbit/s)
+medián {0} m, najvyššie {1} m ({2} z {3} bodov)	median {0} m, highest {1} m ({2} of {3} points)
+ochranné {0} m; bezpečnostné {1} m (nízky tlak) až {2} m (VTL)	protection {0} m; safety {1} m (low pressure) to {2} m (high pressure)
+{0} m od osi (mimo súvisle zastavaného územia)	{0} m from the axis (outside continuously built-up area)
+vzdialenosť od stredu pozemku	distance from the plot centre
+{0} vozidiel za {1} h (úseky v okrese do {2})	{0} vehicles per {1} h (district sections up to {2})
+hlučné	noisy
+Zberný dvor · {0} m	Collection yard · {0} m
+kaštieľ	manor house
+škola, materská škola, športovisko, ihrisko, reštaurácia, nabíjačka, autobus	school, kindergarten, sports ground, playground, restaurant, charger, bus
+{0} € ({1} €–{2} €) · spoľahlivosť nízka	€{0} (€{1}–€{2}) · low reliability
+{0} € ({1} €–{2} €) · spoľahlivosť stredná	€{0} (€{1}–€{2}) · medium reliability
+{0} € ({1} €–{2} €) · spoľahlivosť vysoká	€{0} (€{1}–€{2}) · high reliability
+{0} ročných miezd (mzda {1} €/mes.)	{0} annual wages (wage €{1}/month)
+počet obyvateľov obce za {0} rokov -{1} %	municipal population over {0} years -{1} %
+počet obyvateľov obce za {0} rokov +{1} %	municipal population over {0} years +{1} %
+nová zástavba v k.ú. {0} ha (rastúca lokalita, ale aj konkurencia ponuky)	new construction in the cadastral area {0} ha (growing location, but also competing supply)
+Žiadateľ do {0} rokov s príjmom do {1}-násobku priemernej mzdy môže {2} rokov dostať späť {3} % zaplatených úrokov, najviac {4} € ročne (pri tejto hypotéke ~{5} € v prvom roku).	An applicant under {0} with income up to {1}× the average wage can get back {3} % of interest paid for {2} years, max. €{4} a year (~€{5} in the first year with this mortgage).
+prevýšenie pod domom {0} m → ~{1} m³ × {2} €/m³	height difference under the house {0} m → ~{1} m³ × €{2}/m³
+hasičská stanica {0} km	fire station {0} km
+Povodeň / záplava, Zosuv pôdy, Požiar — dojazd hasičov	Flood, Landslide, Fire — fire brigade response
+{0}× ťarcha na LV — treba vyplatiť a vymazať (náklad a riziko predávajúceho)	{0}× encumbrance on the title deed — must be repaid and deleted (seller's cost and risk)
+prekážky financovania ({0}) znižujú okruh kupujúcich	financing obstacles ({0}) narrow the pool of buyers
+PODMIENEČNE	CONDITIONALLY
+hodnota o {0} rokov {1} € − náklady držby, diskont {2} % ročne	value in {0} years €{1} − holding costs, discount {2} % a year
+Získať povolenie stavby a predať ★	Obtain a building permit and sell ★
+Rozparcelovať na {0} pozemkov	Subdivide into {0} plots
+úradná cena pôdy {0} €/m² + nájom ~{1}–{2} €/ha ročne	official land price €{0}/m² + rent ~€{1}–{2}/ha a year
+Získať povolenie stavby a predať: {0} €	Obtain a building permit and sell: €{0}
+{0} vlastníkov — podpis všetkých alebo predaj podielu s ponukou ostatným (predkupné právo)	{0} owners — all must sign, or a share is sold after offering it to the others (pre-emption right)
+dohoda s veriteľom o vyplatení a výmaze záložného práva z kúpnej ceny (úschova)	agreement with the creditor on repayment and deletion of the mortgage from the purchase price (escrow)
+Seveso podniky (závažné priemyselné havárie) – do {0} km: Messer Tatragas, spol. s.r.o., OS Žilina	Seveso sites (major industrial accidents) – within {0} km: Messer Tatragas, spol. s.r.o., OS Žilina
+Všetky nehnuteľnosti zapísané na LV č. {0}.	All properties registered on title deed no. {0}.
+— (VZN VZN č. {0}/{1} o miestnych daniach (schválené uz. MsZ č. {2}/{3} dňa {4}.{5}; ruší VZN {6}/{7}))	— (municipal ordinance No. {0}/{1} on local taxes (approved by council resolution {2}/{3} on {4}.{5}; repeals {6}/{7}))
+pozemky ~{0} € (VZN VZN č. {1}/{2} o miestnych daniach (schválené uz. MsZ č. {3}/{4} dňa {5}.{6}; ruší VZN {7}/{8}))	land ~€{0} (municipal ordinance No. {1}/{2} on local taxes (approved by council resolution {3}/{4} on {5}.{6}; repeals {7}/{8}))
+VZN č. {0}/{1} o miestnych daniach (schválené uz. MsZ č. {2}/{3} dňa {4}.{5}; ruší VZN {6}/{7})	Municipal ordinance No. {0}/{1} on local taxes (approved by council resolution {2}/{3} on {4}.{5}; repeals {6}/{7})
+k. ú. Turzovka	cadastral area Turzovka
+Samostatná parcela.	Single parcel.
+Obec Turzovka	Municipality of Turzovka
+DOM {0} · GARÁŽ {1} · OBYTNÝ DOM {2} · GARAZ {3} · Garáž {4} · Rodinný dom {5} · garáž {6} · rodinný dom {7} · SKLAD {8} · OBYTNY DOM {9}	HOUSE {0} · GARAGE {1} · RESIDENTIAL HOUSE {2} · GARAGE {3} · Garage {4} · Family house {5} · garage {6} · family house {7} · STORE {8} · RESIDENTIAL HOUSE {9}
+Grafická časť (veľkosť {0} MB, formát zip)	Graphic part (size {0} MB, zip format)
+{0} vrtov do {1} m	{0} boreholes within {1} m
+sklon {0} % — odporúčaný	slope {0} % — recommended
+ostatné bližšie geneticky nerozlíšené sedimenty	other genetically undifferentiated sediments
+Rajón potenciálne nestabilných území	Zone of potentially unstable areas
+horná časť svahu	upper part of slope
+dolná časť svahu	lower part of slope
+stredná časť svahu	middle part of slope
+{0} mmol/l ({1} °dH) — stredne tvrdá	{0} mmol/l ({1} °dH) — moderately hard
+{0} mmol/l ({1} °dH) — tvrdá	{0} mmol/l ({1} °dH) — hard
+{0} mmol/l ({1} °dH) — veľmi tvrdá	{0} mmol/l ({1} °dH) — very hard
+Počet pozemkov po ~{0} m²	Number of plots of ~{0} m²
+Orientačne:	Indicatively:
+zónu ÚP nemáme — rozdelenie len so súhlasom obce	zoning not available — subdivision only with the municipality's consent
+; potrebné je územné rozhodnutie / povolenie na delenie, prístupová cesta a siete. Výsledok závisí od dopytu a času predaja.	; a zoning decision / subdivision permit, an access road and utilities are needed. The result depends on demand and time to sell.
+č. {0}/{1} o miestnych daniach (sken, OCR)	No. {0}/{1} on local taxes (scan, OCR)
+pozemky ~{0} € (VZN č. {1}/{2} o miestnych daniach (sken, OCR))	land ~€{0} (ordinance No. {1}/{2} on local taxes (scan, OCR))
+č. {0}/{1} o miestnom poplatku za KO a DSO	No. {0}/{1} on the local fee for municipal and minor construction waste
+Povodeň / záplava, Zosuv pôdy, Zemetrasenie, Požiar — dojazd hasičov	Flood, Landslide, Earthquake, Fire — fire brigade response
+Zosuv pôdy, Zemetrasenie, Požiar — dojazd hasičov	Landslide, Earthquake, Fire — fire brigade response
+Zosuv pôdy, Požiar — dojazd hasičov	Landslide, Fire — fire brigade response
+Požiar — dojazd hasičov	Fire — fire brigade response
+Povodeň / záplava, Požiar — dojazd hasičov	Flood, Fire — fire brigade response
+Rozparcelovať na {0} pozemkov ★	Subdivide into {0} plots ★
+Ponechať {0} rokov (land-banking) ★	Hold {0} years (land banking) ★
+Postaviť {0} rodinný dom ({1} m²) ★	Build {0} family house ({1} m²) ★
+vlastníci, tituly a ťarchy, ceny zo zmlúv (LV), limity z registrov, zóna ÚP	owners, titles and encumbrances, contract prices (title deed), register constraints, zoning
+tituly a ťarchy, ceny zo zmlúv (LV)	titles and encumbrances, contract prices (title deed)
+Rozhodnutie zo zisťovacieho konania	Screening decision
+Záverečné stanovisko	Final opinion
+Zámer	Project notice
+od {0}.{1} (rozhodnutie pre {2} osobitne nenájdené)	from {0}.{1} (decision for {2} not found separately)
+ÚRSO {0}/{1}/V (podľa výročnej správy VSR {2})	ÚRSO {0}/{1}/V (per VSR annual report {2})
+overené zo sekundárneho zdroja (výročná správa VSR)	verified from a secondary source (VSR annual report)
+Bývanie – rodinné domy — ÚP …	Housing – family houses — zoning …
+v zastavanom území obce	within the municipality's built-up area
+najväčšia parcela	largest parcel
+vlastníkov	owners
+iné	other
+fyzické osoby (žijúce, doma)	private individuals (living, domestic)
+LV {0} — posledné dedičstvo	title deed {0} — latest inheritance
+{0} spoluvlastníkov	{0} co-owners
+bývanie – rodinné domy	housing – family houses
+bývanie/rekreácia	housing/recreation
+Plochy rodinných domov	Family house areas
+výkres ÚP georeferencovaný na VGI, farba legendy → plocha parcely	zoning drawing georeferenced to VGI, legend colour → parcel area
+Širšie vzťahy	Wider relations
+Priestorového usporiadania a funkčné využívanie územia	Spatial arrangement and land use
+Riešenia verejného dopravného vybavenia	Public transport infrastructure
+Vodné hospodárstvo	Water management
+Energie, telekomunikácie	Energy, telecoms
+Teplo, plyn	Heat, gas
+Vyhodnotenia dôsledkov navrhovaného stavebného rozvoja a iných zámerov na poľnohosp. a lesnej pôde	Assessment of the impact of proposed development on agricultural and forest land
+Ochrana prírody a tvorba krajiny	Nature protection and landscape
+Územný plán - textová časť	Zoning plan – text part
+Záväzná časť	Binding part
+Výkres širších vzťahov	Wider relations drawing
+Záväzné časti riešenia a verejnoprospešné stavby	Binding parts and public-benefit structures
+Výkres riešenia verejného dopravného vybavenia	Public transport infrastructure drawing
+Výkres riešenia verejného technického vybavenia - vodné hospodárstvo	Public utilities drawing – water management
+Výkres riešenia verejného technického vybavenia - el. energia, telekomunikácie	Public utilities drawing – electricity, telecoms
+zásah	hit
+deluviálne sedimenty vcelku	deluvial sediments undivided
+v území (bez podrobností)	in the area (no details)
+horská klíma	mountain climate
+lokálne vysoko alebo rozsiahle stredne produktívne zvodnence (medzizrnové)	locally highly or extensively moderately productive aquifers (intergranular)
+{0} objektov v okolí ·	{0} objects nearby ·
+pamätník	memorial
+register záplav	flood register
+oslobodenie od {0}	exempt from {0}
+Posledná zmena vlastníka {0} → predaj fyzickej osoby je od {1} spravidla oslobodený od dane z príjmu ({2} rokov od nadobudnutia; pri dedení v priamom rade sa ráta aj čas poručiteľa).	Last change of owner {0} → a sale by a private individual is usually income-tax-exempt from {1} ({2} years after acquisition; for inheritance in the direct line the deceased's holding period also counts).
+poisťovne môžu povodeň vylúčiť alebo zvýšiť poistné; banka chce poistenie	insurers may exclude flood or raise the premium; the bank requires insurance
+predajná plocha × {0} €/m² za nový byt	saleable area × €{0}/m² for a new flat
+{0} €/m² hrubej podlažnej plochy	€{0}/m² of gross floor area
+projekt podľa regulatívu pri týchto predpokladoch nevychádza	the project under the regulations does not pay off on these assumptions
+{0} spoluvlastníkov — rýchla dohoda a istota platby sú pre nich hodnota	{0} co-owners — a quick deal and payment certainty are valuable to them
+ochranné pásmo dráhy {0} m ({1}/{2} § {3}) — súhlas dopravného správneho orgánu	railway protection zone {0} m ({1}/{2} § {3}) — consent of the transport authority
+záplavové územie	flood area
+Bytový dom (~{0} bytov)	Apartment building (~{0} flats)
+nevychádza	does not pay off
+predaj {0} €/m², stavba {1} €/m² HPP, zisk {2} %	sale €{0}/m², construction €{1}/m² GFA, profit {2} %
+Rozpätie výsledku developera (bytový dom, {0} simulácií)	Developer outcome range (apartment building, {0} simulations)
+železnica podľa OSM	railway per OSM
+ÚP na bývanie	zoned residential
+obchod do {0} km	shop within {0} km
+Charakteristika	Description
+Oblasti s takmer žiadnymi množstvami podzemných vôd	Areas with almost no groundwater
+Ílovce	Claystones
+{0} parcely	{0} parcels
+{0} parcela	{0} parcel
+{0} parciel	{0} parcels
+{0}–{1}, objasnenosť {2} %	{0}–{1}, clearance rate {2} %
+malá výmera pre developera	small area for a developer
+pozemná komunikácia neurčenej triedy MC	road of unspecified class (MC)
+Obytné územie (rodinné domy) (IZP {0} · KZ {1} · IPP {2})	Residential area (family houses) (plot coverage {0} · green ratio {1} · FAR {2})
+Obytné územie (rodinné domy)	Residential area (family houses)
+hlinité, hlinito-piesčité, hlinito-kamenité, piesčito-kamenité až balvanovité svahoviny a sutiny	loamy, loamy-sandy, loamy-stony, sandy-stony to bouldery slope deposits and scree
+nečlenené predkvartérne podložie s nepravidelným pokryvom bližšie nerozlíšených svahovín a sutín	undivided pre-Quaternary bedrock with irregular cover of undifferentiated slope deposits and scree
+Kód typu vody	Water type code
+mierne chladná	moderately cold
+chladná	cold
+teplá	warm
+Priestorovo obmedzené alebo nespojité hydrogeologicky vysoko produktívne zvodnence, alebo rozsiahle a stredne produktívne zvodnence	Spatially limited or discontinuous highly productive aquifers, or extensive moderately productive aquifers
+hĺbka {0} m, pozorovací vrt SHMÚ	depth {0} m, SHMÚ observation borehole
+hĺbka {0} m, negatívny vrt	depth {0} m, dry borehole
+životné prostredie	environment
+hydrogeologický, ustálená {0} m	hydrogeological, steady level {0} m
+Pevný – sťahovanie v špičke (Mbit/s)	Fixed – peak download (Mbit/s)
+Pevný – odosielanie v špičke (Mbit/s)	Fixed – peak upload (Mbit/s)
+Dostupné pevné technológie	Available fixed technologies
+{0} liniek	{0} lines
+{0} linky	{0} lines
+{0} linka	{0} line
+dopravný zámer v obci	transport project in the municipality
+priemyselný/logistický zámer	industrial/logistics project
+trafostanica {0}	transformer {0}
+P{0} {1} €	P{0} €{1}
+P{0} -{1} €	P{0} -€{1}
+strata v {0} % prípadov	loss in {0} % of cases
+Územia s doteraz nezaregistrovanými svahovými deformáciami, s priaznivou geologickou stavbou nevylučujúcou v prípade priaznivých morfologických pomerov občasný vznik svahových deformácii (najmä skupiny zosúvania a tečenia) vplyvom prírodných p	Areas with no slope deformations registered so far and with favourable geology, which in favourable morphology does not rule out occasional slope deformations (mainly sliding and flows)
+Rajón nestabilných území	Zone of unstable areas
+škola	school
+lekár	doctor
+supermarket	supermarket
+potraviny	grocery
+banka	bank
+bankomat	ATM
+plaváreň	swimming pool
+ihrisko	playground
+reštaurácia	restaurant
+nabíjačka	EV charger
+hasiči	fire station
+polícia	police
+autobus	bus
+vlak	train
+Iné	Other
+Satelit	Satellite
+{0} vlakových liniek	{0} train lines
+{0} vlakové linky	{0} train lines
+{0} vlaková linka	{0} train line
+Mobilný – max. odosielan	Mobile – max. upl
+bývanie – rodinné domy — ÚP z výkresu — orientačné	housing – family houses — zoning from a drawing — indicative
+výroba/technická	industry/technical

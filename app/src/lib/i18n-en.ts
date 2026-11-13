@@ -2,6 +2,7 @@
 // for you" v angličtine. Podrobné tabuľky z registrov ostávajú v slovenčine (úradná terminológia) — uvedené na titulke.
 import { fact, mainKey, riskyHit, zoneOf, type Light, type SheetData } from "./property-eval";
 import type { FinResult } from "./finance";
+import { enText } from "./i18n-en-dict";
 
 export const EN_TITLES: Record<string, string> = {
   prehlad: "Overview", skladba: "Composition", vlastnictvo: "Ownership", pravo: "Legal status", historia: "Property timeline", pristup: "Access and neighbours",
@@ -25,7 +26,7 @@ const eur = (n: number | null | undefined) => (n == null ? "—" : `€${nf(Math
 export function enFindings(d: SheetData, fin: FinResult | null): string[] {
   const c = d.core; const mk = mainKey(c); const out: string[] = [];
   if (c.compStats?.estimateEur) out.push(`Indicative value ${eur(c.compStats.estimateEur)} based on ${c.compStats.n} comparable sales recorded in the cadastre (median €${nf(c.compStats.medPpm2 ?? 0)}/m²).`);
-  const z = zoneOf(d); out.push(z.name ? `Zoning plan: ${z.name} (Slovak zoning category).` : "No zoning category on record — to be confirmed with the municipality.");
+  const z = zoneOf(d); const zEn = z.name ? enText(z.name) : null; out.push(z.name ? `Zoning plan: ${zEn}${zEn === z.name ? " (Slovak zoning category)" : ""}.` : "No zoning category on record — to be confirmed with the municipality.");
   const pr = mk ? fact(c, "pristup", mk) : null; if (pr?.trieda) out.push(/priamy/i.test(String(pr.trieda)) ? "Direct access from a public road." : /cez/i.test(String(pr.trieda)) ? "Access via a private road — an easement should be secured." : "No legal access from a public road.");
   const t = mk ? fact(c, "teren", mk) : null; if (t) out.push(`Terrain: average slope ${nf(Number(t.sklon_avg ?? 0), 1)} %.`);
   const hits = [...(d.limits?.items ?? []).filter((h) => h.hit), ...(d.ext ?? []).filter(riskyHit)];
