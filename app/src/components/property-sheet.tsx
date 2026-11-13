@@ -411,7 +411,7 @@ function PrintCover({ d, lights, isClient, fin }: { d: SheetData; lights: Light[
 }
 
 function PrintSummary({ d, lights, isClient, toc, fin }: { d: SheetData; lights: Light[]; isClient: boolean; toc: [string, string][]; fin: FinResult | null }) {
-  const checks = checklist(d).slice(0, 7);
+  const checks = checklist(d).slice(0, 5);
   const suit = suitability(d);
   return (
     <section className="ps-summary">
@@ -498,8 +498,8 @@ function printCss(title: string): string {
   .ps-checks li::before { content: counter(chk, decimal-leading-zero); position: absolute; left: 0; top: 0; font-family: "Josefin Sans", sans-serif; font-weight: 300; color: #a0a0a0; }
   .ps-checks span { color: #6a6a6a; }
   .ps-checks b { font-weight: 600; }
-  .ps-toc { list-style: none; margin: 0; padding: 0; columns: 2; column-gap: 10mm; } .ps-toc li { padding: .7mm 0; border-bottom: .3pt dotted #d0d0d0; break-inside: avoid; }
-  .ps-toc .ps-num { display: inline-block; width: 8mm; }
+  .ps-toc { list-style: none; margin: 0; padding: 0; columns: 3; column-gap: 7mm; font-size: 7.4pt !important; } .ps-toc li { padding: .5mm 0; border-bottom: .3pt dotted #d0d0d0; break-inside: avoid; }
+  .ps-toc .ps-num { display: inline-block; width: 6mm; }
   .ps-disclaimer { margin-top: 6mm; font-size: 6.6pt !important; color: #8a8a8a; max-width: 160mm; }
   /* kapitoly */
   .ps-sec { border-top: none !important; padding-top: 0 !important; margin-top: 8mm !important; break-inside: auto; }

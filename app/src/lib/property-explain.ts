@@ -125,7 +125,7 @@ export function explain(id: string, d: SheetData, fin: FinResult | null): string
       if (v.gross != null) out.push(`Pri nájme ~${eur(v.rent)} mesačne je hrubý výnos ${nf(v.gross, 1)} % a čistý (po nákladoch, dani a mesiaci bez nájomníka) ${nf(v.net ?? 0, 1)} % ročne.${v.monthlyCF != null ? ` S hypotékou vám po splátke ${v.monthlyCF >= 0 ? `zostane ~${eur(v.monthlyCF)}` : `bude chýbať ~${eur(-v.monthlyCF)}`} mesačne.` : ""}`);
       if (v.irr10 != null) out.push(`Celková výnosnosť za 10 rokov vrátane predaja na konci (IRR) ~${nf(v.irr10, 1)} % ročne — číslo, ktoré sa dá porovnať s vkladom alebo dlhopismi.`);
       if (v.offer) out.push(`Rozumná úvodná ponuka je ${eur(v.offer.low)} – ${eur(v.offer.high)}; argumenty sú nižšie. Konečná cena závisí od rokovania.`);
-      if (v.residual) out.push(`Pre developera: po odpočítaní nákladov výstavby a zisku zostáva na pozemok ~${eur(v.residual.land)} — vyššiu cenu developer spravidla nezaplatí.`);
+      if (v.residual) out.push(v.residual.land > 0 ? `Pre developera: po odpočítaní nákladov výstavby a zisku zostáva na pozemok ~${eur(v.residual.land)} — vyššiu cenu developer spravidla nezaplatí.` : "Pre developera: podľa regulatívu a dnešných cien bytov by projekt na pozemku nevyšiel so ziskom — hodnota pozemku pre bytovú výstavbu je nízka.");
       break;
     }
     case "obec": {

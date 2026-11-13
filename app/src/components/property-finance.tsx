@@ -223,7 +223,8 @@ export function InvestBody({ fin }: { fin: FinResult }) {
         ["Návratnosť", v.payback ? `${nf(v.payback, 1)} rokov` : "—"],
       ]} /> : <Muted>{v.rentFrom}. Pri pozemku sa výnos počíta z rozvoja (nižšie) — alebo zadajte nájom vyššie.</Muted>}
       {v.maxPrice.length ? (<><Sub>Najvyššia cena pre požadovaný čistý výnos</Sub><Table head={["Požadovaný výnos", "Najviac zaplatiť"]} rows={v.maxPrice.map((x) => [pct(x.yieldPct, 0), eur(x.price)])} /></>) : null}
-      {v.residual ? (<><Sub>Zostatková hodnota pozemku pre developera</Sub><Grid rows={[["Hodnota projektu po dokončení", eur(v.residual.gdv)], ["Náklady výstavby", eur(v.residual.cost)], ["Zisk developera", `${eur(v.residual.profit)} (${FIN.vystavba.developerZiskPct} %)`], ["Zostáva na pozemok (max. cena)", <b key="l">{eur(v.residual.land)}</b>]]} /></>) : null}
+      {v.residual ? (<><Sub>Zostatková hodnota pozemku pre developera</Sub><Grid rows={[["Hodnota projektu po dokončení", <V key="g" v={eur(v.residual.gdv)} h={`predajná plocha × ${eur(v.residual.saleM2)}/m² za nový byt`} />], ["Náklady výstavby", <V key="c" v={eur(v.residual.cost)} h={`${eur(FIN.vystavba.developerEurM2Hpp)}/m² hrubej podlažnej plochy`} />], ["Zisk developera", `${eur(v.residual.profit)} (${FIN.vystavba.developerZiskPct} %)`],
+        ["Zostáva na pozemok (max. cena)", v.residual.land > 0 ? <b key="l">{eur(v.residual.land)}</b> : <span key="l">projekt podľa regulatívu pri týchto predpokladoch nevychádza</span>]]} /></>) : null}
       <Sub>Kúpa na fyzickú osobu alebo na firmu</Sub>
       <Table head={["", "Fyzická osoba", "s. r. o."]} rows={v.foVsSro.map((x) => [x.label, x.fo, x.sro])} />
       {v.offer ? (<>

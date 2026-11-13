@@ -5,6 +5,7 @@
 import type { SheetData } from "./property-eval";
 import { fact, mainKey } from "./property-eval";
 import { FIN, type FinParams } from "./fin-params";
+import { DEV_DEFAULTS } from "./development";
 
 export type FinMarket = {
   asOf: string;
@@ -88,7 +89,10 @@ export function basisOf(d: SheetData, inp: Partial<FinInputs>): Basis {
     const sf = Object.entries(c.facts.stavby ?? {}).map(([, raw]) => { try { return JSON.parse(raw) as Record<string, unknown>; } catch { return null; } }).find(Boolean);
     floors = typeof sf?.najvyssie_podlazie === "number" ? Math.max(1, sf.najvyssie_podlazie as number) : null;
     const descr = `${b.descr ?? ""} ${String(sf?.druh ?? "")}`.toLowerCase();
-    buildingType = /bytov/.test(descr) ? "bd" : /garáž|garaz/.test(descr) ? "garaz" : /chat|rekrea/.test(descr) ? "chata" : /hal|sklad|výrob|vyrob|priemys/.test(descr) ? "hala" : /obch|admin|služ|sluz|občian|obcian/.test(descr) ? "obchod" : "rd";
+    buildingType = /bytov/.test(descr) ? "bd" : /garáž|garaz/.test(descr) ? "garaz" : /chat|rekrea/.test(descr) ? "chata"
+      : /hal|sklad|výrob|vyrob|priemys|dieln|prevádz|prevadz|autopark|kotol|kotolň|dielň|technick|poľnohosp|polnohosp|maštaľ|mastal|stodol|silo/.test(descr) ? "hala"
+      : /obch|admin|služ|sluz|občian|obcian|škol|skol|úrad|urad|hotel|reštaur|restaur|zdravot|kancel/.test(descr) ? "obchod"
+      : /rodinn|dom\b|^ ?dom/.test(descr) ? "rd" : c.buildings.length > 0 && /iná budova|ina budova/.test(descr) ? "obchod" : "rd";
     if (buildingType !== "rd" && buildingType !== "chata") kind = "iné";
   }
   const floorM2 = kind === "byt" ? flatArea : footprint ? footprint * (floors ?? (buildingType === "rd" ? 1.5 : 1)) * 0.82 : null;
@@ -344,13 +348,14 @@ export function earthworksOf(d: SheetData): { m3: number | null; eur: number | n
 }
 
 // ——— poistenie a riziká ———
+const FIN_KRAJ_OBYV = 686063;   // Žilinský kraj 2025 (Eurostat demo_r_pjangrp3)
 export type InsuranceResult = { rebuild: number | null; rebuildNote: string; premiumLow: number; premiumMid: number; premiumHigh: number;
   domacnost: number | null; risks: { label: string; level: "nízke" | "stredné" | "vysoké" | "neznáme"; impact: string }[]; mult: number };
 
 export function insuranceOf(d: SheetData, b: Basis): InsuranceResult | null {
   if (b.kind === "pozemok") return { rebuild: null, rebuildNote: "pozemok bez stavby — poistenie zodpovednosti vlastníka", premiumLow: FIN.poistenie.zodpovednostEur, premiumMid: FIN.poistenie.zodpovednostEur, premiumHigh: FIN.poistenie.zodpovednostEur * 2, domacnost: null, risks: risksOf(d), mult: 1 };
   const eurM2 = FIN.stavba.eurM2[b.buildingType];
-  const area = b.kind === "byt" ? b.floorM2 : b.footprintM2 ? b.footprintM2 * (b.floors ?? 1.5) : null;
+  const area = b.kind === "byt" ? b.floorM2 : b.footprintM2 ? b.footprintM2 * (b.floors ?? (b.buildingType === "rd" ? 1.5 : 1)) : null;
   const rebuild = area ? r0(area * eurM2) : null;
   const risks = risksOf(d);
   const mult = risks.reduce((m, r) => m * (r.level === "vysoké" ? 1.5 : r.level === "stredné" ? 1.15 : 1), 1);
@@ -372,13 +377,15 @@ export function risksOf(d: SheetData): InsuranceResult["risks"] {
   out.push({ label: "Zosuv pôdy", level: hit("zosuvy") ? "vysoké" : nach?.status === "hit" && !/stabiln/i.test(nach.value ?? "") ? (/vysok/i.test(nach.value ?? "") ? "vysoké" : "stredné") : nach ? "nízke" : "neznáme",
     impact: "zosuv poistky často kryjú len obmedzene; pri stavbe inžinierskogeologický prieskum" });
   const n = fact(c, "normy", `ku:${kod}`);
-  const agR = n ? Number(Object.keys((n.agR ?? n.agr ?? {}) as Record<string, number>)[0] ?? NaN) : NaN;
+  const seiz = (n?.seizmicita ?? null) as { agr_hlavna_ms2?: number } | null;
+  const agR = typeof seiz?.agr_hlavna_ms2 === "number" ? seiz.agr_hlavna_ms2 : NaN;
   out.push({ label: "Zemetrasenie", level: Number.isFinite(agR) ? (agR >= 0.6 ? "stredné" : "nízke") : "neznáme", impact: Number.isFinite(agR) ? `seizmické zrýchlenie podložia ${agR} m/s² (STN EN 1998)` : "seizmickú oblasť nemáme" });
   const ob = fact(c, "obec", `ku:${kod}`);
-  const kr = typeof ob?.kriminalita_zistene_2025 === "number" ? (ob.kriminalita_zistene_2025 as number) : null;
-  const obyv = typeof ob?.obyv === "number" ? (ob.obyv as number) : null;
-  const rate = kr != null && obyv ? (kr / obyv) * 1000 : null;
-  out.push({ label: "Krádež a vandalizmus", level: rate == null ? "neznáme" : rate > 20 ? "stredné" : "nízke", impact: rate == null ? "štatistiku nemáme" : `${r2(rate)} zistených činov na 1 000 obyvateľov v obvode (2025)` });
+  const krKraj = typeof ob?.kriminalita_kraj_zistene_2025 === "number" ? (ob.kriminalita_kraj_zistene_2025 as number) : null;
+  const krObvod = ob?.kriminalita_zistene_2025 != null ? String(ob.kriminalita_zistene_2025) : null;
+  const krRate = krKraj ? (krKraj / FIN_KRAJ_OBYV) * 1000 : null;
+  out.push({ label: "Krádež a vandalizmus", level: krRate == null ? "neznáme" : krRate > 15 ? "stredné" : "nízke",
+    impact: krRate == null ? "štatistiku nemáme" : `kraj ${r2(krRate)} zistených trestných činov na 1 000 obyvateľov (2025)${krObvod ? `; ${String(ob?.kriminalita_obvod ?? "obvod")}: ${krObvod}` : ""}${ob?.kriminalita_objasnenost_pct != null ? `, objasnenosť ${String(ob.kriminalita_objasnenost_pct)} %` : ""}` });
   const rad = ex("geo_radon");
   if (rad) out.push({ label: "Radón", level: /vysok/i.test(rad.value ?? "") ? "vysoké" : /stredn/i.test(rad.value ?? "") ? "stredné" : "nízke", impact: "nepoisťuje sa — rieši sa izoláciou a vetraním" });
   const mk = mainKey(c); const osm = mk ? fact(c, "osm", mk) : null;
@@ -407,8 +414,11 @@ export function predictionOf(d: SheetData, b: Basis, m: FinMarket | null, mort: 
   const w = Number(ob?.mzda_okres_eur ?? 0), w10 = Number(ob?.mzda_okres_10r_eur ?? 0);
   const wageCagr = w > 0 && w10 > 0 ? Math.pow(w / w10, 1 / 10) - 1 : null;
   const hpi = m?.hpi ? m.hpi.pct / 100 : null;
-  const comps = [trendCagr != null ? Math.max(-0.05, Math.min(0.12, trendCagr)) : null, wageCagr, hpi].filter((x): x is number => x != null);
-  const base = comps.length ? comps.reduce((s, x) => s + x, 0) / comps.length : 0.03;
+  // vážený priemer: dlhodobo rastú ceny bývania približne s mzdami → mzdy 50 %, index cien SR 25 %, trend zmlúv v okrese 25 %
+  // (trend z málo zmlúv býva rozkolísaný → orezaný na −3 … +8 %); výsledok obmedzený na −2 … +6 % ročne
+  const parts: [number | null, number][] = [[wageCagr, 0.5], [hpi, 0.25], [trendCagr != null ? Math.max(-0.03, Math.min(0.08, trendCagr)) : null, 0.25]];
+  const wsum = parts.reduce((s, [x, w]) => s + (x != null ? w : 0), 0);
+  const base = wsum ? Math.max(-0.02, Math.min(0.06, parts.reduce((s, [x, w]) => s + (x != null ? x * w : 0), 0) / wsum)) : 0.03;
   const spread = Math.max(0.015, Math.min(0.05, sd));
   const years = [1, 3, 5, 10];
   const sc = (k: "pes" | "zak" | "opt", label: string, g: number) => ({ key: k, label, cagr: r2(g * 100), values: years.map((y) => r0((v0 * Math.pow(1 + g, y)) / 100) * 100) });
@@ -425,13 +435,13 @@ export function predictionOf(d: SheetData, b: Basis, m: FinMarket | null, mort: 
   if (mort) drivers.push({ text: `sadzby +1 bod = o ${mort.sensitivity1pp} % menší úver pri rovnakej splátke (tlak na ceny)`, sign: -1 });
   return { trendCagr: trendCagr != null ? r2(trendCagr * 100) : null, wageCagr: wageCagr != null ? r2(wageCagr * 100) : null, base: r2(base * 100), spread: r2(spread * 100), years,
     scenarios: [sc("pes", "Horší", base - spread), sc("zak", "Základný", base), sc("opt", "Lepší", base + spread)],
-    real5: r0(v0 * Math.pow((1 + base) / (1 + infl), 5)), rateSens: mort?.sensitivity1pp ?? 0, drivers, basis: v0,
-    method: `Priemer: trend mediánu €/m² zo zmlúv v okrese${trendCagr != null ? ` (${r2(trendCagr * 100)} % ročne)` : ""}, rast miezd v okrese${wageCagr != null ? ` (${r2(wageCagr * 100)} %)` : ""}${hpi != null ? `, index cien bývania SR (${r2(hpi * 100)} %)` : ""}; rozpätie z kolísania trendu (±${r2(spread * 100)} bodu).` };
+    real5: r0((v0 * Math.pow((1 + base) / (1 + infl), 5)) / 100) * 100, rateSens: mort?.sensitivity1pp ?? 0, drivers, basis: v0,
+    method: `Vážený priemer: rast miezd v okrese${wageCagr != null ? ` ${r2(wageCagr * 100)} %` : ""} (50 %), index cien bývania SR${hpi != null ? ` ${r2(hpi * 100)} %` : ""} za 5 rokov (25 %), trend cien zo zmlúv v okrese${trendCagr != null ? ` ${r2(trendCagr * 100)} %` : ""} (25 %, orezaný na −3 až +8 %); výsledok najviac 6 % ročne; rozpätie z kolísania trendu (±${r2(spread * 100)} bodu).` };
 }
 
 // ——— investícia, výnos, vyjednávanie ———
 export type InvestResult = { rent: number | null; rentFrom: string; gross: number | null; net: number | null; netIncome: number | null; cashOnCash: number | null; monthlyCF: number | null; irr10: number | null;
-  payback: number | null; maxPrice: { yieldPct: number; price: number }[]; foVsSro: { label: string; fo: string; sro: string }[]; residual: { gdv: number; cost: number; profit: number; land: number } | null;
+  payback: number | null; maxPrice: { yieldPct: number; price: number }[]; foVsSro: { label: string; fo: string; sro: string }[]; residual: { gdv: number; cost: number; profit: number; land: number; saleM2: number } | null;
   offer: { low: number; high: number; args: string[] } | null; daysOnMarket: number | null; cuts: number | null };
 
 export function investOf(d: SheetData, b: Basis, inp: FinInputs, costs: CostsResult, mort: MortgageResult | null, pred: PredictionResult | null): InvestResult {
@@ -475,10 +485,12 @@ export function investOf(d: SheetData, b: Basis, inp: FinInputs, costs: CostsRes
   ];
   // zostatková hodnota pre developera
   let residual: InvestResult["residual"] = null;
-  if (d.dev?.gdv && d.dev.hpp) {
-    const gdv = d.dev.gdv, cost = d.dev.hpp * FIN.vystavba.developerEurM2Hpp, profit = gdv * FIN.vystavba.developerZiskPct / 100;
+  if (d.dev?.cpp && d.dev.hpp) {
+    // hodnota projektu = čistá predajná plocha × cena nových bytov (nie cena pozemkov); náklady = HPP × náklady výstavby
+    const saleM2 = c.market.rent?.ptype === "byt" && c.market.rent.saleM2 ? c.market.rent.saleM2 * 1.15 : DEV_DEFAULTS.predajEurM2;
+    const gdv = d.dev.cpp * saleM2, cost = d.dev.hpp * FIN.vystavba.developerEurM2Hpp, profit = gdv * FIN.vystavba.developerZiskPct / 100;
     const land = gdv - cost - profit - gdv * FIN.vystavba.developerVedlajsiePct / 100;
-    residual = { gdv: r0(gdv), cost: r0(cost), profit: r0(profit), land: r0(land) };
+    residual = { gdv: r0(gdv), cost: r0(cost), profit: r0(profit), land: r0(land), saleM2: r0(saleM2) };
   }
   // vyjednávanie
   const L = c.listings.find((l) => !l.removed && l.price_eur);
