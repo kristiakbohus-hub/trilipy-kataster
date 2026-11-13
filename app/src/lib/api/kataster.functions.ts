@@ -26,6 +26,7 @@ import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEF
 import { EXT_DEFS, type ExtDef } from "../ext-sources";
 import { financeMarketCore } from "../fin-market.server";
 import type { FinMarket } from "../finance";
+import { anonymizePrices } from "../price-anon";
 
 const roleSchema = z.enum([
   "admin",
@@ -8357,6 +8358,10 @@ export type PropertyCore = {
   stateContracts: { n: number; recent: { day: string; publisher: string; kind: string; amount: number | null }[] };
   /** evidované žiadosti a odpovede (správcovia sietí, ÚPI obce) — 0113 */
   requests?: PropertyRequest[];
+  /** klientska verzia: ceny zo zmlúv na LV len ako počet a roky (price-anon.ts) */
+  priceSummary?: { n: number; years: number[] } | null;
+  /** true = ceny zo zmlúv sú anonymizované pre klienta (price-anon.ts) */
+  anon?: boolean;
   /** byty a nebytové priestory v dome celku (podľa súpisného čísla) alebo zapísané na LV */
   flats: { ref: string; cislo: string | null; vchod: string | null; poschodie: number | null; druh: string | null; vymera_m2: number | null; sc: string | null }[];
   /** trh v okrese/k.ú.: trend zo zmlúv, likvidita, nájomný výnos, doba predaja, konkurencia, zloženie zástavby */
@@ -9151,6 +9156,8 @@ function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid
     if (snap.lang !== "en") snap.lang = "sk";
     snap.photos = Array.isArray(snap.photos) ? (snap.photos as unknown[]).map((p) => asObj(p)).filter((p): p is Record<string, unknown> => !!p && typeof p.src === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(p.src) && (p.src as string).length < 400_000)
       .slice(0, 12).map((p) => ({ name: cut(p.name, 120) ?? "foto", src: p.src as string })) : null;
+    // ceny zo zmlúv: klient dostane len anonymnú štatistiku (údaj o cene poskytuje kataster len vlastníkovi a vymedzeným osobám)
+    anonymizePrices(core);
     const owners = asObj(core.owners);
     if (owners && Array.isArray(owners.perLv)) owners.perLv = (owners.perLv as Record<string, unknown>[]).map((l) => ({ ...l, owners: [] }));
     if (owners) owners.access = "summary";
