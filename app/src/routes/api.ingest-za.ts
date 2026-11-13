@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ingestZA } from "../lib/api/kataster.functions";
 
 // POST /api/ingest-za — bulk zápis kandidátov GOLD-ZA (zdedené byty) z Mac enginu.
-// Auth: hlavička x-alert-secret === D1 market_meta.alert_secret.
+// Auth: hlavička x-alert-secret = kľúč Macu (v D1 len SHA-256; ingestSecretOk, 0116).
 export const Route = createFileRoute("/api/ingest-za")({
   server: {
     handlers: {

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ingestUP } from "../lib/api/kataster.functions";
 
 // POST /api/ingest-up — bulk zápis kandidátov GOLD-UP (ÚP na bývanie, kataster stále orná/TTP).
-// Auth: hlavička x-alert-secret === D1 market_meta.alert_secret.
+// Auth: hlavička x-alert-secret = kľúč Macu (v D1 len SHA-256; ingestSecretOk, 0116).
 export const Route = createFileRoute("/api/ingest-up")({
   server: {
     handlers: {

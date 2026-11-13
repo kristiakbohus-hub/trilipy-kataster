@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ingestAcquisitions } from "../lib/api/kataster.functions";
 
 // POST /api/ingest-acquisitions — bulk zápis per-nehnuteľnosť akvizícií z kanonickej Mac DB.
-// Auth: hlavička x-alert-secret === D1 market_meta.alert_secret.
+// Auth: hlavička x-alert-secret = kľúč Macu (v D1 len SHA-256; ingestSecretOk, 0116).
 // Body: { replaceKu?: string[], rows: [{ kodKu, kuName?, lvNumber?, assetType?, assetId?, unitNumber?, areaM2?, kind?, regYear?, instYear?, addrDiffers?, hasPerson? }] }
 export const Route = createFileRoute("/api/ingest-acquisitions")({
   server: {

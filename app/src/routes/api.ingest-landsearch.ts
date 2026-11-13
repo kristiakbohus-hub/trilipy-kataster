@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ingestLandsearch } from "../lib/api/kataster.functions";
 
 // POST /api/ingest-landsearch — bulk zápis pozemkových príležitostí (land-search) z Mac enginu.
-// Auth: hlavička x-alert-secret === D1 market_meta.alert_secret.
+// Auth: hlavička x-alert-secret = kľúč Macu (v D1 len SHA-256; ingestSecretOk, 0116).
 // Body: { replaceKu?: string[], rows: [{ kodKu, kuName?, purpose?, verdict?, quality?, areaM2?, nParcels?, parcels?, shape?, zone?, build?, access?, slope?, frontage?, ppf?, existingUse?, yard?, accessTimes?, owners?, nOwners?, reason? }] }
 export const Route = createFileRoute("/api/ingest-landsearch")({
   server: {

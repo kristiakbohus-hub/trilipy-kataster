@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ingestDataset } from "../lib/api/kataster.functions";
 
 // POST /api/ingest-dataset — auto-publish k.ú. (parcely/LV/vlastníci/BPEJ) z 41_IMPORT pipeline do D1.
-// Auth: hlavička x-alert-secret === D1 market_meta.alert_secret. Chunkovaný (reset na prvom, append ďalej).
+// Auth: hlavička x-alert-secret = kľúč Macu (v D1 len SHA-256; ingestSecretOk, 0116). Chunkovaný (reset na prvom, append ďalej).
 export const Route = createFileRoute("/api/ingest-dataset")({
   server: {
     handlers: {

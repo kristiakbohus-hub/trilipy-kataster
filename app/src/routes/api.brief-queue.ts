@@ -3,7 +3,7 @@ import { briefQueue, ingestBriefResults } from "../lib/api/kataster.functions";
 
 // POST /api/brief-queue — front zadaní hľadania pozemkov pre Mac engine (21_NL_SEARCH/brief_worker.py).
 // Telo: { action: "pending" | "start" | "progress" | "finish" | "fail" | "results", … }.
-// Auth: hlavička x-alert-secret (=== D1 market_meta.alert_secret). Bez secretu vždy 401.
+// Auth: hlavička x-alert-secret = kľúč Macu (ingestSecretOk, 0116). Bez secretu vždy 401.
 export const Route = createFileRoute("/api/brief-queue")({
   server: {
     handlers: {

@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ingestMarketAll } from "../lib/api/kataster.functions";
 
 // POST /api/ingest-market — STEPOVÝ ingest trhových dát z verejného market-data.json.
-// Auth: hlavička x-alert-secret === D1 market_meta.alert_secret. Volá GitHub Action po scrape+publishi (Mac-nezávislé).
+// Auth: hlavička x-alert-secret (cloudový alert_secret alebo kľúč Macu — scope "cloud"). Volá GitHub Action po scrape+publishi (Mac-nezávislé).
 // Telo { step?, chunk? }: každý krok je samostatný request, aby žiaden neprekročil limit Workera.
 // Monolitný `{}` beh (všetko naraz) prekračoval ~1000 subrequestov → curl padal → D1 ostal zastaraný.
 // Bez `step` ostáva spätne kompatibilné (= krok "data"). Rozpis krokov je v ingestMarketAll.

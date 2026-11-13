@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { ingestSettlement } from "../lib/api/kataster.functions";
 
 // POST /api/ingest-settlement — bulk zápis kandidátov VYSPORIADANIA (GOLD 04) z Mac enginu.
-// Auth: hlavička x-alert-secret === D1 market_meta.alert_secret.
+// Auth: hlavička x-alert-secret = kľúč Macu (v D1 len SHA-256; ingestSecretOk, 0116).
 // Body: { replaceKu?: string[], rows: [{ kodKu, kuName?, buildingId?, buildingDesc?, parcelNo?, register?,
 //         landLvNo?, classification, score?, nLandOwners?, hasSpf?, hasUnknown?, viaE?, reason? }] }
 export const Route = createFileRoute("/api/ingest-settlement")({

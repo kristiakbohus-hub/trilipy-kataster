@@ -1165,8 +1165,7 @@ async function runAllAlertsCore(): Promise<{ checked: number; newTotal: number; 
 export const runAlertsCron = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string() }))
   .handler(async ({ data }): Promise<{ ok: boolean; checked?: number; newTotal?: number; messages?: string[]; message?: string; purged?: { contacts: number; buyers: number; dealTasks: number; dealNotes: number } }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret, "cloud"))) return { ok: false, message: "unauthorized" };
     const r = await runAllAlertsCore();
     // raz denne: uchovávanie osobných údajov (OI-14) — beží s alertmi, ktoré volá cloud 2× denne
     const purged = await purgeExpiredPersonalData().catch(() => null);
@@ -1219,8 +1218,7 @@ export const getChanges = createServerFn({ method: "POST" })
 export const ingestChanges = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), runId: z.string().optional(), changes: z.array(z.object({ datasetId: z.string().optional(), lvNo: z.number().optional(), parcelNo: z.string().optional(), entity: z.string(), field: z.string().optional(), oldValue: z.string().optional(), newValue: z.string().optional(), changeType: z.string(), importance: z.string().optional() })).max(1000) }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     // INSERT OR IGNORE + jedinečný index (0115): opakovaný beh toho istého porovnania nezdvojí zmeny
@@ -1245,8 +1243,7 @@ export const ingestAcquisitions = createServerFn({ method: "POST" })
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1277,8 +1274,7 @@ export const ingestLandsearch = createServerFn({ method: "POST" })
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1314,8 +1310,7 @@ export const ingestSettlement = createServerFn({ method: "POST" })
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1409,8 +1404,7 @@ export const ingestZA = createServerFn({ method: "POST" })
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1753,8 +1747,7 @@ export const ingestScenarioRun = createServerFn({ method: "POST" })
     })).max(200),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const stmt = DB.prepare(
@@ -1837,8 +1830,7 @@ export const ingestUP = createServerFn({ method: "POST" })
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -1926,8 +1918,7 @@ export const ingestParcelZoning = createServerFn({ method: "POST" })
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceKu && data.replaceKu.length) {
@@ -3301,8 +3292,7 @@ export const backupD1 = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), action: z.enum(["tables", "chunk", "prune", "list"]), date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     table: z.string().regex(/^[a-z_][a-z0-9_]{0,60}$/i).optional(), after: z.number().int().optional(), limit: z.number().int().min(100).max(20000).optional(), keep: z.number().int().min(1).max(12).optional() }))
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string; tables?: { name: string; rows: number }[]; rows?: number; last?: number | null; bytes?: number; dates?: string[]; deleted?: number }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB, STORAGE } = bindings();
     if (!DB || !STORAGE) return { ok: false, message: "D1 alebo R2 nie je dostupné." };
     if (data.action === "tables") {
@@ -3636,11 +3626,31 @@ function secretEq(a: string | undefined | null, b: string | undefined | null): b
   return d === 0;
 }
 
+// ROZDELENÉ KĽÚČE (audit GOLD v2, 2026-11-13). Predtým jeden alert_secret otváral všetkých ~35 zápisových
+// endpointov a poznal ho aj cloud (GitHub Actions v tri-lipy-market). Teraz:
+//   • scope "cloud" — LEN tri endpointy cloudu (ingest-market, run-alerts, tg-digest): platí alert_secret aj kľúč Macu;
+//   • scope "mac" (všetko ostatné: importy, scenáre, zálohy…) — LEN kľúč Macu. V D1 je iba jeho SHA-256
+//     (market_meta.ingest_secret_sha256, migrácia 0116), samotný kľúč je len v 25_SAVED_ALERTS/alerts_cron.json na Macu.
+// Kým hash v D1 nie je, platí prechodne alert_secret všade (nasadenie samo nič nerozbije).
+async function sha256Hex(s: string): Promise<string> {
+  const h = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
+  return Array.from(new Uint8Array(h), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function ingestSecretOk(secret: string | undefined | null, scope: "mac" | "cloud" = "mac"): Promise<boolean> {
+  if (!secret) return false;
+  const rows = await q<{ key: string; value: string }>(
+    "SELECT key, value FROM market_meta WHERE key IN ('alert_secret','ingest_secret_sha256')").catch(() => []);
+  const m = new Map(rows.map((r): [string, string] => [r.key, r.value]));
+  const macHash = m.get("ingest_secret_sha256");
+  if (macHash && secretEq(await sha256Hex(secret), macHash)) return true;
+  if (!macHash || scope === "cloud") return secretEq(secret, m.get("alert_secret"));
+  return false;
+}
+
 async function pipelineAuthed(role: Role, pipelineSecret?: string): Promise<boolean> {
   if (canRunPipeline(role)) return true;
   if (!pipelineSecret) return false;
-  const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
-  return secretEq(pipelineSecret, expected);
+  return ingestSecretOk(pipelineSecret, "cloud");   // cloud ingest inzercie (scrape.yml → /api/ingest-market)
 }
 
 export const refreshMarketData = createServerFn({ method: "POST" })
@@ -3848,8 +3858,7 @@ export const ingestObecChanges = createServerFn({ method: "POST" })
     })).max(3000).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     // INSERT OR IGNORE + UNIQUE → opakovaný push to neduplikuje a nepotrebuje reset
@@ -4240,8 +4249,7 @@ export const ingestDataset = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ ok: boolean; message?: string; parcels?: number; owners?: number }> => {
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "DB nedostupná" };
-    const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
-    if (!secretEq(data.secret, expected)) return { ok: false, message: "Neplatný secret" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "Neplatný secret" };
     const did = `kn-${data.kodKu}`;
     // Cielené premazanie LEN titulov/tiarch — lv_titles nemá unique kľúč, takže opakovaný push bez
     // neho duplikuje riadky. `reset` sa na to použiť nedá, ten zmaže aj parcely, vlastníkov a signály.
@@ -4323,8 +4331,7 @@ export const ingestMarketAll = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<MarketStepResult> => {
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "DB nedostupná" };
-    const expected = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'"))[0]?.value;
-    if (!secretEq(data.secret, expected)) return { ok: false, message: "Neplatný secret" };
+    if (!(await ingestSecretOk(data.secret, "cloud"))) return { ok: false, message: "Neplatný secret" };
     const src0 = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='source_url'"))[0]?.value;
     if (!src0) return { ok: false, message: "Chýba source_url v market_meta" };
     const src = data.ref ? src0.replace("/main/", `/${data.ref}/`) : src0;
@@ -6602,8 +6609,7 @@ export const ingestBuyerFirms = createServerFn({ method: "POST" })
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     if (data.replaceOkres && data.replaceOkres.length) {
@@ -6635,8 +6641,7 @@ const leadRow = z.object({
 export const ingestBuyerLeads = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), rows: z.array(leadRow).max(200) }))
   .handler(async ({ data }): Promise<{ ok: boolean; upserted?: number; skippedErased?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     // GDPR: lead vymazaný na žiadosť osoby sa ďalším poslaním z OS nevráti (kľúč source:externalId v suppression)
@@ -6659,8 +6664,7 @@ export const ingestBuyerLeads = createServerFn({ method: "POST" })
 export const buyerMatchesForLead = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), externalId: z.string().max(100) }))
   .handler(async ({ data }): Promise<{ ok: boolean; requestId?: number; land?: BuyerLandMatch[]; listings?: BuyerListingMatch[]; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };   // secret VŽDY prvý
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };   // secret VŽDY prvý
     if (!data.externalId.trim()) return { ok: false, message: "Chýba externalId." };
     const r = (await q<BuyerRequest>("SELECT * FROM buyer_requests WHERE source='os_tri_lipy' AND external_id=?", [data.externalId]))[0];
     if (!r) return { ok: false, message: "Záujemca s týmto externalId nie je v evidencii." };
@@ -6802,8 +6806,7 @@ export const briefQueue = createServerFn({ method: "POST" })
     stats: z.string().max(200000).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; started?: boolean; briefs?: SearchBrief[]; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     if (data.action === "pending") {
       await q("UPDATE search_briefs SET status='pending', progress='obnovené po prerušení' WHERE status='running' AND started_at < datetime('now','-6 hours')");
       return { ok: true, briefs: await q<SearchBrief>("SELECT * FROM search_briefs WHERE status = 'pending' ORDER BY id LIMIT 5") };
@@ -6854,8 +6857,7 @@ export const ingestBriefResults = createServerFn({ method: "POST" })
     })).max(1000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const st = (await q<{ status: string }>("SELECT status FROM search_briefs WHERE id = ?", [data.briefId]))[0]?.status;
@@ -6889,8 +6891,7 @@ export const exportMarketListings = createServerFn({ method: "POST" })
     limit: z.number().int().min(1).max(5000).default(5000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; rows?: MarketExportRow[]; next?: { source: string; extId: string } | null; asOf?: string | null; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const asOf = (await q<{ d: string | null }>("SELECT MAX(last_seen) d FROM market_listings").catch(() => []))[0]?.d ?? null;
     if (!asOf) return { ok: true, rows: [], next: null, asOf: null };
     const cond = ["(last_seen >= date(?, ?) OR removed_at >= date(?, ?))"];
@@ -7171,8 +7172,7 @@ async function buildMorningDigest(): Promise<{ messages: string[]; keys: string[
 export const tgDigest = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), action: z.enum(["claim", "ack", "fail", "preview"]), runner: z.enum(["mac", "cloud"]).default("mac") }))
   .handler(async ({ data }): Promise<{ ok: boolean; claimed?: boolean; key?: string; reason?: string; messages?: string[]; stats?: Record<string, number | string | null>; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret, "cloud"))) return { ok: false, message: "unauthorized" };
     const { date, hm } = localNow();
     const key = `digest:${date}`;
     if (data.action === "preview") {
@@ -7237,8 +7237,7 @@ export const ingestLvFlags = createServerFn({ method: "POST" })
     })).max(3000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const did = `kn-${data.kodKu}`;
@@ -7293,8 +7292,7 @@ export const ingestStateContracts = createServerFn({ method: "POST" })
     })).max(2000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const ps = DB.prepare(`INSERT INTO state_contracts (crz_id,day,signed,publisher,kind,amount,ku_name,okres,party,url) VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -7325,8 +7323,7 @@ export const ingestFirmFinance = createServerFn({ method: "POST" })
     nace: z.string().max(20).nullable().optional(), founded: z.string().max(20).nullable().optional(),
   })).max(2000) }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const ps = DB.prepare(`INSERT INTO firm_finance (ico,name,year,revenue,assets,equity,profit,nace,founded,updated) VALUES (?,?,?,?,?,?,?,?,?,datetime('now'))
@@ -7355,8 +7352,7 @@ export const ingestConstruction = createServerFn({ method: "POST" })
     spots: z.array(z.object({ id: z.number().int(), lat: z.number(), lon: z.number(), areaM2: z.number().nullable().optional(), period: z.string().max(20).nullable().optional(), typ: z.string().max(20).nullable().optional(), density: z.number().nullable().optional() })).max(500),
   })).max(200) }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     let n = 0;
@@ -7396,8 +7392,7 @@ export const ingestGeometry = createServerFn({ method: "POST" })
     parcelNo: z.string().min(1).max(30), lat: z.number(), lng: z.number(), geometryJson: z.string().max(200_000),
   })).max(1500) }))
   .handler(async ({ data }): Promise<{ ok: boolean; updated?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const did = `kn-${data.kodKu}`;
@@ -7413,8 +7408,7 @@ export const ingestUnregistered = createServerFn({ method: "POST" })
     druh: z.string().max(40).nullable().optional(), kategoria: z.enum(["A", "B"]), lat: z.number(), lon: z.number(),
   })).max(3000) }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const did = `kn-${data.kodKu}`;
@@ -7449,8 +7443,7 @@ export const ingestMapLayers = createServerFn({ method: "POST" })
     layer: z.enum(["tarchy", "zuob", "ppu"]), features: z.array(z.object({ label: z.string().max(80).nullable().optional(), geometryJson: z.string().max(400_000) })).max(3000),
   })).max(3) }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const did = `kn-${data.kodKu}`;
@@ -7483,8 +7476,7 @@ export const ingestListingMatches = createServerFn({ method: "POST" })
     nCandidates: z.number().int().nullable().optional(), via: z.string().max(40).nullable().optional(),
   })).max(5000) }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const ps = DB.prepare("INSERT INTO listing_matches (source,ext_id,url,dataset_id,kind,register,parcel_no,lv_no,area_m2,confidence,n_candidates,via) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)");
@@ -7504,8 +7496,7 @@ export const ingestAuctions = createServerFn({ method: "POST" })
     auctioneer_company: z.string().max(160).nullable().optional(), party: z.string().max(160).nullable().optional(), note: z.string().max(400).nullable().optional(),
   })).max(3000) }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const ps = DB.prepare(`INSERT INTO auctions (source,id,url,published,auction_date,okres,obec,ku_name,property_type,parcels,lv,price_min_eur,price_estimate_eur,auctioneer_company,party,note,updated)
@@ -7548,8 +7539,7 @@ export const ingestLvPrices = createServerFn({ method: "POST" })
     })).max(3000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const did = `kn-${data.kodKu}`;
@@ -7770,8 +7760,7 @@ export const ingestTarchyItems = createServerFn({ method: "POST" })
     })).max(3000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const did = `kn-${data.kodKu}`;
@@ -7797,8 +7786,7 @@ export const ingestLvParts = createServerFn({ method: "POST" })
     })).max(3000).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const did = `kn-${data.kodKu}`;
@@ -8330,8 +8318,7 @@ export const ingestFacts = createServerFn({ method: "POST" })
     })).max(2000),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; inserted?: number; rejected?: number; dbSizeMb?: number | null; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const { DB } = bindings();
     if (!DB) return { ok: false, message: "Databáza nie je dostupná." };
     const sizeOf = (m: unknown) => { const s = (m as { size_after?: number } | undefined)?.size_after; return typeof s === "number" ? Math.round(s / 1e6) : null; };
@@ -9232,8 +9219,7 @@ export const getShading = createServerFn({ method: "POST" })
 export const probeExt = createServerFn({ method: "POST" })
   .validator(z.object({ secret: z.string(), lat: z.number(), lng: z.number() }))
   .handler(async ({ data }): Promise<{ ok: boolean; items?: ExtHitRow[]; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     return { ok: true, items: await Promise.all(EXT_DEFS.map((d) => extRun(d, data.lat, data.lng))) };
   });
 
@@ -9366,8 +9352,7 @@ export const buildClientShare = createServerFn({ method: "POST" })
     finInputs: z.object({ price: z.number().nullable().optional(), ltv: z.number().min(0).max(0.9).optional(), years: z.number().int().min(5).max(40).optional(), fix: z.number().int().min(1).max(30).optional(), age: z.number().int().min(18).max(80).optional(), adults: z.number().int().min(1).max(6).optional(), children: z.number().int().min(0).max(10).optional(), persons: z.number().int().min(1).max(12).optional(), rentMonthly: z.number().nullable().optional() }).optional(),
   }))
   .handler(async ({ data }): Promise<{ ok: boolean; path?: string; title?: string; message?: string }> => {
-    const want = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key='alert_secret'").catch(() => []))[0]?.value;
-    if (!secretEq(data.secret, want)) return { ok: false, message: "unauthorized" };
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
     const core = await buildPropertyCore(data, "summary");
     if (!core.ok || !core.dataset) return { ok: false, message: core.message ?? "List sa nepodarilo zostaviť." };
     const { lat, lng } = core.main;
