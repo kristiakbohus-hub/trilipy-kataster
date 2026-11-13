@@ -842,6 +842,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
 
       <Sec id="up" n={num("up")} explain={ex("up")} {...asof("up")} title={tt("up", "Územný plán a zastavateľnosť")} source="Územný plán obce (vektor/WMS alebo výkres georeferencovaný v appke); regulatívy podľa ÚP alebo odvodené; dokumenty ÚP obce.">
         <Grid rows={[["Funkčná zóna", prettyZone(z.name) ?? "nemáme zónu ÚP pre parcelu"]]} />
+        <RequestAnswers d={d} kinds={["up_obec"]} title="Územnoplánovacia informácia od obce" isClient={isClient} />
         {mk && fact(c, "up", mk) ? (<><Sub>Zóna z výkresu ÚP (georeferencovaný výkres, orientačné)</Sub><FactsBlock grp="up" data={fact(c, "up", mk)} /></>) : null}
         {fact(c, "up", kuKey) ? <FactsBlock grp="up" data={Object.fromEntries(Object.entries(fact(c, "up", kuKey) ?? {}).filter(([k]) => ["zdroj", "dokumenty", "metoda", "presnost_m", "poznamka"].includes(k)))} /> : null}
         {d.dev ? (
@@ -900,6 +901,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
         {fact(c, "obec", kuKey) ? <FactsBlock grp="obec" data={Object.fromEntries(Object.entries(fact(c, "obec", kuKey) ?? {}).filter(([k]) => /vod|kanal|cov|plyn|distrib|elektr|stocn|voda/i.test(k)))} /> : null}
         {fact(c, "voda", kuKey) ? (() => { const w = fact(c, "voda", kuKey)!; return <Grid rows={[["Tvrdosť pitnej vody (verejný vodovod)", `${nf(Number(w.tvrdost_mmol), 2)} mmol/l (${nf(Number(w.tvrdost_dh), 1)} °dH) — ${String(w.tvrdost_slovom)}`], ["Vodovod", `${String(w.vodovod)} · ${String(w.miesto)}`]]} />; })() : null}
         {connectionLength(d) != null ? <Grid rows={[["Orientačná dĺžka prípojok (od cesty, kde siete spravidla vedú)", `~${connectionLength(d)} m`]]} /> : null}
+        <RequestAnswers d={d} kinds={["elektrina", "plyn", "voda", "telekom_st", "telekom_orange"]} title="Vyjadrenia správcov sietí" isClient={isClient} />
         <Muted>Existenciu a polohu sietí potvrdí správca vo „vyjadrení k existencii sietí" (elektrina, plyn, voda, telekomunikácie); cenu prípojok určí projekt a cenník správcu.</Muted>
       </Sec>
 
@@ -1044,5 +1046,34 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
       </Sec>
     </div>
     </HideCtx.Provider></LangCtx.Provider>
+  );
+}
+
+
+// ——— Evidované odpovede na žiadosti (0113): vyjadrenia správcov sietí a ÚPI obce. Klientska verzia ukazuje len
+// prijaté odpovede (bez interných stavov „pripravená/odoslaná"). Text odpovede píše maklér — bez osobných údajov.
+const REQ_LABEL: Record<string, string> = {
+  elektrina: "Elektrina", plyn: "Plyn", voda: "Voda a kanalizácia", telekom_st: "Telekomunikácie (Slovak Telekom)",
+  telekom_orange: "Telekomunikácie (Orange)", up_obec: "Obec — územnoplánovacia informácia",
+};
+const REQ_OUT: Record<string, { label: string; color: string }> = {
+  ok: { label: "bez prekážok", color: "#5b7a58" }, pozor: { label: "s podmienkami", color: "#b07d2b" }, riziko: { label: "prekážka", color: "#9c4a40" },
+};
+const REQ_STATUS: Record<string, string> = { pripravena: "pripravená", odoslana: "odoslaná", odpoved: "odpoveď prišla", bez_odpovede: "bez odpovede" };
+function RequestAnswers({ d, kinds, title, isClient }: { d: SheetData; kinds: string[]; title: string; isClient: boolean }) {
+  const rows = (d.core.requests ?? []).filter((r) => kinds.includes(r.kind) && (!isClient || r.status === "odpoved"));
+  if (!rows.length) return null;
+  return (
+    <>
+      <Sub>{title}</Sub>
+      <Grid rows={rows.map((r) => [
+        REQ_LABEL[r.kind] ?? r.kind,
+        <span key={r.kind}>
+          {r.status === "odpoved" && r.outcome ? <b style={{ color: REQ_OUT[r.outcome]?.color }}>{REQ_OUT[r.outcome]?.label ?? r.outcome}</b> : <span className="text-muted">{REQ_STATUS[r.status] ?? r.status}</span>}
+          {r.summary ? <> — {r.summary}</> : null}
+          <span className="text-muted">{[r.refNo ? ` · č. ${r.refNo}` : "", r.answeredAt ? ` · zo dňa ${date(r.answeredAt)}` : r.sentAt ? ` · odoslaná ${date(r.sentAt)}` : "", r.validUntil ? ` · platí do ${date(r.validUntil)}` : ""].join("")}</span>
+        </span>,
+      ] as [ReactNode, ReactNode])} />
+    </>
   );
 }

@@ -8291,6 +8291,8 @@ export type PropertyCore = {
     insolvency?: { konkurz: number; restrukturalizacia: number; likvidacia: number } | null }[];
   obec: { changes: { title: string | null; url: string | null; change: string | null; relevance: string; detected_at: string | null }[]; upChanges: { title: string | null; url: string | null; change: string | null; detected_at: string | null }[] };
   stateContracts: { n: number; recent: { day: string; publisher: string; kind: string; amount: number | null }[] };
+  /** evidované žiadosti a odpovede (správcovia sietí, ÚPI obce) — 0113 */
+  requests?: PropertyRequest[];
   /** byty a nebytové priestory v dome celku (podľa súpisného čísla) alebo zapísané na LV */
   flats: { ref: string; cislo: string | null; vchod: string | null; poschodie: number | null; druh: string | null; vymera_m2: number | null; sc: string | null }[];
   /** trh v okrese/k.ú.: trend zo zmlúv, likvidita, nájomný výnos, doba predaja, konkurencia, zloženie zástavby */
@@ -8728,8 +8730,55 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       work: { contacts: ct?.n ?? 0, lastContact: ct?.last ?? null, nextAt: ct?.nxt ?? null, comments: cm, documents: dc },
       firms, obec: { changes, upChanges }, stateContracts: { n: scN, recent: scRecent },
       flats, market: { trend, kuSales, rent, domDays, freePlots: { landsearch: freeLs, up: freeUp }, buildingMix },
+      requests: await requestsFor(ds.id, [main?.parcel_no ? `p:${main.parcel_no}` : "", ...lvs.map((l) => `lv:${l}`)].filter(Boolean)),
     };
 }
+
+// ——— ŽIADOSTI — evidencia odoslania a odpovedí (správcovia sietí, územnoplánovacia informácia obce) — 0113 ———
+export const REQUEST_KINDS: Record<string, string> = {
+  elektrina: "Elektrina (distribučná spoločnosť)", plyn: "Plyn (SPP - distribúcia)", voda: "Voda a kanalizácia",
+  telekom_st: "Telekomunikácie (Slovak Telekom)", telekom_orange: "Telekomunikácie (Orange)", up_obec: "Územnoplánovacia informácia (obec)",
+};
+export type PropertyRequest = { ref: string; kind: string; status: string; sentAt: string | null; answeredAt: string | null; outcome: string | null; summary: string | null; refNo: string | null; validUntil: string | null; updatedAt: string | null };
+async function requestsFor(datasetId: string, refs: string[]): Promise<PropertyRequest[]> {
+  if (!refs.length) return [];
+  const rows = await q<{ ref: string; kind: string; status: string; sent_at: string | null; answered_at: string | null; outcome: string | null; summary: string | null; ref_no: string | null; valid_until: string | null; updated_at: string | null }>(
+    `SELECT ref, kind, status, sent_at, answered_at, outcome, summary, ref_no, valid_until, updated_at FROM property_requests WHERE dataset_id=? AND ref IN (${refs.map(() => "?").join(",")}) ORDER BY kind`,
+    [datasetId, ...refs]).catch(() => []);
+  return rows.map((r) => ({ ref: r.ref, kind: r.kind, status: r.status, sentAt: r.sent_at, answeredAt: r.answered_at, outcome: r.outcome, summary: r.summary, refNo: r.ref_no, validUntil: r.valid_until, updatedAt: r.updated_at }));
+}
+const REQ_REF = /^(p:[0-9A-Za-z\/\-]{1,30}|lv:\d{1,7})$/;
+export const listPropertyRequests = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), ref: z.string().regex(REQ_REF) }))
+  .handler(async ({ data }): Promise<{ ok: boolean; rows: PropertyRequest[] }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, rows: [] };
+    return { ok: true, rows: await requestsFor(data.datasetId, [data.ref]) };
+  });
+export const savePropertyRequest = createServerFn({ method: "POST" })
+  .validator(z.object({
+    token: z.string(), datasetId: z.string().max(40), ref: z.string().regex(REQ_REF),
+    kind: z.enum(["elektrina", "plyn", "voda", "telekom_st", "telekom_orange", "up_obec"]),
+    status: z.enum(["pripravena", "odoslana", "odpoved", "bez_odpovede"]),
+    sentAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(), answeredAt: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    outcome: z.enum(["ok", "pozor", "riziko"]).nullable().optional(), summary: z.string().max(600).nullable().optional(),
+    refNo: z.string().max(60).nullable().optional(), validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    if (u.role === "viewer" || u.role === "external_readonly") return { ok: false, message: "Rola nemôže upravovať evidenciu žiadostí." };
+    const { DB } = bindings();
+    if (!DB) return { ok: false, message: "Databáza nedostupná." };
+    await DB.prepare(`INSERT INTO property_requests (dataset_id, ref, kind, status, sent_at, answered_at, outcome, summary, ref_no, valid_until, updated_by, updated_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
+      ON CONFLICT(dataset_id, ref, kind) DO UPDATE SET status=excluded.status, sent_at=excluded.sent_at, answered_at=excluded.answered_at,
+        outcome=excluded.outcome, summary=excluded.summary, ref_no=excluded.ref_no, valid_until=excluded.valid_until, updated_by=excluded.updated_by, updated_at=excluded.updated_at`)
+      .bind(data.datasetId, data.ref, data.kind, data.status, data.sentAt ?? null, data.answeredAt ?? null, data.outcome ?? null,
+        data.summary?.trim() || null, data.refNo?.trim() || null, data.validUntil ?? null, u.email).run();
+    await logAudit("request.update", u.role, `Žiadosť ${data.kind} (${data.ref}): ${data.status}${data.outcome ? `, ${data.outcome}` : ""}`, data.datasetId).catch(() => undefined);
+    return { ok: true };
+  });
 
 // ——— LIST NEHNUTEĽNOSTI — úradné registre na požiadanie (geológia, voda, príroda…) ———
 // Definície: src/lib/ext-sources.ts (generované z overeného registra 49_LIST_NEHNUTELNOSTI/zdroje). Len bezplatné

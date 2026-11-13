@@ -134,9 +134,11 @@ export function semafor(d: SheetData): Light[] {
   else if (hits.length || extWarn.length) out.push({ key: "limity", label: "Limity a riziká", state: "warn", text: [...hits.map((h) => h.label), ...extWarn.map((e) => e.label)].slice(0, 3).join(", ") });
   else if (items.every((h) => h.error)) out.push({ key: "limity", label: "Limity a riziká", state: "unknown", text: "Registre neodpovedali." });
   else out.push({ key: "limity", label: "Limity a riziká", state: "ok", text: "V sledovaných registroch bez zásahu." });
-  // ÚP
+  // ÚP — územnoplánovacia informácia od obce (evidovaná odpoveď) má prednosť pred zónou odčítanou z mapy
   const z = zoneOf(d);
-  if (!z.name) out.push({ key: "up", label: "Územný plán", state: "unknown", text: "Zónu ÚP pre parcelu nemáme." });
+  const upi = (c.requests ?? []).find((r) => r.kind === "up_obec" && r.status === "odpoved" && r.outcome);
+  if (upi) out.push({ key: "up", label: "Územný plán", state: upi.outcome === "ok" ? "ok" : upi.outcome === "pozor" ? "warn" : "bad", text: `ÚPI obce: ${upi.summary ?? (upi.outcome === "ok" ? "zámer v súlade" : "s obmedzením")}` });
+  else if (!z.name) out.push({ key: "up", label: "Územný plán", state: "unknown", text: "Zónu ÚP pre parcelu nemáme." });
   else {
     const zn = z.name.replace(/\s*\/\s*/g, " / ").replace(/^./, (x) => x.toUpperCase());
     if (RESIDENTIAL.test(z.name)) out.push({ key: "up", label: "Územný plán", state: "ok", text: zn });
@@ -160,6 +162,11 @@ export function semafor(d: SheetData): Light[] {
     if (tr != null) parts.push(`trafostanica ${tr < 1000 ? `${tr} m` : `${(tr / 1000).toFixed(1)} km`}`);
     if (vod == null && kan == null && tr == null) st = "unknown";
     else if (vod == null && kan == null && tr != null && tr > 500) st = "warn";
+    // vyjadrenia správcov (evidované odpovede, 0113) majú prednosť pred odhadom z OSM a údajov obce
+    const ans = (c.requests ?? []).filter((r) => r.status === "odpoved" && r.outcome && r.kind !== "up_obec");
+    if (ans.some((r) => r.outcome === "riziko")) { st = "bad"; parts.unshift("vyjadrenie správcu: prekážka"); }
+    else if (ans.some((r) => r.outcome === "pozor")) { st = st === "bad" ? st : "warn"; parts.unshift("vyjadrenie správcu: s podmienkami"); }
+    else if (ans.length) { parts.unshift(`vyjadrenia správcov bez prekážok (${ans.length})`); if (st === "unknown") st = "ok"; }
     out.push({ key: "siete", label: "Siete", state: st, text: parts.join(" · ") || "Napojenie obce neznáme — vyjadrenia správcov." });
   }
   // CENA
