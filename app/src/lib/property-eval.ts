@@ -195,7 +195,7 @@ export function checklist(d: SheetData): { text: string; why: string }[] {
   if (persons > 3) add("Súhlas všetkých spoluvlastníkov; pri predaji podielu predkupné právo spoluvlastníkov (§ 140 Občianskeho zákonníka)", `${persons} vlastníkov`);
   for (const lv of c.lvs) {
     const v = fact(c, "vlastnici", `lv:${lv}`);
-    if (v && Number(v.pravdepodobne_zosnuli ?? 0) > 0) add("Overiť, či niektorý vlastník nezomrel — potrebné dedičské konanie", `LV ${lv}: ${String(v.pravdepodobne_zosnuli)}× veľmi starý dátum narodenia`);
+    if (v && Number(v.pravdepodobne_zosnuli ?? 0) > 0) add("Overiť aktuálnosť zápisu vlastníka (veľmi starý dátum narodenia) — prípadne dedičské konanie", `LV ${lv}: ${String(v.pravdepodobne_zosnuli)}× veľmi starý dátum narodenia`);
     if (v && (Number(v.obec ?? 0) > 0)) add("Predaj obecného majetku: zámer, uznesenie zastupiteľstva, zverejnenie", `LV ${lv}: vlastník obec`);
     if (v && (Number(v.stat ?? 0) > 0 || Number(v.spf ?? 0) > 0)) add("Štát / SPF: osobitný postup predaja (ponuka, súhlas, cena podľa predpisov)", `LV ${lv}: štátny vlastník`);
     if (v && Number(v.nezisteny ?? 0) > 0) add("Nezistený vlastník — rokovať so SPF / vysporiadanie", `LV ${lv}`);
@@ -363,7 +363,7 @@ export function sellPropensity(d: SheetData): { score: number; factors: string[]
   if (c.auctions.length) { s += 30; f.push("dražba"); }
   for (const lv of c.lvs) {
     const v = fact(c, "vlastnici", `lv:${lv}`);
-    if (v && Number(v.pravdepodobne_zosnuli ?? 0) > 0) { s += 10; f.push("pravdepodobne zosnulý vlastník"); break; }
+    if (v && Number(v.pravdepodobne_zosnuli ?? 0) > 0) { s += 10; f.push("veľmi starý zápis vlastníka"); break; }
   }
   for (const lv of c.lvs) {
     const v = fact(c, "vlastnici", `lv:${lv}`);

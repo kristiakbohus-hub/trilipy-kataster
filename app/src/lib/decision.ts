@@ -30,7 +30,7 @@ export function gates(d: SheetData): Gate[] {
   const owners = c.owners.perLv.reduce((s, l) => s + l.count, 0); if (owners > 10) out.push({ text: `${owners} vlastníkov — vysporiadanie dlhé a neisté`, hard: false });
   for (const lv of c.lvs) { const v = fact(c, "vlastnici", `lv:${lv}`); if (v && Number(v.nezisteny ?? 0) > 0) { out.push({ text: "nezistený vlastník (správa SPF) — súdne alebo osobitné vysporiadanie", hard: false }); break; } }
   if (Object.keys(c.facts.nkp ?? {}).length) out.push({ text: "národná kultúrna pamiatka na pozemku alebo stavbe — zásahy len so súhlasom krajského pamiatkového úradu (49/2002)", hard: false });
-  if (c.unregistered.length) out.push({ text: "stavba bez zápisu — dodatočné povolenie (pri stavbách do 31. 3. 2025 do 31. 12. 2040 podľa novely 243/2026)", hard: false });
+  if (c.unregistered.length) out.push({ text: "budova v mape ZBGIS bez zápisu v katastri — overiť povolenie a zápis (ak povolenie chýba: dodatočné povolenie pri stavbách do 31. 3. 2025 možné do 31. 12. 2040 podľa novely 243/2026)", hard: false });
   return out;
 }
 
@@ -148,7 +148,7 @@ export function settlement(d: SheetData): { rows: { cat: string; n: number; cost
   agg.fo = Math.max(0, persons - agg.zosnuli - agg.zahranicie);
   if (!agg.po) agg.po = c.owners.perLv.reduce((s, l) => s + l.companies, 0);
   const C: [keyof typeof agg, string, number, number, string, number][] = [
-    ["fo", "fyzické osoby (žijúce, doma)", 150, 400, "1–3", 0.9], ["zahranicie", "fyzické osoby v zahraničí", 400, 1200, "2–6", 0.8], ["zosnuli", "pravdepodobne zosnulí (dedičské konanie)", 800, 2500, "6–18", 0.75],
+    ["fo", "fyzické osoby s adresou na Slovensku", 150, 400, "1–3", 0.9], ["zahranicie", "fyzické osoby v zahraničí", 400, 1200, "2–6", 0.8], ["zosnuli", "vlastníci s veľmi starým zápisom (možné dedičské konanie)", 800, 2500, "6–18", 0.75],
     ["po", "firmy", 200, 800, "1–4", 0.85], ["obec", "obec (zámer, uznesenie, zverejnenie)", 300, 1000, "2–6", 0.8], ["stat", "štát / SPF", 500, 2000, "6–18", 0.65], ["nezisteny", "nezistený vlastník (SPF / súd)", 2000, 5000, "12–36", 0.55],
   ];
   const rows = C.filter(([k]) => agg[k] > 0).map(([k, cat, lo, hi, m, p]) => ({ cat, n: agg[k], cost: `${(lo * agg[k]).toLocaleString("sk-SK")} – ${(hi * agg[k]).toLocaleString("sk-SK")} €`, months: m, p: Math.pow(p, Math.min(agg[k], 6)) }));

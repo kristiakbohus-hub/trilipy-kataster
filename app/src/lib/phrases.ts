@@ -44,6 +44,38 @@ export const FORBIDDEN_PHRASES: ForbiddenPhrase[] = [
     claim: "Pozemok sa predal za X.",
     use: "Ponuková cena v inzeráte k dátumu X je Y (ak nie je dôkaz transakcie).",
   },
+  // 2026-11-13 (audit GOLD v2, spec §1.5 „Historický zápis nedokazuje smrť vlastníka"): appka písala
+  // „pravdepodobne zosnulý vlastník" a „fyzické osoby (žijúce, doma)" len z veku v zápise.
+  {
+    id: "zosnuly",
+    re: /pravdepodobne\s+zosnul|\bnezomrel|\bje\s+zosnul|\bzosnul\p{L}*\s+vlastn/iu,
+    claim: "Vlastník pravdepodobne zomrel.",
+    use: "Vlastník má v katastri veľmi starý zápis (napr. dátum narodenia pred 1925) — aktuálnosť zápisu overiť.",
+  },
+  {
+    id: "zijuci",
+    re: /fyzick\p{L}*\s+osob\p{L}*\s*\(\s*žij|\bžijúc\p{L}*\s*,\s*doma/iu,
+    claim: "Vlastníci žijú a sú doma.",
+    use: "Fyzické osoby s evidovanou adresou na Slovensku (podľa zápisu v katastri).",
+  },
+  {
+    id: "pravny-pristup",
+    re: /(príjazd|prístup)\p{L}*\s+je\s+právne\s+zabezpečen|právne\s+zabezpečen\p{L}*\s+(príjazd|prístup)/iu,
+    claim: "Príjazd je právne zabezpečený.",
+    use: "Pozemok podľa katastrálnej mapy hraničí s parcelou cesty (vlastník X); právo prechodu a napojenie overiť.",
+  },
+  {
+    id: "nelegalna-stavba",
+    re: /nelegáln\p{L}*\s+stavb|čiern\p{L}*\s+stavb/iu,
+    claim: "Stavba je nelegálna / čierna stavba.",
+    use: "Budova je v mape ZBGIS, ale v katastri nie je zapísaná — povolenie a zápis overiť.",
+  },
+  {
+    id: "verejny-predaj",
+    re: /\b(obec|mesto|štát)\s+ako\s+predávajúc/iu,
+    claim: "Obec/štát pozemok predáva.",
+    use: "Vlastníkom je obec/štát; ak by predával, platí postup podľa zákona o majetku obcí / štátu.",
+  },
   {
     id: "vsetky-lokality",
     re: /všetky\s+vhodn\p{L}*\s+(lokalit|pozemk|byt|parcel)/iu,

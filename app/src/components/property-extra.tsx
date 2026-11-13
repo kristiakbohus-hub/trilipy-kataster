@@ -158,7 +158,7 @@ export function legalRisk(d: SheetData): { score: number; level: string; factors
   if (Object.keys(c.facts.nkp ?? {}).length) f.push(["národná kultúrna pamiatka (zásahy len so súhlasom pamiatkového úradu)", 10]);
   if (c.legal.some((l) => !l.hasData)) f.push(["časť B/C nemáme pre všetky LV", 10]);
   const mk = mainKey(c); const pr = mk ? fact(c, "pristup", mk) : null; if (/bez|cez/i.test(String(pr?.trieda ?? ""))) f.push(["prístup cez cudzí pozemok alebo bez prístupu", 12]);
-  for (const lv of c.lvs) { const v = fact(c, "vlastnici", `lv:${lv}`); if (v && Number(v.pravdepodobne_zosnuli ?? 0) > 0) { f.push(["pravdepodobne zosnulý vlastník", 15]); break; } }
+  for (const lv of c.lvs) { const v = fact(c, "vlastnici", `lv:${lv}`); if (v && Number(v.pravdepodobne_zosnuli ?? 0) > 0) { f.push(["veľmi starý zápis vlastníka (overiť dedenie)", 15]); break; } }
   const score = Math.min(100, f.reduce((s, x) => s + x[1], 0));
   return { score, level: score >= 50 ? "vysoké" : score >= 20 ? "stredné" : "nízke", factors: f };
 }
@@ -207,7 +207,7 @@ export function PurchaseSteps({ d, fin }: { d: SheetData; fin: FinResult | null 
   const steps: [string, string, string][] = [];
   steps.push(["Overenie", "aktuálny výpis z LV a kópia mapy, obhliadka, vyjadrenia (ÚPI obce, siete); maklér overí totožnosť strán (zákon 297/2008 — realitný sprostredkovateľ je povinná osoba)", "1–4 týždne"]);
   if (c.parcels.some((p) => /orn|trval|ttp|záhrad|zahrad/i.test(p.use_type ?? ""))) steps.push(["Nájom poľnohospodárskej pôdy", "nájom prechádza na kupujúceho; nájom na neurčito sa vypovedá k 1. novembru s ročnou lehotou, nájom na podnikanie trvá 5–15 rokov (504/2003); predkupné právo nájomcu sa dohodnúť nedá", "do 1. 11. nasl. roka"]);
-  if (has("obec")) steps.push(["Obec ako predávajúci", "obchodná verejná súťaž, dražba alebo priamy predaj (len do 40 000 € a najmenej za všeobecnú hodnotu); zámer zverejniť min. 15 dní, ponuky min. 30 dní; výnimky — pozemok pod stavbou kupujúceho, osobitný zreteľ (138/1991 § 9a)", "1–3 mesiace"]);
+  if (has("obec")) steps.push(["Ak by predávala obec", "obchodná verejná súťaž, dražba alebo priamy predaj (len do 40 000 € a najmenej za všeobecnú hodnotu); zámer zverejniť min. 15 dní, ponuky min. 30 dní; výnimky — pozemok pod stavbou kupujúceho, osobitný zreteľ (138/1991 § 9a)", "1–3 mesiace"]);
   if (has("stat") || has("spf")) steps.push(["Štát / SPF", "osobitný postup: žiadosť, ocenenie znaleckým posudkom, súhlas, ponuka — cena podľa predpisov", "3–12 mesiacov"]);
   if (owners > 1) steps.push(["Spoluvlastníci", `${owners} vlastníkov — podpis všetkých alebo predaj podielu s ponukou ostatným (predkupné právo)`, "podľa dohody"]);
   if (c.legal.reduce((s, l) => s + l.tarchyCount, 0)) steps.push(["Ťarchy", "dohoda s veriteľom o vyplatení a výmaze záložného práva z kúpnej ceny (úschova)", "2–6 týždňov"]);

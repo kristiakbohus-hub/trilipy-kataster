@@ -2500,7 +2500,7 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "kind": "text"
     },
     "pravdepodobne_zosnuli": {
-      "label": "Pravdepodobne zosnulí vlastníci",
+      "label": "Vlastníci s veľmi starým zápisom",
       "kind": "number",
       "note": "počet FO narodených pred 1925 (dátum narodenia z SPI, ak je zapísaný) alebo s poznámkou 'zomr.' — len počet"
     },

@@ -44,7 +44,7 @@ export function explain(id: string, d: SheetData, fin: FinResult | null): string
     case "pristup": {
       const pr = mk ? fact(c, "pristup", mk) : null;
       const t = String(pr?.trieda ?? "");
-      out.push(/priamy/i.test(t) ? "Pozemok hraničí s verejnou cestou — príjazd je právne zabezpečený." : /cez/i.test(t) ? "K pozemku sa ide cez iný pozemok. Bez zapísaného vecného bremena (práva prechodu) môže vlastník susedného pozemku prechod zakázať — pred kúpou to treba vyriešiť zmluvou." : /bez/i.test(t) ? "Pozemok nemá prístup z verejnej cesty. Bez vyriešeného prístupu sa naň nedá dostať ani stavať a banky ho nefinancujú." : "Prístup sme nevedeli spoľahlivo určiť — overte ho na mape a v teréne.");
+      out.push(/priamy/i.test(t) ? "Pozemok podľa katastrálnej mapy hraničí s cestou vo verejnom vlastníctve — priamy príjazd je pravdepodobný; napojenie (vjazd) overte na obci alebo u správcu cesty." : /cez/i.test(t) ? "K pozemku sa ide cez iný pozemok. Bez zapísaného vecného bremena (práva prechodu) môže vlastník susedného pozemku prechod zakázať — pred kúpou to treba vyriešiť zmluvou." : /bez/i.test(t) ? "Pozemok nemá prístup z verejnej cesty. Bez vyriešeného prístupu sa naň nedá dostať ani stavať a banky ho nefinancujú." : "Prístup sme nevedeli spoľahlivo určiť — overte ho na mape a v teréne.");
       break;
     }
     case "up": {
