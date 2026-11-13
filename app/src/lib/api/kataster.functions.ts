@@ -8212,19 +8212,19 @@ export type OwnerStatement = {
 };
 export const ownerStatement = createServerFn({ method: "POST" })
   .validator(z.object({ token: z.string(), datasetId: z.string().max(40), lvNo: z.number().int(), owner: z.string().regex(/^[0-9a-f]{8}$/) }))
-  .handler(async ({ data: input }): Promise<OwnerStatement> => {
-    const u = await requireUser(input.token);
+  .handler(async ({ data }): Promise<OwnerStatement> => {
+    const u = await requireUser(data.token);
     if (!u || ownerAccess(u.role) !== "full") return { ok: false, lvs: [], message: "Výpis podľa vlastníka vidí len rola s plným prístupom." };
     // vlastník sa určí z anonymného kľúča (meno nejde cez URL)
-    const me = (await q<{ name: string; birth_date: string | null }>("SELECT name, birth_date FROM lv_owners WHERE dataset_id = ? AND lv_no = ?", [input.datasetId, input.lvNo]).catch(() => []))
-      .find((o) => ownerKey(o.name) === input.owner);
+    const me = (await q<{ name: string; birth_date: string | null }>("SELECT name, birth_date FROM lv_owners WHERE dataset_id = ? AND lv_no = ?", [data.datasetId, data.lvNo]).catch(() => []))
+      .find((o) => ownerKey(o.name) === data.owner);
     if (!me) return { ok: false, lvs: [], message: "Vlastník sa na zadanom LV nenašiel." };
     if ((await suppressedNameSet()).has(normName(me.name))) return { ok: false, lvs: [], message: "Osoba uplatnila námietku — údaje sa nezobrazujú." };
-    const data = { datasetId: input.datasetId, lvNo: input.lvNo, name: me.name };
+    const name = me.name;
     const rows = await q<{ dataset_id: string; lv_no: number; share: string | null; ku_name: string; region: string | null }>(
       `SELECT o.dataset_id, o.lv_no, o.share, d.ku_name, d.region FROM lv_owners o JOIN datasets d ON d.id = o.dataset_id
        WHERE o.name = ? ${me.birth_date ? "AND o.birth_date = ?" : ""} ORDER BY d.ku_name, o.lv_no LIMIT 400`,
-      me.birth_date ? [data.name, me.birth_date] : [data.name]).catch(() => []);
+      me.birth_date ? [name, me.birth_date] : [name]).catch(() => []);
     const seen = new Set<string>();
     const uniq = rows.filter((r) => { const k = `${r.dataset_id}:${r.lv_no}`; if (seen.has(k)) return false; seen.add(k); return true; });
     const lvs: OwnerStatementLv[] = [];
@@ -8254,7 +8254,7 @@ export const ownerStatement = createServerFn({ method: "POST" })
     }
     await logAudit("owner.statement", u.role, `Výpis podľa vlastníka: ${lvs.length} LV v ${new Set(lvs.map((l) => l.datasetId)).size} k.ú.`, data.datasetId).catch(() => undefined);
     return {
-      ok: true, name: data.name, birthKnown: !!me.birth_date, truncated: uniq.length > 120, lvs,
+      ok: true, name, birthKnown: !!me.birth_date, truncated: uniq.length > 120, lvs,
       totals: { lvs: lvs.length, kus: new Set(lvs.map((l) => l.datasetId)).size, parcels: lvs.reduce((s, l) => s + l.parcels.length, 0),
         buildings: lvs.reduce((s, l) => s + l.buildings.length, 0), areaM2: lvs.reduce((s, l) => s + l.areaM2, 0),
         shareAreaM2: lvs.reduce((s, l) => s + (l.shareAreaM2 ?? 0), 0),
