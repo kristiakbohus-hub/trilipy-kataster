@@ -1,7 +1,7 @@
 // LIST NEHNUTEĽNOSTI — doplnky 2026-11-13: slnko po mesiacoch, profil terénu, časová os, mapa porovnateľných predajov,
 // vzdialenosti k vybavenosti, skóre právneho rizika, potenciál rozparcelovania, postup kúpy s lehotami.
 // Všetko sa počíta v prehliadači z údajov listu (bez ďalších dopytov); funguje rovnako v internej aj klientskej verzii.
-import { fact, mainKey, zoneOf, type SheetData } from "../lib/property-eval";
+import { fact, mainKey, riskyHit, suitability, zoneOf, type SheetData } from "../lib/property-eval";
 import type { FinResult } from "../lib/finance";
 import { nf, eur, m2, date, dist, Muted, Sub, Grid, Table } from "./ps-ui";
 
@@ -293,11 +293,50 @@ export function OkolieBlock({ d }: { d: SheetData }) {
 
 // ——— fotografie (obhliadka / dokumenty) ———
 export function PhotosBlock({ d }: { d: SheetData }) {
-  const ph = (d.photos ?? []).filter((p) => /^data:image\/jpeg;base64,/.test(p.src)).slice(0, 4);
+  const ph = (d.photos ?? []).filter((p) => /^data:image\/jpeg;base64,/.test(p.src)).slice(0, 12);
   if (!ph.length) return null;
   return (
     <div className="ps-photos grid grid-cols-2 gap-2">
-      {ph.map((p, i) => <figure key={i} className="space-y-0.5"><img src={p.src} alt={p.name} className="h-auto w-full rounded-md border border-line object-cover" style={{ aspectRatio: "4 / 3" }} /><figcaption className="text-[10px] text-muted">{p.name.replace(/^Obhliadka\s+/, "obhliadka ")}</figcaption></figure>)}
+      {ph.map((p, i) => <figure key={i} className={`space-y-0.5 ${i >= 4 ? "no-print" : ""}`}><img src={p.src} alt={p.name} className="h-auto w-full rounded-md border border-line object-cover" style={{ aspectRatio: "4 / 3" }} /><figcaption className="text-[10px] text-muted">{p.name.replace(/^Obhliadka\s+/, "obhliadka ")}</figcaption></figure>)}
     </div>
+  );
+}
+
+// ——— predajné doplnky: pre koho je nehnuteľnosť, časté otázky kupujúcich ———
+export function audiences(d: SheetData): { who: string; why: string }[] {
+  const c = d.core; const mk = mainKey(c); const osm = mk ? fact(c, "osm", mk) : null; const s = suitability(d); const out: { who: string; why: string }[] = [];
+  const sc = (k: string) => s.find((x) => x.key === k)?.score ?? 0;
+  const num = (v: unknown) => (typeof v === "number" ? v : null);
+  if (sc("dom") >= 60) out.push({ who: "Rodiny s deťmi", why: [num(osm?.skola) != null && (osm?.skola as number) <= 1500 ? `škola ${dist(osm?.skola as number)}` : null, num(osm?.ihrisko) != null && (osm?.ihrisko as number) <= 800 ? `ihrisko ${dist(osm?.ihrisko as number)}` : null, s.find((x) => x.key === "dom")?.plus.slice(0, 2).join(", ")].filter(Boolean).join(" · ") || "vhodné na rodinný dom" });
+  if (sc("invest") >= 55) out.push({ who: "Investori do prenájmu", why: s.find((x) => x.key === "invest")?.plus.slice(0, 3).join(", ") || "dopyt po nájme v okolí" });
+  if (sc("dev") >= 60) out.push({ who: "Developeri a stavebné firmy", why: s.find((x) => x.key === "dev")?.plus.slice(0, 3).join(", ") || "výmera a regulatív na viac jednotiek" });
+  if (sc("chata") >= 60) out.push({ who: "Rekreácia a chalupári", why: s.find((x) => x.key === "chata")?.plus.slice(0, 3).join(", ") || "pokojná poloha" });
+  const z = zoneOf(d).name ?? "";
+  if (/obchod|občian|obcian|výrob|vyrob|služ|sluz|zmiešané OV/i.test(z)) out.push({ who: "Firmy (obchod, služby, sklad)", why: `zóna ÚP: ${z}${num(osm?.t_za) != null ? ` · Žilina ${String(osm?.t_za)} min` : ""}` });
+  if (d.fin && !out.length) out.push({ who: "Kupujúci na vlastné bývanie", why: "podľa výmery a polohy" });
+  return out.slice(0, 4);
+}
+export function faq(d: SheetData): [string, string][] {
+  const c = d.core; const mk = mainKey(c); const out: [string, string][] = [];
+  const pr = mk ? fact(c, "pristup", mk) : null; const ob = fact(c, "obec", `ku:${c.dataset?.ku_code ?? ""}`); const osm = mk ? fact(c, "osm", mk) : null; const z = zoneOf(d).name;
+  out.push(["Dá sa tu stavať?", z ? `Územný plán: ${z}. ${/býv|byva|obyt|zmie/i.test(z) ? "Bývanie je v zóne spravidla prípustné; potvrdí ho územnoplánovacia informácia obce." : "Pred kúpou na stavbu overiť územnoplánovaciu informáciu obce."}` : "Zónu územného plánu nemáme — potvrdí ju obec (územnoplánovacia informácia)."]);
+  out.push(["Je k pozemku prístup?", pr?.trieda ? String(pr.trieda) : "Overiť na mape a v teréne."]);
+  const net = [ob?.vodovod_verejny_pct != null ? `vodovod v obci (${Math.round(Number(ob.vodovod_verejny_pct))} % domov)` : null, ob?.kanal_pripojka_pct != null ? `kanalizácia (${Math.round(Number(ob.kanal_pripojka_pct))} %)` : null, ob?.plyn_obec != null ? (ob.plyn_obec ? "plyn v obci" : "bez plynu") : null, typeof osm?.trafo === "number" ? `trafostanica ${dist(osm.trafo as number)}` : null].filter(Boolean);
+  out.push(["Aké sú siete?", net.length ? `${net.join(", ")}. Presné napojenie potvrdia správcovia sietí (vzor žiadostí je pripravený).` : "Overiť u správcov sietí (vzor žiadostí je pripravený)."]);
+  if (c.legal.length) { const t = c.legal.reduce((s, l) => s + l.tarchyCount, 0); out.push(["Sú na nehnuteľnosti ťarchy?", t ? `${t}× ťarcha alebo poznámka na LV — vysvetlené v kapitole Právny stav; pred podpisom sa riešia výmazom alebo prevzatím.` : "V našom zázname nie — rozhoduje aktuálny výpis z LV pri podpise."]); }
+  const hits = [...(d.limits?.items ?? []).filter((h) => h.hit).map((h) => h.label), ...(d.ext ?? []).filter(riskyHit).map((e) => e.label)];
+  out.push(["Hrozí povodeň, zosuv alebo iné riziko?", hits.length ? `Úradné registre hlásia: ${hits.slice(0, 4).join(", ")}. Podrobnosti a dopad na poistenie v kapitole Poistenie a riziká.` : "V sledovaných úradných registroch bez zásahu."]);
+  if (typeof osm?.t_za === "number") out.push(["Ako ďaleko je to do mesta?", `Žilina autom ~${String(osm.t_za)} min${typeof osm?.bus === "number" ? `, autobusová zastávka ${dist(osm.bus as number)}` : ""}.`]);
+  out.push(["Koľko ma bude stáť hypotéka a vlastné zdroje?", "Výpočet podľa aktuálnych sadzieb a pravidiel NBS je v kapitole Financovanie a hypotéka (dá sa upraviť cena, úver, vek)."]);
+  return out;
+}
+export function SalesBlock({ d }: { d: SheetData }) {
+  const a = audiences(d); const q = faq(d);
+  return (
+    <>
+      {a.length ? (<><Sub>Pre koho je nehnuteľnosť</Sub><Table head={["Kupujúci", "Prečo"]} rows={a.map((x) => [<b key="w" className="font-medium">{x.who}</b>, x.why])} /></>) : null}
+      <Sub>Časté otázky kupujúcich</Sub>
+      <dl className="space-y-1.5 text-xs">{q.map(([k, v]) => <div key={k}><dt className="font-medium">{k}</dt><dd className="text-muted">{v}</dd></div>)}</dl>
+    </>
   );
 }

@@ -86,7 +86,7 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
           <label className="text-muted">Telefón<input className={inp} value={broker.phone ?? ""} maxLength={40} onChange={(e) => setBroker({ ...broker, phone: e.target.value })} /></label>
           <label className="text-muted">E-mail<input className={inp} value={broker.email ?? ""} maxLength={80} onChange={(e) => setBroker({ ...broker, email: e.target.value })} /></label>
           <label className="text-muted sm:col-span-2">Poznámka pre klienta (zobrazí sa na začiatku listu)<textarea className={inp} rows={3} maxLength={2000} value={notes} onChange={(e) => setNotes(e.target.value)} /></label>
-          <label className="flex items-center gap-1 text-muted sm:col-span-2"><input type="checkbox" checked={withPhotos} onChange={(e) => setWithPhotos(e.target.checked)} />Pridať fotky z obhliadky (max 4, zmenšené)</label>
+          <label className="flex items-center gap-1 text-muted sm:col-span-2"><input type="checkbox" checked={withPhotos} onChange={(e) => setWithPhotos(e.target.checked)} />Pridať fotky z obhliadky (online až 12, v PDF 4; zmenšené)</label>
           <fieldset className="sm:col-span-2"><legend className="text-muted">Kapitoly v klientskej verzii (odškrtnuté sa vynechajú)</legend>
             <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">{CHAPTERS.map(([id, l]) => (
               <label key={id} className="flex items-center gap-1"><input type="checkbox" checked={!hide.includes(id)} onChange={(e) => setHide((h) => (e.target.checked ? h.filter((x) => x !== id) : [...h, id]))} />{l}</label>

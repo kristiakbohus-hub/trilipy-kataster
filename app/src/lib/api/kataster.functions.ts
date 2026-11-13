@@ -8819,7 +8819,7 @@ function sanitizeShareSnapshot(snap: Record<string, unknown>): string | "invalid
     if (snap.variant !== "teaser") delete snap.variant;
     if (snap.lang !== "en") snap.lang = "sk";
     snap.photos = Array.isArray(snap.photos) ? (snap.photos as unknown[]).map((p) => asObj(p)).filter((p): p is Record<string, unknown> => !!p && typeof p.src === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(p.src) && (p.src as string).length < 400_000)
-      .slice(0, 4).map((p) => ({ name: cut(p.name, 120) ?? "foto", src: p.src as string })) : null;
+      .slice(0, 12).map((p) => ({ name: cut(p.name, 120) ?? "foto", src: p.src as string })) : null;
     const owners = asObj(core.owners);
     if (owners && Array.isArray(owners.perLv)) owners.perLv = (owners.perLv as Record<string, unknown>[]).map((l) => ({ ...l, owners: [] }));
     if (owners) owners.access = "summary";

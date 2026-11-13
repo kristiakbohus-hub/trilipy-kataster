@@ -71,6 +71,7 @@ function InspectionPage() {
       ))}
       <section className="space-y-2 rounded-lg border border-line p-3">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted">Fotky</h2>
+        <p className="text-xs text-muted">Fotografujte bez ľudí a čitateľných EČV áut (osobné údaje); ideálne denné svetlo, všetky miestnosti, pozemok z rohov a príjazd.</p>
         <input type="file" accept="image/*" capture="environment" multiple onChange={(e) => setFiles(Array.from(e.target.files ?? []))} />
         {files.length ? <div className="text-xs text-muted">{files.length} fotiek pripravených (max 12)</div> : null}
       </section>

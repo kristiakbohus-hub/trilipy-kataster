@@ -12,7 +12,7 @@ import { DeclarationBlock } from "./property-decl";
 import { financeOf, hedonicOf, type FinInputs, type FinResult } from "../lib/finance";
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
-import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, OkolieBlock, PhotosBlock, PurchaseSteps, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
+import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, OkolieBlock, PhotosBlock, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -423,7 +423,8 @@ function PrintTeaser({ d, fin, lights }: { d: SheetData; fin: FinResult | null; 
       <ParcelSketch d={d} labels="main" />
       <div className="ps-kpis grid grid-cols-3 border-t border-line">{kpis.map(([k, v]) => <div key={k} className="ps-kpi border-b border-line py-2 pr-2"><div className="ps-kpi-v text-lg font-semibold">{v}</div><div className="ps-kpi-k text-[10px] uppercase tracking-[0.2em] text-muted">{k}</div></div>)}</div>
       <div className="grid gap-5 sm:grid-cols-[1.6fr_1fr]">
-        <ul className="ps-findings space-y-1 text-[13px]">{keyFindings(d, fin).slice(0, 5).map((t, i) => <li key={i}>{t}</li>)}</ul>
+        <div><ul className="ps-findings space-y-1 text-[13px]">{keyFindings(d, fin).slice(0, 5).map((t, i) => <li key={i}>{t}</li>)}</ul>
+          {audiences(d).length ? <p className="mt-2 text-[12px]"><b>Vhodné pre:</b> {audiences(d).map((a) => a.who.toLowerCase()).join(", ")}{d.decl?.ec_trieda ? ` · energetická trieda ${String(d.decl.ec_trieda)}` : ""}</p> : null}</div>
         <div className="space-y-1 text-[12px]">{lights.map((l) => <div key={l.key} className="flex items-center gap-1.5"><span className="ps-dot inline-block h-2.5 w-2.5 rounded-full" style={{ background: LIGHT_DOT[l.state] }} /><b>{l.label}</b><span className="text-muted">— {LIGHT_WORD[l.state]}</span></div>)}</div>
       </div>
       <div className="flex items-end justify-between gap-4 border-t border-line pt-3 text-[11px] text-muted">
@@ -444,7 +445,7 @@ function PrintCover({ d, lights, isClient, fin, en = false }: { d: SheetData; li
     [u("Výmera"), m2(total)], fin?.mortgage ? [u("Hypotéka mesačne"), `${eur(fin.mortgage.payment)}`] : [u("Parcely"), String(c.parcels.length)],
     [u("List vlastníctva"), c.lvs.length ? `${c.lvs.slice(0, 3).join(", ")}${c.lvs.length > 3 ? " …" : ""}` : "—"],
     [u("Územný plán"), z.name ? short(prettyZone(z.name.replace(/ — ÚP z výkresu, orientačné$/, " (výkres)")) ?? "", 30) : "bez zóny"],
-    [u("Orientačná hodnota"), est ? eur(est) : "—"], [u("Katastrálne územie"), (c.dataset?.ku_name ?? "—").replace(/^k\.ú\.\s*/i, "")],
+    [u("Orientačná hodnota"), est ? eur(est) : "—"], d.decl?.ec_trieda && (c.buildings.length || c.kind === "byt") ? [en ? "Energy class" : "Energetická trieda", String(d.decl.ec_trieda)] : [u("Katastrálne územie"), (c.dataset?.ku_name ?? "—").replace(/^k\.ú\.\s*/i, "")],
   ];
   return (
     <section className="ps-cover">
@@ -700,6 +701,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
       <Sec id="prehlad" n={num("prehlad")} explain={ex("prehlad")} {...asof("prehlad")} title={tt("prehlad", "Prehľad")} source={<>Kataster ÚGKK SR (stav k {date(c.dataset?.updated_at)}); obrysy z katastrálnej mapy (VGI).</>}>
         <div className="ps-screen-only"><ParcelSketch d={d} /></div>
         {d.photos?.length ? <><Sub>Fotografie</Sub><PhotosBlock d={d} /></> : null}
+        <SalesBlock d={d} />
         {c.main.lat != null && c.main.lng != null ? <HistoricMap lat={c.main.lat} lng={c.main.lng} /> : null}
         <Grid rows={[
           ["Adresa", addressOf(c)?.adresa ? `${String(addressOf(c)?.adresa)}${addressOf(c)?.presna === false ? ` (najbližšia adresa, ${String(addressOf(c)?.vzdialenost_m ?? "?")} m)` : ""}` : "—"],

@@ -19,7 +19,7 @@ async function shrink(dataUrl: string, max = 900): Promise<string | null> {
   });
 }
 
-export async function loadPhotos(datasetId: string, lv: number | null, max = 4): Promise<Photo[]> {
+export async function loadPhotos(datasetId: string, lv: number | null, max = 12): Promise<Photo[]> {
   if (lv == null) return [];
   const docs = await listDocuments({ data: { datasetId, subjectType: "lv", subjectRef: String(lv) } }).catch(() => []);
   const fotos = docs.filter((x) => x.kind === "foto" && /^image\//.test(x.mime ?? "")).slice(0, max);
