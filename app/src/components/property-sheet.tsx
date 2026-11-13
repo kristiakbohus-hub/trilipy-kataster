@@ -1,5 +1,5 @@
 // LIST NEHNUTEĽNOSTI — vykreslenie (interná aj klientska verzia). Dáta pripraví route /nehnutelnost (interná,
-// živé) alebo /n/$token (klientska, snapshot bez mien a internej práce). Komponent nič nenačítava zo servera —
+// živé) alebo /n/$token (klientska, snapshot s menami vlastníkov bez ďalších údajov, bez internej práce). Komponent nič nenačítava zo servera —
 // interné widgety (kupci, komentáre, dokumenty, kontakt) dostane cez `internal`. Zásady: chýbajúci údaj je
 // NEZNÁMY stav; každá sekcia uvádza zdroj; formulácie podľa phrases.ts (Property-360 §4).
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";

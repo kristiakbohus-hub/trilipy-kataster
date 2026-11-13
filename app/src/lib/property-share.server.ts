@@ -1,6 +1,6 @@
 // Verejný list nehnuteľnosti pre klienta (/n/<token>) — LEN serverový modul pre route /api/property-share (bez session).
 // Samostatne, nie v kataster.functions.ts (exportovaná funkcia s DB by sa dostala do klientskeho balíka).
-// Vracia očistený snapshot uložený pri zdieľaní (bez mien a internej práce); platnosť a zrušenie stráži tabuľka.
+// Vracia očistený snapshot uložený pri zdieľaní (mená vlastníkov len ako mená, bez internej práce); platnosť a zrušenie stráži tabuľka.
 import { bindings } from "./bindings.server";
 import { financeMarketCore } from "./fin-market.server";
 import { clientizeCore } from "./share-client";

@@ -70,7 +70,7 @@ export function PropertyShareBox({ sheet, ready }: { sheet: SheetData; ready: bo
   return (
     <div className="rounded-lg border border-line bg-paper p-2.5 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span className="text-muted">Klientska verzia — bez mien vlastníkov a internej práce; odkaz bez prihlásenia, trhové sadzby sa pri otvorení obnovia.</span>
+        <span className="text-muted">Klientska verzia — mená vlastníkov len ako mená (bez podielov a ďalších údajov), bez internej práce; odkaz bez prihlásenia, trhové sadzby sa pri otvorení obnovia.</span>
         <span className="flex gap-2">
           <button onClick={() => setOpen((o) => !o)} className="rounded-md border border-line px-3 py-1 text-fg hover:border-ink">{open ? "Skryť možnosti" : "Možnosti"}</button>
           <button onClick={() => void make()} disabled={!ready || busy || checks.block.length > 0} className="rounded-md border border-line px-3 py-1 text-fg hover:border-ink disabled:opacity-40">{busy ? "Vytváram…" : "Vytvoriť a skopírovať odkaz"}</button>
