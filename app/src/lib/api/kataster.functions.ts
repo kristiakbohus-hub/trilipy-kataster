@@ -21,7 +21,7 @@ import type {
   ZoningSource,
 } from "../domain";
 import { phraseIssues, type PhraseIssue } from "../phrases";
-import { accessTimesLabel, plural, zoneLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
+import { accessTimesLabel, ownerKey, plural, zoneLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
 import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEFAULTS } from "../development";
 import { EXT_DEFS, type ExtDef } from "../ext-sources";
 import { financeMarketCore } from "../fin-market.server";
@@ -8211,13 +8211,16 @@ export type OwnerStatement = {
   totals?: { lvs: number; kus: number; parcels: number; buildings: number; areaM2: number; shareAreaM2: number; byDruh: { druh: string; areaM2: number; shareAreaM2: number }[] };
 };
 export const ownerStatement = createServerFn({ method: "POST" })
-  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), lvNo: z.number().int(), name: z.string().min(2).max(200) }))
-  .handler(async ({ data }): Promise<OwnerStatement> => {
-    const u = await requireUser(data.token);
+  .validator(z.object({ token: z.string(), datasetId: z.string().max(40), lvNo: z.number().int(), owner: z.string().regex(/^[0-9a-f]{8}$/) }))
+  .handler(async ({ data: input }): Promise<OwnerStatement> => {
+    const u = await requireUser(input.token);
     if (!u || ownerAccess(u.role) !== "full") return { ok: false, lvs: [], message: "Výpis podľa vlastníka vidí len rola s plným prístupom." };
-    if ((await suppressedNameSet()).has(normName(data.name))) return { ok: false, lvs: [], message: "Osoba uplatnila námietku — údaje sa nezobrazujú." };
-    const me = (await q<{ birth_date: string | null }>("SELECT birth_date FROM lv_owners WHERE dataset_id = ? AND lv_no = ? AND name = ? LIMIT 1", [data.datasetId, data.lvNo, data.name]))[0];
+    // vlastník sa určí z anonymného kľúča (meno nejde cez URL)
+    const me = (await q<{ name: string; birth_date: string | null }>("SELECT name, birth_date FROM lv_owners WHERE dataset_id = ? AND lv_no = ?", [input.datasetId, input.lvNo]).catch(() => []))
+      .find((o) => ownerKey(o.name) === input.owner);
     if (!me) return { ok: false, lvs: [], message: "Vlastník sa na zadanom LV nenašiel." };
+    if ((await suppressedNameSet()).has(normName(me.name))) return { ok: false, lvs: [], message: "Osoba uplatnila námietku — údaje sa nezobrazujú." };
+    const data = { datasetId: input.datasetId, lvNo: input.lvNo, name: me.name };
     const rows = await q<{ dataset_id: string; lv_no: number; share: string | null; ku_name: string; region: string | null }>(
       `SELECT o.dataset_id, o.lv_no, o.share, d.ku_name, d.region FROM lv_owners o JOIN datasets d ON d.id = o.dataset_id
        WHERE o.name = ? ${me.birth_date ? "AND o.birth_date = ?" : ""} ORDER BY d.ku_name, o.lv_no LIMIT 400`,

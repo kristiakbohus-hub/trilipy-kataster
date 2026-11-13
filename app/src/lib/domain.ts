@@ -561,3 +561,13 @@ export function freshnessOf(
 export const FRESH_COLOR: Record<FreshLevel, string> = {
   fresh: "#3c9a63", stale: "#9a7b3e", critical: "#c0493f", unknown: "#8b8b8b",
 };
+
+
+/** Anonymný kľúč vlastníka do odkazu (FNV-1a z normalizovaného mena, 8 hex) — meno a adresa sa nesmú
+ *  dostať do URL (história prehliadača, logy). Server nájde vlastníka na danom LV podľa rovnakého kľúča. */
+export function ownerKey(name: string): string {
+  const s = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, "0");
+}

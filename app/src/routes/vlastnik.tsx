@@ -7,13 +7,13 @@ import { useAuth } from "../lib/auth-context";
 // po LV podiel, parcely (výmera, druh), stavby, ťarchy, problémy; súčty; pri každom k.ú. „otvoriť ako vlastný
 // celok" (spojený list). Len plný prístup (server), interný dokument s osobnými údajmi — nezdieľať s klientom.
 // BEZ `loader` (pamäť cf_app_ssr_loader_leak): dáta až po prihlásení.
-type Search = { ds?: string; lv?: string; name?: string };
+type Search = { ds?: string; lv?: string; o?: string };
 export const Route = createFileRoute("/vlastnik")({
   head: () => ({ meta: [{ title: "Výpis podľa vlastníka — TRI LIPY" }] }),
   validateSearch: (s: Record<string, unknown>): Search => ({
     ds: typeof s.ds === "string" ? s.ds : undefined,
     lv: typeof s.lv === "string" || typeof s.lv === "number" ? String(s.lv) : undefined,
-    name: typeof s.name === "string" ? s.name : undefined,
+    o: typeof s.o === "string" && /^[0-9a-f]{8}$/.test(s.o) ? s.o : undefined,
   }),
   component: OwnerStatementPage,
 });
@@ -26,9 +26,9 @@ function OwnerStatementPage() {
   const { token } = useAuth();
   const [r, setR] = useState<OwnerStatement | null>(null);
   useEffect(() => {
-    if (!token || !s.ds || !s.lv || !s.name) return;
-    ownerStatement({ data: { token, datasetId: s.ds, lvNo: Number(s.lv), name: s.name } }).then(setR).catch(() => setR({ ok: false, lvs: [], message: "Výpis sa nepodarilo načítať." }));
-  }, [token, s.ds, s.lv, s.name]);
+    if (!token || !s.ds || !s.lv || !s.o) return;
+    ownerStatement({ data: { token, datasetId: s.ds, lvNo: Number(s.lv), owner: s.o } }).then(setR).catch(() => setR({ ok: false, lvs: [], message: "Výpis sa nepodarilo načítať." }));
+  }, [token, s.ds, s.lv, s.o]);
   const groups = useMemo(() => {
     const g = new Map<string, OwnerStatement["lvs"]>();
     for (const l of r?.lvs ?? []) g.set(l.datasetId, [...(g.get(l.datasetId) ?? []), l]);
@@ -36,7 +36,7 @@ function OwnerStatementPage() {
   }, [r]);
 
   if (!token) return <div className="p-6 text-sm text-muted">Prihlás sa.</div>;
-  if (!s.ds || !s.lv || !s.name) return <div className="p-6 text-sm text-muted">Výpis podľa vlastníka sa otvára z mena vlastníka v liste nehnuteľnosti alebo vo výpise LV.</div>;
+  if (!s.ds || !s.lv || !s.o) return <div className="p-6 text-sm text-muted">Výpis podľa vlastníka sa otvára z mena vlastníka v liste nehnuteľnosti alebo vo výpise LV.</div>;
   if (!r) return <div className="p-6 text-sm text-muted">Zostavujem výpis…</div>;
   if (!r.ok) return <div className="p-6 text-sm text-muted">{r.message}</div>;
   const t = r.totals!;
@@ -56,7 +56,7 @@ function OwnerStatementPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-4">
-        {[["Listy vlastníctva", `${t.lvs}`, `${t.kus} katastrálnych území`], ["Parcely", `${t.parcels}`, `${t.buildings} stavieb`],
+        {[["Listy vlastníctva", `${t.lvs}`, `${t.kus} ${t.kus === 1 ? "katastrálne územie" : t.kus <= 4 ? "katastrálne územia" : "katastrálnych území"}`], ["Parcely", `${t.parcels}`, t.buildings === 1 ? "1 stavba" : t.buildings >= 2 && t.buildings <= 4 ? `${t.buildings} stavby` : `${t.buildings} stavieb`],
           ["Výmera spolu", ha(t.areaM2), "celé parcely LV"], ["Výmera podľa podielu", ha(t.shareAreaM2), "výmera × spoluvlastnícky podiel"]].map(([a, b, c]) => (
           <div key={a} className="rounded-xl border border-line bg-surface p-3">
             <div className="text-[11px] uppercase tracking-wide text-muted">{a}</div><div className="mt-1 text-lg font-semibold tabular-nums">{b}</div><div className="text-[11px] text-muted">{c}</div>

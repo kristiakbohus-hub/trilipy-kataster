@@ -14,6 +14,7 @@ import { financeOf, hedonicOf, type FinInputs, type FinResult } from "../lib/fin
 import { explain, lightsSentence } from "../lib/property-explain";
 import { CostsBody, FinancingBody, FinInputsPanel, InsuranceBody, InvestBody, PredictionBody, finSourcesText } from "./property-finance";
 import { AmenityChart, CompsMap, LegalRiskBlock, MonthlySun, NkpBlock, OkolieBlock, PhotosBlock, ProtectionZones, PurchaseSteps, SalesBlock, audiences, RentalsTable, ShadeBlock, SubdivisionBlock, TerrainProfile, Timeline, TrafficNoiseBlock, objAt } from "./property-extra";
+import { ownerKey } from "../lib/domain";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -788,7 +789,7 @@ export function PropertySheet({ d, mode, internal, onFinInputs }: { d: SheetData
               <Sub>LV {l.lvNo} — {l.count} {l.count === 1 ? "vlastník" : l.count < 5 ? "vlastníci" : "vlastníkov"} ({l.persons} FO · {l.companies} PO)</Sub>
               {!isClient && l.owners.length ? (
                 <ul className="text-xs">{l.owners.slice(0, 40).map((o, i) => (
-                  <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5"><span>{o.name.startsWith("—") || !c.dataset ? o.name : <a className="hover:underline" title="Výpis podľa vlastníka — všetko, čo vlastní" href={`/vlastnik?ds=${encodeURIComponent(c.dataset.id)}&lv=${l.lvNo}&name=${encodeURIComponent(o.name)}`}>{o.name}</a>}{o.is_company ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span><span className="tabular-nums text-muted">{o.share ?? ""}</span></li>
+                  <li key={i} className="flex justify-between gap-2 border-b border-line/40 py-0.5"><span>{o.name.startsWith("—") || !c.dataset ? o.name : <a className="hover:underline" title="Výpis podľa vlastníka — všetko, čo vlastní" href={`/vlastnik?ds=${encodeURIComponent(c.dataset.id)}&lv=${l.lvNo}&o=${ownerKey(o.name)}`}>{o.name}</a>}{o.is_company ? <span className="ml-1 text-[10px] uppercase text-muted">firma</span> : null}</span><span className="tabular-nums text-muted">{o.share ?? ""}</span></li>
                 ))}</ul>
               ) : !isClient && c.owners.access !== "full" ? <Muted>Mená vidí len rola s plným prístupom.</Muted> : null}
               <FactsBlock grp="vlastnici" data={agg} />
