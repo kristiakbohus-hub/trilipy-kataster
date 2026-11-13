@@ -4,6 +4,7 @@ import { getScenarioVariantRows, type ScenarioSchema, type ScenarioVariant } fro
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { ScenarioSwitches, variantParams } from "../components/scenario-switches";
 import { kuLabel } from "../lib/domain";
+import { ReasonFilter, reasonCounts, reasonFromKeys } from "../components/reason-filter";
 
 // GOLD-10 — STAVEBNÝ POZEMOK Z VEĽKEJ ZÁHRADY (2026-11-13). Engine 21_NL_SEARCH/gold10_find.py + gold10_live.py
 // (mapa KN, SPI, pôdorysy ZBGIS, ÚP); výsledky žijú len ako varianty (0117) — predvolený beh zakladá a po importe
@@ -17,7 +18,7 @@ type G10 = {
   kodKu: string; kuName: string | null; datasetId: string | null; classification: string; score: number | null;
   site: string[]; siteM2: number; ownerType: string | null; nHouses: number; houseM2: number; keepM2: number;
   freeM2: number; freeWidthM: number | null; freeParcels: string[]; frontagePublicM: number; zone: string | null;
-  zoneSrc: string | null; reason: string | null; notes: string[]; criteriaJson: string | null;
+  zoneSrc: string | null; reason: string | null; notes: string[]; criteriaJson: string | null; openKeys: string[];
 };
 
 function rowOf(r: Record<string, unknown>): G10 {
@@ -31,7 +32,7 @@ function rowOf(r: Record<string, unknown>): G10 {
     freeWidthM: r.freeWidthM === undefined || r.freeWidthM === null ? null : Number(r.freeWidthM),
     freeParcels: arr(r.freeParcels), frontagePublicM: num(r.frontagePublicM), zone: (r.zone ?? null) as string | null,
     zoneSrc: (r.zoneSrc ?? null) as string | null, reason: (r.reason ?? null) as string | null, notes: arr(r.notes),
-    criteriaJson: (r.criteriaJson ?? null) as string | null,
+    criteriaJson: (r.criteriaJson ?? null) as string | null, openKeys: arr(r.openKeys),
   };
 }
 
@@ -79,10 +80,15 @@ function GardenPlotPage() {
   const nMatch = vKu.filter((r) => r.classification === "MATCH").length;
   const nProv = vKu.filter((r) => r.classification === "PROVISIONAL").length;
   const nRoad = vKu.filter((r) => r.classification === "MATCH" && r.frontagePublicM >= 4).length;
+  const [reason, setReason] = useState<string | null>(null);
+  const reasonOf = (r: G10) => reasonFromKeys(r.openKeys, r.notes.join(" "), {
+    zone_housing: "ÚP", own_access: "prístup", free_part_unbuilt: "stavba na voľnej časti", geometry_valid: "geometria" },
+    [[/územný plán|funkčné využitie|regulatív/, "ÚP"], [/prístup|cesty|prechodu/, "prístup"], [/menšia stavba/, "stavba na voľnej časti"], [/geometria/, "geometria"]]);
+  const reasonCountsList = useMemo(() => (cls === "PROVISIONAL" ? reasonCounts(vKu.filter((r) => r.classification === "PROVISIONAL"), reasonOf) : []), [vKu, cls]); // eslint-disable-line react-hooks/exhaustive-deps
   const shownAll = useMemo(
-    () => vKu.filter((r) => r.classification === cls && (!onlyRoad || r.frontagePublicM >= 4))
+    () => vKu.filter((r) => r.classification === cls && (!onlyRoad || r.frontagePublicM >= 4) && (cls !== "PROVISIONAL" || !reason || reasonOf(r) === reason))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || b.freeM2 - a.freeM2),
-    [vKu, cls, onlyRoad],
+    [vKu, cls, onlyRoad, reason], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const shown = shownAll.slice(0, limit);
 
@@ -132,6 +138,8 @@ function GardenPlotPage() {
           </select>
         </div>
       </div>
+
+      {cls === "PROVISIONAL" ? <ReasonFilter counts={reasonCountsList} value={reason} onChange={(v) => { setReason(v); setLimit(40); }} /> : null}
 
       {loading ? (
         <Card className="p-6 text-center text-sm text-muted">

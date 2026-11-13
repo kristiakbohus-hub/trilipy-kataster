@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { getLandsearchBrowse, getScenarioVariantRows, type LandsearchRow, type ScenarioVariant } from "../lib/api/kataster.functions";
 import { ScenarioSwitches, variantRowSnake } from "../components/scenario-switches";
+import { ReasonFilter, reasonCounts, reasonFromKeys } from "../components/reason-filter";
 import { m2, parseAccessTimes, durationSk, reasonSk, decSk, kuLabel, plural, zoneUnknown, zoneLabel } from "../lib/domain";
 import { Card, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
@@ -68,9 +69,16 @@ function LandPage() {
   const nProv = vKu.filter((r) => r.verdict === "PROVISIONAL").length;
   const nPpf = vKu.filter((r) => r.verdict === "MATCH" && r.ppf).length;
 
+  // FILTER PODĽA DÔVODU (len „na preskúmanie")
+  const [reason, setReason] = useState<string | null>(null);
+  const reasonOf = (r: LandsearchRow) => reasonFromKeys(undefined, r.reason ?? "", {}, [
+    [/svah/i, "svah"], [/dvor|bytov/i, "dvor bytovky"], [/vjazd|prístup|cest/i, "prístup"], [/ÚP|zón|regulat/i, "ÚP"],
+    [/škol|obchod|trasa|dostupn/i, "dostupnosť"], [/limit|záplav|zosuv|chránen/i, "limity"]]);
+  const reasonCountsList = useMemo(() => (verdict === "PROVISIONAL"
+    ? reasonCounts(rows.filter((r) => r.verdict === "PROVISIONAL" && (!kuFilter || r.kod_ku === kuFilter)), reasonOf) : []), [rows, verdict, kuFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   const shownAll = useMemo(
-    () => rows.filter((r) => r.verdict === verdict && (!kuFilter || r.kod_ku === kuFilter)),
-    [rows, verdict, kuFilter],
+    () => rows.filter((r) => r.verdict === verdict && (!kuFilter || r.kod_ku === kuFilter) && (verdict !== "PROVISIONAL" || !reason || reasonOf(r) === reason)),
+    [rows, verdict, kuFilter, reason], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const shown = shownAll.slice(0, limit);
 
@@ -147,6 +155,8 @@ function LandPage() {
           <b>Pozor na výklad:</b> {PURPOSE_WARN[purpose]}
         </div>
       ) : null}
+
+      {verdict === "PROVISIONAL" ? <ReasonFilter counts={reasonCountsList} value={reason} onChange={(v) => { setReason(v); setLimit(40); }} /> : null}
 
       {loading ? (
         <Card className="p-6 text-center text-sm text-muted">Načítavam…</Card>

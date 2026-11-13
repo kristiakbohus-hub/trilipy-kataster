@@ -9589,3 +9589,21 @@ export const scenarioVariantQueue = createServerFn({ method: "POST" })
     }
     return { ok: true };
   });
+
+// ——— PRIPOMIENKY VLASTNÍKA v rannom brífingu (0118) ———
+export type OwnerTodo = { slug: string; title: string; detail: string | null; done_at: string | null };
+export const listOwnerTodos = createServerFn({ method: "POST" })
+  .validator(z.object({}).optional())
+  .handler(async (): Promise<OwnerTodo[]> =>
+    q<OwnerTodo>("SELECT slug, title, detail, done_at FROM owner_todos WHERE done_at IS NULL OR done_at > datetime('now','-2 days') ORDER BY done_at IS NOT NULL, id").catch(() => []));
+
+export const setOwnerTodoDone = createServerFn({ method: "POST" })
+  .validator(z.object({ token: z.string(), slug: z.string().max(60), done: z.boolean() }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string }> => {
+    const u = await requireUser(data.token);
+    if (!u) return { ok: false, message: "Neprihlásený." };
+    if (u.role === "viewer" || u.role === "external_readonly") return { ok: false, message: "Rola nemôže meniť pripomienky." };
+    await q("UPDATE owner_todos SET done_at = ?, done_by = ? WHERE slug = ?", [data.done ? new Date().toISOString().slice(0, 19).replace("T", " ") : null, data.done ? (u.name ?? u.email) : null, data.slug]);
+    await logAudit("owner.todo", u.role, `Pripomienka ${data.slug}: ${data.done ? "hotovo" : "znovu otvorená"}`);
+    return { ok: true };
+  });

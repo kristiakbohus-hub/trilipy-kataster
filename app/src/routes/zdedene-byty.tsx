@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getScenarioVariantRows, getZACases, type ScenarioVariant, type ZARow } from "../lib/api/kataster.functions";
 import { ScenarioSwitches, variantParams } from "../components/scenario-switches";
+import { ReasonFilter, reasonCounts, reasonFromKeys } from "../components/reason-filter";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -80,9 +81,17 @@ function InheritedFlatsPage() {
     return c;
   }, [vKu]);
 
+  // FILTER PODĽA DÔVODU (len „na preskúmanie")
+  const [reason, setReason] = useState<string | null>(null);
+  const reasonOf = (r: ZARow) => {
+    const t = r.reason ?? "";
+    return t.includes("druh nadobudnutia") ? "druh nadobudnutia" : t.includes("dedičské konanie") ? "dátum dedičstva"
+      : /adresu vlastníka|bydlisko/.test(t) ? "adresa vlastníka" : t.includes("podlažie") ? "podlažie" : "iné";
+  };
+  const reasonCountsList = useMemo(() => (cls === "PROVISIONAL" ? reasonCounts(vKu.filter((r) => r.classification === "PROVISIONAL"), reasonOf) : []), [vKu, cls]); // eslint-disable-line react-hooks/exhaustive-deps
   const shownAll = useMemo(
-    () => rows.filter((r) => r.classification === cls && (!kuFilter || r.kod_ku === kuFilter)),
-    [rows, cls, kuFilter],
+    () => rows.filter((r) => r.classification === cls && (!kuFilter || r.kod_ku === kuFilter) && (cls !== "PROVISIONAL" || !reason || reasonOf(r) === reason)),
+    [rows, cls, kuFilter, reason], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const shown = shownAll.slice(0, limit);
 
@@ -152,6 +161,8 @@ function InheritedFlatsPage() {
           {provWhy.ine ? <>{" · "}iné: <span className="tabular-nums text-fg">{provWhy.ine}</span></> : null}
         </Card>
       ) : null}
+
+      {cls === "PROVISIONAL" ? <ReasonFilter counts={reasonCountsList} value={reason} onChange={(v) => { setReason(v); setLimit(40); }} /> : null}
 
       {loading ? (
         <Card className="p-6 text-center text-sm text-muted">Načítavam kandidátov…</Card>

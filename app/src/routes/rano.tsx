@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ListingBuyersToggle } from "../components/buyer-ui";
 import { useEffect, useState } from "react";
-import { getMorningBriefing, getFollowUps, type ContactRow } from "../lib/api/kataster.functions";
+import { getMorningBriefing, getFollowUps, listOwnerTodos, setOwnerTodoDone, type ContactRow, type OwnerTodo } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { parcelLabel, plural } from "../lib/domain";
 import { Badge, Card, Icon, Stat, MarketFreshness } from "../components/kit";
@@ -28,6 +28,15 @@ function RanoPage() {
   useEffect(() => {
     getFollowUps({ data: { token: token ?? undefined, days: 3 } }).then(setFollow).catch(() => {});
   }, [token]);
+  // Pripomienky vlastníka (0118) — veci, ktoré musí urobiť sám; ostávajú, kým ich neoznačí ako hotové
+  const [todos, setTodos] = useState<OwnerTodo[]>([]);
+  const loadTodos = () => { listOwnerTodos({ data: {} }).then(setTodos).catch(() => {}); };
+  useEffect(loadTodos, []);
+  async function todoDone(slug: string, done: boolean) {
+    if (!token) return;
+    const r = await setOwnerTodoDone({ data: { token, slug, done } });
+    if (r.ok) loadTodos();
+  }
   const [okres, setOkres] = useState("");
   const [ptype, setPtype] = useState("");
   const [onlyPrivate, setOnlyPrivate] = useState(true);
@@ -65,6 +74,26 @@ function RanoPage() {
         <Stat label="Súkromné príležitosti" value={String(b.summary.privateOpps)} />
         <Stat label="Naše ÚP deals (MATCH)" value={String(b.summary.upDeals)} />
       </div>
+
+      {/* Na vašej strane — pripomienky vlastníka (0118) */}
+      {todos.some((t) => !t.done_at) ? (
+        <div className="rounded-lg border border-line p-3">
+          <h2 className="text-sm font-semibold text-fg">Na vašej strane — {todos.filter((t) => !t.done_at).length} {todos.filter((t) => !t.done_at).length === 1 ? "vec" : "veci"}</h2>
+          <ul className="mt-2 divide-y divide-line">
+            {todos.map((t) => (
+              <li key={t.slug} className="flex flex-wrap items-start justify-between gap-2 py-2 text-sm">
+                <div className="min-w-0 flex-1">
+                  <div className={t.done_at ? "text-muted line-through" : "text-fg"}>{t.title}</div>
+                  {t.detail && !t.done_at ? <div className="mt-0.5 text-xs text-muted">{t.detail}</div> : null}
+                </div>
+                <button onClick={() => void todoDone(t.slug, !t.done_at)} className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs text-fg hover:bg-surface-2">
+                  {t.done_at ? "Vrátiť" : "Hotovo"}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {/* Koho zavolať — z vlastných záznamov kontaktu, nie z odhadu */}
       {follow.length ? (

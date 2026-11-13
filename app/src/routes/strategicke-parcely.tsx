@@ -4,6 +4,7 @@ import { getScenarioVariantRows, type ScenarioSchema, type ScenarioVariant } fro
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { ScenarioSwitches, variantParams } from "../components/scenario-switches";
 import { kuLabel } from "../lib/domain";
+import { ReasonFilter, reasonCounts, reasonFromKeys } from "../components/reason-filter";
 
 // GOLD-19 — STRATEGICKÉ MALÉ PARCELY (2026-11-13). Engine 21_NL_SEARCH/gold19_find.py + gold19_live.py; výsledky
 // žijú len ako varianty (scenario_variants, 0117) — predvolený beh je variant s predvolenými parametrami, ktorý
@@ -17,7 +18,7 @@ type G19 = {
   kodKu: string; kuName: string | null; datasetId: string | null; classification: string; score: number | null;
   kind: "ACCESS" | "JOIN"; micro: string; microM2: number; microOwnerType: string | null; microDrp: string | null;
   site: string[]; siteM2: number; site2: string[] | null; site2M2: number | null; roads: string[];
-  reason: string | null; notes: string[]; criteriaJson: string | null;
+  reason: string | null; notes: string[]; criteriaJson: string | null; openKeys: string[];
 };
 
 function g19FromRow(r: Record<string, unknown>): G19 {
@@ -30,6 +31,7 @@ function g19FromRow(r: Record<string, unknown>): G19 {
     site: arr(r.site), siteM2: Number(r.siteM2 ?? 0), site2: r.site2 ? arr(r.site2) : null,
     site2M2: r.site2M2 === undefined || r.site2M2 === null ? null : Number(r.site2M2), roads: arr(r.roads),
     reason: (r.reason ?? null) as string | null, notes: arr(r.notes), criteriaJson: (r.criteriaJson ?? null) as string | null,
+    openKeys: arr(r.openKeys),
   };
 }
 
@@ -80,10 +82,18 @@ function StrategicParcelsPage() {
   const vKu = useMemo(() => (kuFilter ? rows.filter((r) => r.kodKu === kuFilter) : rows), [rows, kuFilter]);
   const unique = (r: G19) => r.notes.some((n) => n.startsWith("Alternatívy: v načítanom k.ú. sa nenašli"));
   const cnt = (k: string, c: string) => vKu.filter((r) => r.kind === k && r.classification === c).length;
+  const [reason, setReason] = useState<string | null>(null);
+  const reasonOf = (r: G19) => reasonFromKeys(r.openKeys, r.notes.join(" "), {
+    owner_differs: "vlastník spojky", no_recorded_passage_right: "vecné bremeno", same_owner: "totožnosť vlastníka",
+    micro_not_road: "spojka je cesta", temporal_consistency: "dátumy údajov", geometry_valid: "geometria", micro_width: "šírka" },
+    [[/vlastník malej parcely|nie je určený na LV/, "vlastník spojky"], [/vecné bremeno/, "vecné bremeno"], [/totožnosť|okruh vlastníkov/, "totožnosť vlastníka"],
+     [/cestná parcela/, "spojka je cesta"], [/dátumov/, "dátumy údajov"], [/geometria/, "geometria"]]);
+  const reasonCountsList = useMemo(() => (cls === "PROVISIONAL"
+    ? reasonCounts(vKu.filter((r) => r.kind === kind && r.classification === "PROVISIONAL"), reasonOf) : []), [vKu, kind, cls]); // eslint-disable-line react-hooks/exhaustive-deps
   const shownAll = useMemo(
-    () => vKu.filter((r) => r.kind === kind && r.classification === cls && (!onlyUnique || unique(r)))
+    () => vKu.filter((r) => r.kind === kind && r.classification === cls && (!onlyUnique || unique(r)) && (cls !== "PROVISIONAL" || !reason || reasonOf(r) === reason))
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || (b.siteM2 + (b.site2M2 ?? 0)) - (a.siteM2 + (a.site2M2 ?? 0))),
-    [vKu, kind, cls, onlyUnique],
+    [vKu, kind, cls, onlyUnique, reason], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const shown = shownAll.slice(0, limit);
 
@@ -141,6 +151,8 @@ function StrategicParcelsPage() {
           </select>
         </div>
       </div>
+
+      {cls === "PROVISIONAL" ? <ReasonFilter counts={reasonCountsList} value={reason} onChange={(v) => { setReason(v); setLimit(40); }} /> : null}
 
       {loading ? (
         <Card className="p-6 text-center text-sm text-muted">

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createDeal, getScenarioVariantRows, getSettlementCases, type ScenarioVariant, type SettlementRow } from "../lib/api/kataster.functions";
 import { ScenarioSwitches, variantRowSnake } from "../components/scenario-switches";
+import { ReasonFilter, reasonCounts, reasonFromKeys } from "../components/reason-filter";
 import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../components/kit";
 import { kuLabel, eur, m2, parcelLabel } from "../lib/domain";
 import { useRole } from "../lib/role-context";
@@ -92,13 +93,24 @@ function SettlementPage() {
   const nProv = vKu.filter((r) => r.classification === "PROVISIONAL").length;
   const nSpf = vKu.filter((r) => r.classification === "MATCH" && r.has_spf).length;
 
+  // FILTER PODĽA DÔVODU (len „na preskúmanie")
+  const [reason, setReason] = useState<string | null>(null);
+  const reasonOf = (r: SettlementRow) => {
+    const t = r.reason ?? "";
+    return t.includes("totožnosť") ? "totožnosť vlastníka" : t.includes("nezhodujú") ? "rozpor zdrojov"
+      : t.includes("rôznych verzií") ? "dátumy údajov" : t.includes("čiastočne zasahuje") ? "čiastočný zásah stavby"
+      : /NOT VERIFIED|neoveren/.test(t) ? "vlastníctvo pozemku" : "iné";
+  };
+  const reasonCountsList = useMemo(() => (cls === "PROVISIONAL"
+    ? reasonCounts(rows.filter((r) => r.classification === "PROVISIONAL" && (!kuFilter || r.kod_ku === kuFilter)), reasonOf) : []), [rows, cls, kuFilter]); // eslint-disable-line react-hooks/exhaustive-deps
   const shownAll = useMemo(
     () => rows.filter((r) =>
       r.classification === cls
       && (!kuFilter || r.kod_ku === kuFilter)
+      && (cls !== "PROVISIONAL" || !reason || reasonOf(r) === reason)
       && (cls !== "MATCH" || flavor === "all"
           || (flavor === "minority" ? r.minority_share === 1 : r.minority_share !== 1))),
-    [rows, cls, kuFilter, flavor],
+    [rows, cls, kuFilter, flavor, reason], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const shown = shownAll.slice(0, limit);
   const buyoutSum = useMemo(
@@ -182,6 +194,8 @@ function SettlementPage() {
           )}
         </p>
       ) : null}
+
+      {cls === "PROVISIONAL" ? <ReasonFilter counts={reasonCountsList} value={reason} onChange={(v) => { setReason(v); setLimit(40); }} /> : null}
 
       {loading ? (
         <Card className="p-6 text-center text-sm text-muted">Načítavam kandidátov…</Card>
