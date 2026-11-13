@@ -985,6 +985,7 @@ const EN_PATTERNS: [RegExp, Rep][] = [
   [/^LV (\d+): kúpa(.*)$/, "LV $1: purchase$2"], [/^LV (\d+): dedičstvo(.*)$/, "LV $1: inheritance$2"], [/^LV (\d+): darovanie(.*)$/, "LV $1: gift$2"],
   [/^(\d+)× ťarcha alebo poznámka na LV(.*)$/, (_m, a, b) => `${a}× encumbrance or note on title deed${b ? enText(b) : ""}`],
   [/^čs\. ?(\S.*)$/i, "no. $1"],
+  [/^(S|J|V|Z|SV|SZ|JV|JZ|SSV|SSZ|JJV|JJZ|VSV|VJV|ZSZ|ZJZ): (.+) nad obzorom$/, (_m, a, b) => `${[...a].map((ch) => ({ S: "N", J: "S", V: "E", Z: "W" } as Record<string, string>)[ch] ?? ch).join("")}: ${b} above the horizon`],
   [/^(\d+)× zapísaná ťarcha alebo poznámka$/, "$1× registered encumbrance or note"],
   [/^priemer (\d+) bánk \(fixácia (\d+) r\., (.+)\)$/, "average of $1 banks ($2-yr fixation, $3)"],
   [/^priemer nových úverov v SR \(ECB\/NBS, (.+)\)$/, "average new loans in Slovakia (ECB/NBS, $1)"],
