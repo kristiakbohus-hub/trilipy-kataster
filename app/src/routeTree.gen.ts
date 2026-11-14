@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as DelenieCelkovRouteImport } from './routes/delenie-celkov'
 import { Route as ApiUpRasterRouteImport } from './routes/api.up-raster'
 import { Route as ApiUpDrawingsRouteImport } from './routes/api.up-drawings'
 import { Route as PozemokZoZahradyRouteImport } from './routes/pozemok-zo-zahrady'
@@ -208,6 +209,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DelenieCelkovRoute = DelenieCelkovRouteImport.update({
+  id: '/delenie-celkov',
+  path: '/delenie-celkov',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUpRasterRoute = ApiUpRasterRouteImport.update({
@@ -644,6 +650,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
@@ -746,6 +753,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
@@ -849,6 +857,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
@@ -953,6 +962,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
@@ -1055,6 +1065,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
@@ -1157,6 +1168,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
@@ -1256,6 +1268,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  DelenieCelkovRoute: typeof DelenieCelkovRoute
   ApiUpRasterRoute: typeof ApiUpRasterRoute
   ApiUpDrawingsRoute: typeof ApiUpDrawingsRoute
   PozemokZoZahradyRoute: typeof PozemokZoZahradyRoute
@@ -1593,6 +1606,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/delenie-celkov': {
+      id: '/delenie-celkov'
+      path: '/delenie-celkov'
+      fullPath: '/delenie-celkov'
+      preLoaderRoute: typeof DelenieCelkovRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/up-raster': {
@@ -2067,6 +2087,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  DelenieCelkovRoute: DelenieCelkovRoute,
   ApiUpRasterRoute: ApiUpRasterRoute,
   ApiUpDrawingsRoute: ApiUpDrawingsRoute,
   PozemokZoZahradyRoute: PozemokZoZahradyRoute,
