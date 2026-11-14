@@ -23,6 +23,7 @@ export type AppPath =
   | "/strategicke-parcely"
   | "/pozemok-zo-zahrady"
   | "/delenie-celkov"
+  | "/medzery-v-zastavbe"
   | "/poda-na-byvanie"
   | "/import"
   | "/reporty"
@@ -485,6 +486,19 @@ const CRIT_LABEL: Record<string, string> = {
   micro_not_house_yard: "Malá parcela nie je dvor domu",
   only_route: "Jediná možná cesta",
   site_large: "Veľký celok",
+  // GOLD-11 (2026-11-14)
+  between_houses: "Medzi domami na tej istej ulici",
+  lot_size: "Výmera pozemku medzery",
+  gap_width: "Šírka medzery pozdĺž cesty",
+  buildable_area: "Po odstupoch sa zmestí dom",
+  power_line_zone: "Dom mimo ochranného pásma vedenia",
+  road_access: "Vjazd z cesty",
+  not_public_green: "Nejde o verejnú zeleň",
+  not_shared_yard: "Nejde o spoločný dvor",
+  vacant: "Pozemok bez stavby",
+  both_sides: "Domy na oboch stranách",
+  single_lv: "Jeden vlastník na jednom LV",
+  comfortable: "Priestranná zastavateľná plocha",
 };
 export function critLabel(key: string): string {
   return CRIT_LABEL[key] ?? key.replace(/_/g, " ");

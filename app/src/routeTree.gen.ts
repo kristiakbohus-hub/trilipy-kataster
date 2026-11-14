@@ -29,6 +29,7 @@ import { Route as WatchlistRouteImport } from './routes/watchlist'
 import { Route as ListyRouteImport } from './routes/listy'
 import { Route as KupciRouteImport } from './routes/kupci'
 import { Route as ZadaniaRouteImport } from './routes/zadania'
+import { Route as MedzeryVZastavbeRouteImport } from './routes/medzery-v-zastavbe'
 import { Route as DelenieCelkovRouteImport } from './routes/delenie-celkov'
 import { Route as ApiUpRasterRouteImport } from './routes/api.up-raster'
 import { Route as ApiUpDrawingsRouteImport } from './routes/api.up-drawings'
@@ -209,6 +210,11 @@ const KupciRoute = KupciRouteImport.update({
 const ZadaniaRoute = ZadaniaRouteImport.update({
   id: '/zadania',
   path: '/zadania',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MedzeryVZastavbeRoute = MedzeryVZastavbeRouteImport.update({
+  id: '/medzery-v-zastavbe',
+  path: '/medzery-v-zastavbe',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DelenieCelkovRoute = DelenieCelkovRouteImport.update({
@@ -650,6 +656,7 @@ export interface FileRoutesByFullPath {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/medzery-v-zastavbe': typeof MedzeryVZastavbeRoute
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
@@ -753,6 +760,7 @@ export interface FileRoutesByTo {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/medzery-v-zastavbe': typeof MedzeryVZastavbeRoute
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
@@ -857,6 +865,7 @@ export interface FileRoutesById {
   '/listy': typeof ListyRoute
   '/kupci': typeof KupciRoute
   '/zadania': typeof ZadaniaRoute
+  '/medzery-v-zastavbe': typeof MedzeryVZastavbeRoute
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
@@ -962,6 +971,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/medzery-v-zastavbe'
     | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-drawings'
@@ -1065,6 +1075,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/medzery-v-zastavbe'
     | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-drawings'
@@ -1168,6 +1179,7 @@ export interface FileRouteTypes {
     | '/listy'
     | '/kupci'
     | '/zadania'
+    | '/medzery-v-zastavbe'
     | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-drawings'
@@ -1268,6 +1280,7 @@ export interface RootRouteChildren {
   ListyRoute: typeof ListyRoute
   KupciRoute: typeof KupciRoute
   ZadaniaRoute: typeof ZadaniaRoute
+  MedzeryVZastavbeRoute: typeof MedzeryVZastavbeRoute
   DelenieCelkovRoute: typeof DelenieCelkovRoute
   ApiUpRasterRoute: typeof ApiUpRasterRoute
   ApiUpDrawingsRoute: typeof ApiUpDrawingsRoute
@@ -1606,6 +1619,13 @@ declare module '@tanstack/react-router' {
       path: '/zadania'
       fullPath: '/zadania'
       preLoaderRoute: typeof ZadaniaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/medzery-v-zastavbe': {
+      id: '/medzery-v-zastavbe'
+      path: '/medzery-v-zastavbe'
+      fullPath: '/medzery-v-zastavbe'
+      preLoaderRoute: typeof MedzeryVZastavbeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/delenie-celkov': {
@@ -2087,6 +2107,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListyRoute: ListyRoute,
   KupciRoute: KupciRoute,
   ZadaniaRoute: ZadaniaRoute,
+  MedzeryVZastavbeRoute: MedzeryVZastavbeRoute,
   DelenieCelkovRoute: DelenieCelkovRoute,
   ApiUpRasterRoute: ApiUpRasterRoute,
   ApiUpDrawingsRoute: ApiUpDrawingsRoute,

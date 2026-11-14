@@ -9429,7 +9429,7 @@ export type ScenarioVariant = {
   error: string | null; n_match: number | null; n_provisional: number | null; author: string | null;
   created_at: string; finished_at: string | null;
 };
-const SCENARIO_KEYS = ["ZA", "GOLD19", "GOLD04", "UP", "BU", "GOLD10", "GOLD12"] as const;
+const SCENARIO_KEYS = ["ZA", "GOLD19", "GOLD04", "UP", "BU", "GOLD10", "GOLD12", "GOLD11"] as const;
 
 async function scenarioSchema(sc: string): Promise<ScenarioSchema | null> {
   const v = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key=?", [`scenario_params:${sc}`]).catch(() => []))[0]?.value;
