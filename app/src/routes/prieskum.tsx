@@ -62,7 +62,7 @@ function PrieskumPage() {
       if (res.lv.note) body += `<p style="font-size:10px;color:#888">${he(res.lv.note)}</p>`;
     }
     if (res.flats.results.length) {
-      const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "predaj", gift: "darovanie", execution: "exekúcia", lien: "záložné" };
+      const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "predaj", gift: "darovanie", execution: "exekúcia", lien: "záložné", construction: "výstavba / zápis bytov", contribution: "vklad do spoločnosti", settlement: "vyporiadanie BSM / spoluvlastníctva" };
       const typSk: Record<string, string> = { flat: "byt", parcel_c: "parcela C", parcel_e: "parcela E", building: "stavba" };
       if (res.flats.source === "gold-za") {
         body += `<h3 style="font-family:Georgia,serif">Zdedené byty — GOLD-ZA (${res.flats.count})</h3><table border="1" cellspacing="0" cellpadding="4" style="border-collapse:collapse;width:100%;font-size:12px">` + T(["k.ú.", "LV", "Podlažie", "Dedičstvo", "Zápis", "Stav", "Vlastník"]);
@@ -207,7 +207,7 @@ function PrieskumPage() {
           <SectionHeader title={`Nehnuteľnosti podľa právnej udalosti (${res.flats.count})`} hint={res.flats.count >= 300 ? "top 300" : "konkrétne byty/parcely podľa aktuálneho nadobúdacieho titulu"} />
           <div className="mt-2 divide-y divide-line">
             {res.flats.results.map((f, i) => {
-              const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "predaj", gift: "darovanie", execution: "exekúcia", lien: "záložné" };
+              const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "predaj", gift: "darovanie", execution: "exekúcia", lien: "záložné", construction: "výstavba / zápis bytov", contribution: "vklad do spoločnosti", settlement: "vyporiadanie BSM / spoluvlastníctva" };
               const typSk: Record<string, string> = { flat: "byt", parcel_c: "parcela C", parcel_e: "parcela E", building: "stavba" };
               return (
                 <div key={`${f.kod_ku}-${f.lv_number}-${i}`} className="flex items-center gap-3 py-2">

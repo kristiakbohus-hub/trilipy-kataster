@@ -78,7 +78,7 @@ export function TerrainProfile({ d }: { d: SheetData }) {
 export function Timeline({ d, isClient }: { d: SheetData; isClient: boolean }) {
   const c = d.core;
   const ev: { t: string; what: string; kind: string }[] = [];
-  const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "kúpa", gift: "darovanie", execution: "exekúcia / dražba" };
+  const kindSk: Record<string, string> = { inheritance: "dedičstvo", sale: "kúpa", gift: "darovanie", execution: "exekúcia / dražba", construction: "výstavba / zápis bytov", contribution: "vklad do spoločnosti", settlement: "vyporiadanie BSM / spoluvlastníctva" };
   for (const a of c.acquisitions) { if (a.firstYear) ev.push({ t: String(a.firstYear), what: `LV ${a.lvNo}: ${kindSk[a.kind] ?? a.kind}${a.n > 1 ? ` (${a.n}× zápis${a.lastYear && a.lastYear !== a.firstYear ? ` do ${a.lastYear}` : ""})` : ""}`, kind: "vlastníctvo" }); }
   for (const p of c.prices) ev.push({ t: p.cas.slice(0, 10), what: `zmluva s cenou ${eur(p.cen)}${p.ppm2 ? ` (${nf(p.ppm2)} €/m²)` : ""} — LV ${p.lvNo}`, kind: "predaj" });
   for (const f of c.flags) if (f.year) ev.push({ t: String(f.year), what: `${f.label} — LV ${f.lvNo}`, kind: "právo" });

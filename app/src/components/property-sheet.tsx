@@ -817,7 +817,7 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
         })}
         <SettlementBlock d={d} />
         {c.acquisitions.length ? (<><Sub>Ako a kedy nadobudli</Sub>
-          <Table head={["LV", "Spôsob", "Zápisov", "Rok (od – do)"]} rows={c.acquisitions.map((a) => [a.lvNo, ({ inheritance: "dedičstvo", sale: "kúpa", gift: "darovanie", execution: "exekúcia / dražba" } as Record<string, string>)[a.kind] ?? a.kind, a.n, a.firstYear === a.lastYear ? a.firstYear ?? "—" : `${a.firstYear ?? "?"} – ${a.lastYear ?? "?"}`])} /></>) : null}
+          <Table head={["LV", "Spôsob", "Zápisov", "Rok (od – do)"]} rows={c.acquisitions.map((a) => [a.lvNo, ({ inheritance: "dedičstvo", sale: "kúpa", gift: "darovanie", execution: "exekúcia / dražba", construction: "výstavba / zápis bytov", contribution: "vklad do spoločnosti", settlement: "vyporiadanie BSM / spoluvlastníctva" } as Record<string, string>)[a.kind] ?? a.kind, a.n, a.firstYear === a.lastYear ? a.firstYear ?? "—" : `${a.firstYear ?? "?"} – ${a.lastYear ?? "?"}`])} /></>) : null}
         <HistUsers c={c} />
         {c.legalYears.length ? <Grid rows={c.legalYears.flatMap((y) => [
           [`LV ${y.lvNo} — posledná kúpa`, y.sale_max ? String(y.sale_max) : "—"] as [string, string], [`LV ${y.lvNo} — posledné dedičstvo`, y.inh_max ? String(y.inh_max) : "—"] as [string, string]])} /> : null}
