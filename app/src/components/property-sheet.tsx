@@ -971,7 +971,7 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
         <CompsMap d={d} />
         {!isClient ? (
           <SubdivisionProposal kodKu={c.dataset?.ku_code ?? null} datasetId={c.dataset?.id ?? null} onFound={setHasProposal}
-            parcels={c.parcels.filter((p) => p.register === "C" && p.parcel_no).map((p) => String(p.parcel_no))} />
+            parcels={c.parcels.filter((p) => p.register !== "E" && p.parcel_no).map((p) => String(p.parcel_no))} />
         ) : null}
         {isClient || !hasProposal ? <SubdivisionBlock d={d} fin={fin} /> : null}
         {c.market.trend.length ? (<><Sub>Vývoj cien zo zmlúv v okrese ({c.compStats?.kind ?? "rovnaký druh"})</Sub>

@@ -33,7 +33,7 @@ export function SubdivisionProposal({ kodKu, parcels, datasetId, onFound }: {
               {it.sketch ? <SketchSvg s={it.sketch} label={`Náčrt delenia: ${best?.label ?? ""}`} /> : <div />}
               <div className="space-y-2 text-xs">
                 <div>
-                  Celok {m2(it.siteM2)} ({it.site.length} parciel): <b>{best?.lots ?? 0} pozemky {best?.label ?? ""}</b>
+                  Celok {m2(it.siteM2)} ({it.site.length} {it.site.length === 1 ? "parcela" : it.site.length < 5 ? "parcely" : "parciel"}): <b>{best?.lots ?? 0} {(best?.lots ?? 0) >= 5 ? "pozemkov" : "pozemky"} {best?.label ?? ""}</b>
                   {best?.lotAreas?.length ? <> — {best.lotAreas.map((a) => m2(a)).join(" · ")}</> : null}
                 </div>
                 <Table head={["Variant", "Pozemky", "Nová cesta", "Zvyšok"]} rows={it.variants.map((x) => {
@@ -42,7 +42,7 @@ export function SubdivisionProposal({ kodKu, parcels, datasetId, onFound }: {
                 })} />
                 {v?.available ? (
                   <div>
-                    Orientačne: pozemky po rozdelení {eur(v.valueAfter ?? null)} (medián {v.lotPpm2} €/m², {v.lotSrc}, {v.lotN} zmlúv), po nákladoch {eur(v.net ?? null)}
+                    Orientačne: pozemky po rozdelení {eur(v.valueAfter ?? null)} (medián {(v.lotPpm2 ?? 0).toLocaleString("sk-SK", { maximumFractionDigits: 1 })} €/m², {v.lotSrc}, {v.lotN} zmlúv), po nákladoch {eur(v.net ?? null)}
                     {v.valueNow != null ? <>; celok dnes {eur(v.valueNow)}, rozdiel <b style={{ color: (v.uplift ?? 0) >= 0 ? "#3f5a3c" : "#9c4a40" }}>{(v.uplift ?? 0) >= 0 ? "+" : "−"}{eur(Math.abs(v.uplift ?? 0))}</b></> : null}.
                   </div>
                 ) : null}

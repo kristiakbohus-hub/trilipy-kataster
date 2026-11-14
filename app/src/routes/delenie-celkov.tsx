@@ -94,6 +94,7 @@ function VariantTable({ r }: { r: G12 }) {
   );
 }
 
+const dec = (n: number | null | undefined) => (n === null || n === undefined ? "—" : n.toLocaleString("sk-SK", { maximumFractionDigits: 1 }));
 const eur = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${Math.round(n).toLocaleString("sk-SK")} €`);
 
 // Orientačná hodnota po rozdelení — z cien v zmluvách katastra (Mac: gold12_value.py). Nie je to ocenenie.
@@ -110,14 +111,14 @@ function ValueBlock({ v }: { v: Value | null }) {
       <table className="mt-1 w-full tabular-nums text-muted">
         <tbody>
           <tr><td className="py-0.5 pr-2">Pozemky po rozdelení</td><td className="text-right text-fg">{eur(v.valueAfter)}</td></tr>
-          <tr><td colSpan={2} className="pb-1 text-[10px]">medián {v.lotPpm2} €/m² za stavebné pozemky 400–1 500 m² ({v.lotSrc}, {v.lotN} zmlúv {v.lotYears ?? ""}; polovica medzi {v.lotP25} a {v.lotP75} €/m²)</td></tr>
+          <tr><td colSpan={2} className="pb-1 text-[10px]">medián {dec(v.lotPpm2)} €/m² za stavebné pozemky 400–1 500 m² ({v.lotSrc}, {v.lotN} zmlúv {v.lotYears ?? ""}; polovica medzi {dec(v.lotP25)} a {dec(v.lotP75)} €/m²)</td></tr>
           <tr><td className="py-0.5 pr-2">− nová cesta</td><td className="text-right">{eur(v.roadCost)}</td></tr>
           <tr><td className="py-0.5 pr-2">− geodet</td><td className="text-right">{eur(v.surveyCost)}</td></tr>
           <tr><td className="py-0.5 pr-2">− prípojky</td><td className="text-right">{eur(v.utilitiesCost)}</td></tr>
           <tr><td className="py-0.5 pr-2">− odvod za vyňatie pôdy (najviac)</td><td className="text-right">{v.ppfLevyKnown ? eur(v.ppfLevy) : "BPEJ nepoznáme"}</td></tr>
           <tr className="border-t border-line"><td className="py-0.5 pr-2 text-fg">Po rozdelení spolu</td><td className="text-right text-fg">{eur(v.net)}</td></tr>
           <tr><td className="py-0.5 pr-2">Celok dnes ako celok</td><td className="text-right">{v.valueNow != null ? eur(v.valueNow) : "málo predajov"}</td></tr>
-          {v.valueNow != null ? <tr><td colSpan={2} className="pb-1 text-[10px]">medián {v.nowPpm2} €/m² za pozemky podobné celku ({v.nowKind}; {v.nowSrc}, {v.nowN} zmlúv)</td></tr> : null}
+          {v.valueNow != null ? <tr><td colSpan={2} className="pb-1 text-[10px]">medián {dec(v.nowPpm2)} €/m² za pozemky podobné celku ({v.nowKind}; {v.nowSrc}, {v.nowN} zmlúv){(v.nowN ?? 0) < 10 ? " — málo zmlúv, slabý základ" : ""}</td></tr> : null}
         </tbody>
       </table>
       <p className="mt-1 text-[10px] leading-relaxed text-muted">
@@ -250,7 +251,7 @@ function SubdivisionPage() {
             <Card key={`${r.kodKu}-${r.site[0]}-${i}`} className="flex flex-col p-4">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <div className="text-sm font-semibold text-fg">{r.best ? `${r.best.lots} pozemky · ${r.best.label}` : "Celok"}</div>
+                  <div className="text-sm font-semibold text-fg">{r.best ? `${r.best.lots} ${r.best.lots >= 5 ? "pozemkov" : "pozemky"} · ${r.best.label}` : "Celok"}</div>
                   <div className="text-xs text-muted">{kuLabel(r.kuName, r.kodKu)} · celok {m2(r.siteM2)}</div>
                 </div>
                 {r.best ? (
