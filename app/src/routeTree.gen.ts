@@ -32,6 +32,7 @@ import { Route as ZadaniaRouteImport } from './routes/zadania'
 import { Route as MedzeryVZastavbeRouteImport } from './routes/medzery-v-zastavbe'
 import { Route as DelenieCelkovRouteImport } from './routes/delenie-celkov'
 import { Route as ApiUpRasterRouteImport } from './routes/api.up-raster'
+import { Route as ApiUpVectorRouteImport } from './routes/api.up-vector'
 import { Route as ApiUpDrawingsRouteImport } from './routes/api.up-drawings'
 import { Route as PozemokZoZahradyRouteImport } from './routes/pozemok-zo-zahrady'
 import { Route as StrategickeParcelyRouteImport } from './routes/strategicke-parcely'
@@ -225,6 +226,11 @@ const DelenieCelkovRoute = DelenieCelkovRouteImport.update({
 const ApiUpRasterRoute = ApiUpRasterRouteImport.update({
   id: '/api/up-raster',
   path: '/api/up-raster',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiUpVectorRoute = ApiUpVectorRouteImport.update({
+  id: '/api/up-vector',
+  path: '/api/up-vector',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUpDrawingsRoute = ApiUpDrawingsRouteImport.update({
@@ -659,6 +665,7 @@ export interface FileRoutesByFullPath {
   '/medzery-v-zastavbe': typeof MedzeryVZastavbeRoute
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
+  '/api/up-vector': typeof ApiUpVectorRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
@@ -763,6 +770,7 @@ export interface FileRoutesByTo {
   '/medzery-v-zastavbe': typeof MedzeryVZastavbeRoute
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
+  '/api/up-vector': typeof ApiUpVectorRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
@@ -868,6 +876,7 @@ export interface FileRoutesById {
   '/medzery-v-zastavbe': typeof MedzeryVZastavbeRoute
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
+  '/api/up-vector': typeof ApiUpVectorRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
@@ -974,6 +983,7 @@ export interface FileRouteTypes {
     | '/medzery-v-zastavbe'
     | '/delenie-celkov'
     | '/api/up-raster'
+    | '/api/up-vector'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
@@ -1078,6 +1088,7 @@ export interface FileRouteTypes {
     | '/medzery-v-zastavbe'
     | '/delenie-celkov'
     | '/api/up-raster'
+    | '/api/up-vector'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
@@ -1182,6 +1193,7 @@ export interface FileRouteTypes {
     | '/medzery-v-zastavbe'
     | '/delenie-celkov'
     | '/api/up-raster'
+    | '/api/up-vector'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
@@ -1283,6 +1295,7 @@ export interface RootRouteChildren {
   MedzeryVZastavbeRoute: typeof MedzeryVZastavbeRoute
   DelenieCelkovRoute: typeof DelenieCelkovRoute
   ApiUpRasterRoute: typeof ApiUpRasterRoute
+  ApiUpVectorRoute: typeof ApiUpVectorRoute
   ApiUpDrawingsRoute: typeof ApiUpDrawingsRoute
   PozemokZoZahradyRoute: typeof PozemokZoZahradyRoute
   StrategickeParcelyRoute: typeof StrategickeParcelyRoute
@@ -1640,6 +1653,13 @@ declare module '@tanstack/react-router' {
       path: '/api/up-raster'
       fullPath: '/api/up-raster'
       preLoaderRoute: typeof ApiUpRasterRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/up-vector': {
+      id: '/api/up-vector'
+      path: '/api/up-vector'
+      fullPath: '/api/up-vector'
+      preLoaderRoute: typeof ApiUpVectorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/up-drawings': {
@@ -2110,6 +2130,7 @@ const rootRouteChildren: RootRouteChildren = {
   MedzeryVZastavbeRoute: MedzeryVZastavbeRoute,
   DelenieCelkovRoute: DelenieCelkovRoute,
   ApiUpRasterRoute: ApiUpRasterRoute,
+  ApiUpVectorRoute: ApiUpVectorRoute,
   ApiUpDrawingsRoute: ApiUpDrawingsRoute,
   PozemokZoZahradyRoute: PozemokZoZahradyRoute,
   StrategickeParcelyRoute: StrategickeParcelyRoute,

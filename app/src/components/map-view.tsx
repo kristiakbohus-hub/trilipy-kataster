@@ -367,6 +367,36 @@ export function MapView({
   type UpZone = Awaited<ReturnType<typeof getParcelZone>>;
   const [upZone, setUpZone] = useState<UpZone>(null);
   const [upZones, setUpZones] = useState<Awaited<ReturnType<typeof listUpZones>>>([]);
+  // VEKTOROVÝ ÚP (0120, 2026-11-14): plochy funkčného využitia z Macu (up_vectorize) ako GeoJSON z R2
+  const kuCode = datasetId?.startsWith("kn-") ? datasetId.slice(3) : null;
+  const [upVecOn, setUpVecOn] = useState(false);
+  const [upVec, setUpVec] = useState<UpVecFeature[] | null>(null);
+  const [upVecMsg, setUpVecMsg] = useState<string | null>(null);
+  const [upVecHit, setUpVecHit] = useState<Record<string, unknown> | null>(null);
+  useEffect(() => { setUpVec(null); setUpVecHit(null); setUpVecMsg(null); }, [kuCode]);
+  useEffect(() => {
+    if (!upVecOn || upVec || !kuCode) return;
+    let alive = true;
+    setUpVecMsg("Načítavam vektor ÚP…");
+    fetch(`/api/up-vector?kod=${kuCode}&f=wgs84`).then(async (r) => {
+      if (!alive) return;
+      if (!r.ok) { setUpVec([]); setUpVecMsg("Pre toto k.ú. zatiaľ nie je vektorový územný plán."); return; }
+      const fc = await r.json() as { features?: { properties?: Record<string, unknown>; geometry?: { type: string; coordinates: unknown } }[] };
+      const out: UpVecFeature[] = [];
+      for (const f of fc.features ?? []) {
+        const g = f.geometry; if (!g) continue;
+        const polys = (g.type === "Polygon" ? [g.coordinates] : g.type === "MultiPolygon" ? g.coordinates : []) as number[][][][];
+        for (const poly of polys) {
+          let x0 = 180, y0 = 90, x1 = -180, y1 = -90;
+          for (const [lng, lat] of poly[0]) { if (lng < x0) x0 = lng; if (lng > x1) x1 = lng; if (lat < y0) y0 = lat; if (lat > y1) y1 = lat; }
+          out.push({ rings: poly as [number, number][][], bbox: [x0, y0, x1, y1], props: f.properties ?? {} });
+        }
+      }
+      setUpVec(out);
+      setUpVecMsg(`${out.length} plôch ÚP`);
+    }).catch(() => { if (alive) { setUpVec([]); setUpVecMsg("Vektor ÚP sa nepodarilo načítať."); } });
+    return () => { alive = false; };
+  }, [upVecOn, upVec, kuCode]);
   const [upZonesOn, setUpZonesOn] = useState(false);
   const [upSrOn, setUpSrOn] = useState(false);   // krajský ÚP (celá SR) — dlaždice/WMS overlay
   const [upImportBusy, setUpImportBusy] = useState(false);
@@ -1141,6 +1171,10 @@ export function MapView({
       return;
     }
     setDrag(null);
+    if ((!st || !st.moved) && upVecOn && upVec?.length) {
+      const ll = unproject(x, y);
+      setUpVecHit(upVecAt(upVec, ll.lng, ll.lat));
+    }
     if (!st || !st.moved) {
       const hit = hitTest(x, y);
       if (hit) {
@@ -1384,6 +1418,22 @@ export function MapView({
             })}
           </svg>
         ) : null}
+
+        {/* Vektorový ÚP (Mac) — farby podľa funkcie, diery cez evenodd, kreslí sa len to, čo je v zábere */}
+        {upVecOn && upVec?.length && view ? (() => {
+          const a = unproject(0, 0), b = unproject(size.w, size.h);
+          const vx0 = Math.min(a.lng, b.lng), vx1 = Math.max(a.lng, b.lng), vy0 = Math.min(a.lat, b.lat), vy1 = Math.max(a.lat, b.lat);
+          return (
+            <svg className="pointer-events-none absolute inset-0" width={size.w} height={size.h} style={{ transform: dragT }}>
+              {upVec.map((f, i) => {
+                if (f.bbox[2] < vx0 || f.bbox[0] > vx1 || f.bbox[3] < vy0 || f.bbox[1] > vy1) return null;
+                const d = f.rings.map((r) => r.map(([lng, lat], j) => { const p = project(lng, lat); return (j ? "L" : "M") + p.x.toFixed(1) + " " + p.y.toFixed(1); }).join(" ") + " Z").join(" ");
+                const col = UP_FAMILY_COLOR[String(f.props.rodina ?? "")] ?? "#b8b8b8";
+                return <path key={i} d={d} fill={col} fillOpacity={0.42} fillRule="evenodd" stroke={col} strokeOpacity={0.9} strokeWidth={0.8} />;
+              })}
+            </svg>
+          );
+        })() : null}
 
         {/* ÚP zóny (funkčné plochy) — farebne podľa charakteru */}
         {upZonesOn && view ? (
@@ -1828,6 +1878,24 @@ export function MapView({
         );
       })() : null}
 
+      {/* Zóna vektorového ÚP v kliknutom bode */}
+      {upVecOn && upVecHit ? (
+        <div className="absolute bottom-12 left-3 z-30 max-w-xs rounded-lg border border-line bg-surface/95 p-2.5 text-[11px] shadow backdrop-blur">
+          <div className="flex items-start justify-between gap-2">
+            <div className="font-semibold text-fg">ÚP: {String(upVecHit.zona ?? upVecHit.kat ?? "—")}</div>
+            <button onClick={() => setUpVecHit(null)} className="text-muted hover:text-fg" aria-label="Zavrieť">✕</button>
+          </div>
+          <div className="mt-1 space-y-0.5 text-muted">
+            {upVecHit.rodina ? <div>{String(upVecHit.rodina)}</div> : null}
+            {upVecHit.verzia_up ? <div>verzia ÚP: {String(upVecHit.verzia_up)}{upVecHit.zad ? ` · zmena podľa ${String(upVecHit.zad)}` : ""}</div> : null}
+            {upVecHit.navrh ? <div>návrhová plocha (šrafa)</div> : null}
+            {upVecHit.presnost_m != null ? <div>presnosť polohy ±{String(upVecHit.presnost_m)} m · stav k {String(upVecHit.stav_k ?? "—")}</div> : null}
+            {upVecHit.zdroj ? <div className="line-clamp-3">zdroj: {String(upVecHit.zdroj)}</div> : null}
+            <div className="pt-0.5">Orientačné z výkresu ÚP — záväzný je schválený ÚP a jeho záväzná časť (VZN).</div>
+          </div>
+        </div>
+      ) : null}
+
       {/* Súradnice kurzora (ZBGIS-style, WGS84) — imperatívny update bez re-renderu */}
       <div className="absolute bottom-3 left-1/2 z-20 hidden -translate-x-1/2 select-none rounded bg-surface/80 px-2 py-0.5 text-[10px] font-medium text-fg backdrop-blur sm:block">
         <span ref={coordRef}>—</span> <span className="text-muted">WGS84</span>
@@ -1960,6 +2028,18 @@ export function MapView({
                   {(["tarchy", "zuob", "ppu"] as const).map((k) => { const n = vgiLayers.filter((f) => f.layer === k).length; if (!n) return null;
                     const lbl = k === "tarchy" ? `Vecné bremená (${n})` : k === "zuob" ? "Hranica zastavaného územia" : `Pozemkové úpravy (${[...new Set(vgiLayers.filter((f) => f.layer === "ppu").map((f) => f.label).filter(Boolean))].join(", ")})`;
                     return <LayerRow key={k} label={lbl} checked={!!vgiOn[k]} onToggle={() => setVgiOn((v) => ({ ...v, [k]: !v[k] }))} hint={k === "tarchy" ? "fialová, číslo vkladu" : k === "zuob" ? "oranžová prerušovaná" : "modrá"} />; })}
+                  {kuCode ? (
+                    <div>
+                      <LayerRow label="Územný plán — vektor" checked={upVecOn} onToggle={() => setUpVecOn((v) => !v)} hint="farby podľa funkcie, klik = zóna" />
+                      {upVecOn ? (
+                        <div className="px-1 text-[10px] text-muted">
+                          {upVecMsg}{upVec?.length ? <> · stiahnuť <a className="underline" href={`/api/up-vector?kod=${kuCode}&f=gpkg`}>GPKG</a>{" "}
+                            <a className="underline" href={`/api/up-vector?kod=${kuCode}&f=dxf`}>DXF</a>{" "}
+                            <a className="underline" href={`/api/up-vector?kod=${kuCode}&f=geojson5514`}>GeoJSON (S-JTSK)</a></> : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {upZones.length > 0 ? <LayerRow label={`ÚP zóny (${upZones.length})`} checked={upZonesOn} onToggle={() => setUpZonesOn((v) => !v)} hint="zelená=rozvoj · žltá=stabil. · červená=limit" /> : null}
                   <label className="mt-1 flex cursor-pointer items-center gap-1.5 px-1 text-[11px] text-muted hover:text-fg">
                     <input type="file" accept=".geojson,.json,application/geo+json,application/json" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void importUpZonesFile(f); e.currentTarget.value = ""; }} />
@@ -2712,6 +2792,31 @@ export function MapView({
       </div>
     </div>
   );
+}
+
+// ——— vektorový ÚP (0120) ———
+type UpVecFeature = { rings: [number, number][][]; bbox: [number, number, number, number]; props: Record<string, unknown> };
+// farby rodín zón podľa bežnej legendy ÚP výkresov (bývanie červenkasté, OV fialová, výroba sivá, zeleň zelená …)
+const UP_FAMILY_COLOR: Record<string, string> = {
+  "bývanie/rekreácia": "#e8745a", "hromadné bývanie": "#c43c3c", "občianska vybavenosť / zmiešané OV": "#9b4f96",
+  "výroba/technická": "#8e8e96", "šport/ihriská": "#e3c933", "zeleň/orná/lesy": "#7fae6a", "vodné plochy": "#5d8fd1", "doprava": "#555555",
+};
+function ringContains(ring: [number, number][], lng: number, lat: number): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i], [xj, yj] = ring[j];
+    if ((yi > lat) !== (yj > lat) && lng < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+function upVecAt(fs: UpVecFeature[], lng: number, lat: number): Record<string, unknown> | null {
+  for (const f of fs) {
+    if (lng < f.bbox[0] || lng > f.bbox[2] || lat < f.bbox[1] || lat > f.bbox[3]) continue;
+    let inside = false;
+    for (const r of f.rings) if (ringContains(r, lng, lat)) inside = !inside;   // evenodd: diery
+    if (inside) return f.props;
+  }
+  return null;
 }
 
 function LayerRow({ label, checked, onToggle, disabled, hint, swatch }: { label: string; checked: boolean; onToggle?: () => void; disabled?: boolean; hint?: string; swatch?: string }) {

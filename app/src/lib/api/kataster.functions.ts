@@ -9519,6 +9519,43 @@ export const getScenarioVariantRows = createServerFn({ method: "POST" })
     return { variant: v, rowsJson: JSON.stringify(rows) };
   });
 
+// ——— VEKTOROVÝ ÚZEMNÝ PLÁN (2026-11-14, Program ÚP — celý kraj) ———
+// Mac (49_LIST_NEHNUTELNOSTI/up/up_vectorize.py + up_vector_push.py) posiela súbory k.ú. do R2; mapa číta GeoJSON (WGS84),
+// architekti si stiahnu GeoPackage / DXF / GeoJSON v S-JTSK. ÚP sú verejné dokumenty obcí — bez osobných údajov.
+export type UpVectorRow = { kod_ku: string; fmt: string; bytes: number | null; n_features: number | null; verzia: string | null;
+  zdroj: string | null; stav_k: string | null; presnost_m: number | null; qa: string | null; published_at: string | null };
+const UP_VEC_FMT = ["wgs84", "geojson5514", "gpkg", "dxf"] as const;
+
+export const listUpVectors = createServerFn({ method: "POST" })
+  .validator(z.object({ kodKu: z.string().regex(/^\d{6}$/).optional() }))
+  .handler(async ({ data }): Promise<UpVectorRow[]> =>
+    await q<UpVectorRow>(`SELECT kod_ku, fmt, bytes, n_features, verzia, zdroj, stav_k, presnost_m, qa, published_at FROM up_vectors
+      ${data.kodKu ? "WHERE kod_ku = ?" : ""} ORDER BY kod_ku, fmt`, data.kodKu ? [data.kodKu] : []).catch(() => []));
+
+export const upVectorIngest = createServerFn({ method: "POST" })
+  .validator(z.object({
+    secret: z.string(), kodKu: z.string().regex(/^\d{6}$/), fmt: z.enum(UP_VEC_FMT), dataBase64: z.string().min(10),
+    nFeatures: z.number().int().optional(), verzia: z.string().max(200).nullish(), zdroj: z.string().max(600).nullish(),
+    stavK: z.string().max(40).nullish(), presnostM: z.number().nullish(), qa: z.string().max(600).nullish(),
+  }))
+  .handler(async ({ data }): Promise<{ ok: boolean; message?: string; bytes?: number }> => {
+    if (!(await ingestSecretOk(data.secret))) return { ok: false, message: "unauthorized" };
+    const { DB, STORAGE } = bindings();
+    if (!DB || !STORAGE) return { ok: false, message: "Úložisko nedostupné." };
+    const ext = { wgs84: "wgs84.geojson", geojson5514: "5514.geojson", gpkg: "gpkg", dxf: "dxf" }[data.fmt];
+    const key = `up-vector/${data.kodKu}/up_${data.kodKu}_${ext}`;
+    const bytes = b64ToBytes(data.dataBase64);
+    const mime = data.fmt === "gpkg" ? "application/geopackage+sqlite3" : data.fmt === "dxf" ? "application/dxf" : "application/geo+json";
+    await STORAGE.put(key, bytes, { httpMetadata: { contentType: mime } });
+    await DB.prepare(`INSERT INTO up_vectors (kod_ku, fmt, r2_key, bytes, n_features, verzia, zdroj, stav_k, presnost_m, qa, published_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,datetime('now'))
+      ON CONFLICT(kod_ku, fmt) DO UPDATE SET r2_key=excluded.r2_key, bytes=excluded.bytes, n_features=excluded.n_features, verzia=excluded.verzia,
+        zdroj=excluded.zdroj, stav_k=excluded.stav_k, presnost_m=excluded.presnost_m, qa=excluded.qa, published_at=excluded.published_at`)
+      .bind(data.kodKu, data.fmt, key, bytes.length, data.nFeatures ?? null, data.verzia ?? null, data.zdroj ?? null, data.stavK ?? null,
+        data.presnostM ?? null, data.qa ?? null).run();
+    return { ok: true, bytes: bytes.length };
+  });
+
 // ——— GOLD-12 DELENIE CELKOV: predvolený beh pre mapu a list nehnuteľnosti (2026-11-14) ———
 async function defaultVariant(scenario: string): Promise<{ id: number; status: string; finished_at: string | null } | null> {
   // predvolený beh zakladá Mac (author); prednosť má hotový, pri prepočte ostane posledný hotový
