@@ -16,7 +16,7 @@ export function SubdivisionProposal({ kodKu, parcels, datasetId, onFound }: {
     if (!kodKu || !ps.length) { setItems([]); onFound?.(false); return; }
     let alive = true;
     getParcelSubdivision({ data: { kodKu, parcels: ps } })
-      .then((r) => { if (alive) { setItems(r.items); onFound?.(r.items.length > 0); } })
+      .then((r) => { if (!alive) return; const its = JSON.parse(r.itemsJson) as ParcelSubdivision[]; setItems(its); onFound?.(its.length > 0); })
       .catch(() => { if (alive) { setItems([]); onFound?.(false); } });
     return () => { alive = false; };
   }, [kodKu, key]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -9566,9 +9566,10 @@ export type ParcelSubdivision = {
 /** Je parcela súčasťou celku, ktorý sa dá rozdeliť (GOLD-12, predvolený beh)? — list nehnuteľnosti (interná verzia). */
 export const getParcelSubdivision = createServerFn({ method: "POST" })
   .validator(z.object({ kodKu: z.string().regex(/^\d{6}$/), parcels: z.array(z.string().regex(/^\d{1,6}(\/\d{1,4})?$/)).min(1).max(12) }))
-  .handler(async ({ data }): Promise<{ variantId: number | null; finishedAt: string | null; items: ParcelSubdivision[] }> => {
+  // položky ako JSON text (ParcelSubdivision[]) — server fn nevie preniesť typ `unknown` (rovnako ako rowsJson)
+  .handler(async ({ data }): Promise<{ variantId: number | null; finishedAt: string | null; itemsJson: string }> => {
     const v = await defaultVariant("GOLD12");
-    if (!v) return { variantId: null, finishedAt: null, items: [] };
+    if (!v) return { variantId: null, finishedAt: null, itemsJson: "[]" };
     const like = data.parcels.map(() => "data_json LIKE ?").join(" OR ");
     const rs = await q<{ data_json: string }>(
       `SELECT data_json FROM scenario_variant_results WHERE variant_id=? AND kod_ku=? AND (${like}) ORDER BY classification LIMIT 5`,
@@ -9583,7 +9584,7 @@ export const getParcelSubdivision = createServerFn({ method: "POST" })
           pt: (o.pt as [number, number]) ?? null, sketch: (o.sketch as ParcelSubdivision["sketch"]) ?? null });
       } catch { /* poškodený riadok vynechať */ }
     }
-    return { variantId: v.id, finishedAt: v.finished_at, items };
+    return { variantId: v.id, finishedAt: v.finished_at, itemsJson: JSON.stringify(items) };
   });
 
 /** Mac (brief_worker → scenario_variants.py): fronta variantov, zverejnenie prepínačov a zápis výsledkov. */
