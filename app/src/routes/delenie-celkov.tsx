@@ -127,7 +127,8 @@ function SubdivisionPage() {
   const [variantId, setVariantId] = useState<number | null>(null);
   const [variant, setVariant] = useState<ScenarioVariant | null>(null);
   const [defaultV, setDefaultV] = useState<ScenarioVariant | null>(null);
-  const [rows, setRows] = useState<G12[]>([]);
+  const [matchRows, setMatchRows] = useState<G12[]>([]);
+  const [provRows, setProvRows] = useState<G12[] | null>(null);   // načíta sa až pri prvom otvorení „Na preskúmanie"
   const [loading, setLoading] = useState(true);
   const [cls, setCls] = useState<"MATCH" | "PROVISIONAL">("MATCH");
   const [kuFilter, setKuFilter] = useState("");
@@ -136,14 +137,17 @@ function SubdivisionPage() {
   const [reason, setReason] = useState<string | null>(null);
 
   const effective = variantId ? variant : defaultV;
-  const reload = useCallback(() => {
-    if (!effective || effective.status !== "done") { setRows([]); setLoading(!!effective && effective.status !== "failed"); return; }
+  const load = useCallback((c: "MATCH" | "PROVISIONAL") => {
+    const set = c === "MATCH" ? setMatchRows : setProvRows;
+    if (!effective || effective.status !== "done") { set([]); setLoading(!!effective && effective.status !== "failed"); return; }
     setLoading(true);
-    getScenarioVariantRows({ data: { variantId: effective.id } })
-      .then((r) => setRows((JSON.parse(r.rowsJson) as Record<string, unknown>[]).map(rowOf)))
-      .catch(() => setRows([])).finally(() => setLoading(false));
+    getScenarioVariantRows({ data: { variantId: effective.id, classification: c } })
+      .then((r) => set((JSON.parse(r.rowsJson) as Record<string, unknown>[]).map(rowOf)))
+      .catch(() => set([])).finally(() => setLoading(false));
   }, [effective?.id, effective?.status]); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => { setProvRows(null); load("MATCH"); }, [load]);
+  useEffect(() => { if (cls === "PROVISIONAL" && provRows === null) load("PROVISIONAL"); }, [cls, provRows, load]);
+  const rows = useMemo(() => [...matchRows, ...(provRows ?? [])], [matchRows, provRows]);
 
   const katastre = useMemo(() => {
     const m = new Map<string, string>();
@@ -152,7 +156,8 @@ function SubdivisionPage() {
   }, [rows]);
   const vKu = useMemo(() => (kuFilter ? rows.filter((r) => r.kodKu === kuFilter) : rows), [rows, kuFilter]);
   const matches = vKu.filter((r) => r.classification === "MATCH");
-  const nProv = vKu.length - matches.length;
+  // kým sa „na preskúmanie" nenačíta, počet je zo súhrnu variantu (pri filtri k.ú. ho nepoznáme)
+  const nProv: number | string = provRows !== null ? vKu.length - matches.length : kuFilter ? "…" : (effective?.n_provisional ?? 0);
   const lotsTotal = matches.reduce((t, r) => t + (r.best?.lots ?? 0), 0);
   const nRoad = matches.filter((r) => r.best?.kind === "ROAD").length;
   const reasonOf = (r: G12) => reasonFromKeys(r.openKeys, r.notes.join(" "), REASON_KEYS,

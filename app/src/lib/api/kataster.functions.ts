@@ -9491,20 +9491,22 @@ export const createScenarioVariant = createServerFn({ method: "POST" })
   });
 
 export const getScenarioVariantRows = createServerFn({ method: "POST" })
-  .validator(z.object({ variantId: z.number().int(), kodKu: z.string().regex(/^\d{6}$/).optional() }))
+  // classification: voliteľne len jedna kategória (GOLD-12 má tisíce riadkov s náčrtmi — „na preskúmanie" sa načíta až na klik)
+  .validator(z.object({ variantId: z.number().int(), kodKu: z.string().regex(/^\d{6}$/).optional(),
+    classification: z.enum(["MATCH", "PROVISIONAL"]).optional() }))
   // riadky ako JSON text: tvar sa líši podľa scenára a server funkcia nevie preniesť typ `unknown`
   .handler(async ({ data }): Promise<{ variant: ScenarioVariant | null; rowsJson: string }> => {
     const v = (await q<ScenarioVariant>(
       `SELECT id, scenario, label, params_json, status, progress, error, n_match, n_provisional, author, created_at, finished_at
        FROM scenario_variants WHERE id=?`, [data.variantId]).catch(() => []))[0] ?? null;
     if (!v) return { variant: null, rowsJson: "[]" };
-    const where = data.kodKu ? "AND r.kod_ku=?" : "";
+    const where = (data.kodKu ? "AND r.kod_ku=? " : "") + (data.classification ? "AND r.classification=?" : "");
     // dataset a názov k.ú. pribalí server (odkazy na výpis LV a list nehnuteľnosti ako pri predvolenom behu)
     const rs = await q<{ data_json: string; dataset_id: string | null; ds_ku_name: string | null }>(
       `SELECT r.data_json, ds.id AS dataset_id, ds.ku_name AS ds_ku_name
        FROM scenario_variant_results r LEFT JOIN datasets ds ON ds.ku_code = r.kod_ku
        WHERE r.variant_id=? ${where} ORDER BY r.classification, r.id LIMIT 20000`,
-      data.kodKu ? [data.variantId, data.kodKu] : [data.variantId]).catch(() => []);
+      [data.variantId, ...(data.kodKu ? [data.kodKu] : []), ...(data.classification ? [data.classification] : [])]).catch(() => []);
     const rows: Record<string, unknown>[] = [];
     for (const r of rs) {
       try { rows.push({ ...(JSON.parse(r.data_json) as Record<string, unknown>), _datasetId: r.dataset_id, _kuName: r.ds_ku_name }); }
