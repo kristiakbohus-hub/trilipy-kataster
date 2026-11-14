@@ -2357,7 +2357,87 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
     "zona": {
       "label": "Funkčné využitie podľa ÚP",
       "kind": "text",
-      "note": "Kategória plochy z komplexného výkresu ÚP obce (odvodené z rastrového/PDF výkresu — orientačné)"
+      "note": "Kategória plochy z komplexného výkresu ÚP obce — z georeferencovaného výkresu, vektorového PDF alebo sútlače z mapového portálu obce (zdroj a presnosť pri k.ú.)"
+    },
+    "upozornenie": {
+      "label": "Upozornenie",
+      "kind": "text",
+      "note": "presnosť polohy výkresu je nad limit 3 m — zónu pri hranici plôch over vo výkrese"
+    },
+    "zad": {
+      "label": "Zmena podľa ZaD",
+      "kind": "text",
+      "note": "zóna parcely je zo zmien a doplnkov ÚP (prekrytie výkresu zmien)"
+    },
+    "pred_zad": {
+      "label": "Pred zmenou ZaD",
+      "kind": "text",
+      "note": "zóna parcely pred zmenami a doplnkami"
+    },
+    "regulativ": {
+      "label": "Regulatív bloku (záväzná časť ÚP)",
+      "kind": "text",
+      "note": "regulatív funkčného bloku zo záväznej časti ÚP (VZN) vrátane neskorších zmien a doplnkov"
+    },
+    "kod_bloku": {
+      "label": "Kód bloku",
+      "kind": "text",
+      "note": "číslo obvodu.okrsku.funkčná jednotka/číslo regulatívu, napr. 1.04.P/03 (BI bývanie individuálne, BH hromadné, OV vybavenosť, P polyfunkcia, VS výroba, ŠR šport, ZBI/ZV zeleň …)"
+    },
+    "urcenie": {
+      "label": "Ako bol blok určený",
+      "kind": "text",
+      "note": "popis bloku vo výkrese v tom istom bloku, alebo najbližší popis rovnakej funkcie (vtedy over vo výkrese)"
+    },
+    "zakladna_funkcia": {
+      "label": "Základná funkcia",
+      "kind": "text",
+      "note": "hlavné využitie bloku podľa záväznej časti"
+    },
+    "doplnkova_funkcia": {
+      "label": "Doplnková funkcia",
+      "kind": "text",
+      "note": "využitie, ktoré môže dopĺňať základnú funkciu"
+    },
+    "pripustne": {
+      "label": "Prípustné funkcie",
+      "kind": "text",
+      "note": "čo sa v bloku môže umiestniť"
+    },
+    "nepripustne": {
+      "label": "Neprípustné funkcie",
+      "kind": "text",
+      "note": "čo sa v bloku umiestniť nesmie"
+    },
+    "typ_stavebnej_cinnosti": {
+      "label": "Typ stavebnej činnosti",
+      "kind": "text",
+      "note": "novostavby, prestavby, nadstavby, modernizácie … a ďalšie podmienky (ÚSES, ochranné pásma, výškové obmedzenia)"
+    },
+    "min_index_ozelenenia": {
+      "label": "Min. index ozelenenia",
+      "kind": "number",
+      "note": "podiel plochy pozemku, ktorý musí ostať zeleň (napr. 0,4 = 40 %)"
+    },
+    "typ_zastavby": {
+      "label": "Typ zástavby",
+      "kind": "text",
+      "note": "požiadavka na charakter zástavby"
+    },
+    "zdroj_regulativu": {
+      "label": "Zdroj regulatívu",
+      "kind": "text",
+      "note": "dokument, z ktorého je text regulatívu (záväzná časť ÚPN alebo zmena a doplnok)"
+    },
+    "zmeny_zad": {
+      "label": "Zmeny regulatívu v ZaD",
+      "kind": "list",
+      "note": "doslovné znenie zmien regulatívu v neskorších zmenách a doplnkoch (VZN)"
+    },
+    "poznamka_regulativu": {
+      "label": "Poznámka k regulatívu",
+      "kind": "text",
+      "note": "napr. nový blok zo ZaD bez nájdeného textu regulatívu"
     },
     "kat": {
       "label": "Kód kategórie",
