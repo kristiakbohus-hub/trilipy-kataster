@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getDatasets } from "../lib/api/kataster.functions";
-import { STATUS_META } from "../lib/domain";
+import { statusMeta } from "../lib/domain";
 import { Badge, Card, Icon, Meter } from "../components/kit";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
@@ -33,7 +33,7 @@ function DatasetsPage() {
         </div>
         <div className="divide-y divide-line">
           {datasets.map((d) => {
-            const meta = STATUS_META[d.status];
+            const meta = statusMeta(d.status);
             return (
               <Link
                 key={d.id}

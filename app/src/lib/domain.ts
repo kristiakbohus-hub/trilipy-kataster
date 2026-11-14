@@ -245,6 +245,11 @@ export const STATUS_META: Record<
   blocked: { label: "Blocked", color: "#9c4a40", hint: "Blokované — potrebný ďalší krok." },
 };
 
+/** Stav datasetu s poistkou — neznámy stav (napr. počas importu) nesmie zhodiť stránku. */
+export function statusMeta(status: string | null | undefined): { label: string; color: string; hint: string } {
+  return STATUS_META[status ?? ""] ?? { label: status || "neznámy stav", color: "#8a8a8a", hint: "Stav datasetu, ktorý appka nepozná." };
+}
+
 export const QUALITY_META: Record<GeometryQuality, { label: string; color: string }> = {
   verified: { label: "Overená", color: "#5b7a58" },
   derived: { label: "Odvodená", color: "#8a8a8a" },

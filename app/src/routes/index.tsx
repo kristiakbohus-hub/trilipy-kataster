@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { getOverview } from "../lib/api/kataster.functions";
-import { STATUS_META, type AppPath, type Dataset } from "../lib/domain";
+import { type AppPath, type Dataset, statusMeta } from "../lib/domain";
 import { Badge, Card, Icon, Meter, SectionHeader, Stat } from "../components/kit";
 
 // BEZ `loader`: beží počas SSR pred prihlasovacou bránou → dáta by videl ktokoľvek. Viď pamäť
@@ -114,7 +114,7 @@ function MissionControl() {
 }
 
 function DatasetCard({ d }: { d: Dataset }) {
-  const meta = STATUS_META[d.status];
+  const meta = statusMeta(d.status);
   return (
     <Card className="flex flex-col p-4">
       <div className="flex items-start justify-between gap-2">

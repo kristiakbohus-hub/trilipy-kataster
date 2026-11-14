@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, geocodePlace, mapSearch, mapFeature, ownerPortfolio, type GeoPlace, type MapHit, type MapRing } from "../lib/api/kataster.functions";
 import { LvCard } from "../components/lv-card";
-import { STATUS_META, canRunPipeline, type Dataset, type MapText, type Parcel, type Role } from "../lib/domain";
+import { canRunPipeline, type Dataset, type MapText, type Parcel, type Role, statusMeta } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import { MapView, type WmsDef } from "../components/map-view";
 import { Badge, Card, Disclaimer, SectionHeader } from "../components/kit";
@@ -207,7 +207,7 @@ function MapPage() {
 
       {current ? (
         <div className="flex flex-wrap items-center gap-3 text-sm">
-          <Badge color={STATUS_META[current.status].color}>{STATUS_META[current.status].label}</Badge>
+          <Badge color={statusMeta(current.status).color}>{statusMeta(current.status).label}</Badge>
           <span className="text-muted">Coverage <span className="tabular-nums text-fg">{current.geometry_coverage} %</span></span>
           <span className="text-muted">Parcely <span className="tabular-nums text-fg">{parcels.length}</span></span>
           <span className="text-muted">Názvy <span className="tabular-nums text-fg">{texts.length}</span></span>

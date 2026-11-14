@@ -1,18 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { getDataset, runReadinessRecheck } from "../lib/api/kataster.functions";
-import {
-  JOB_STATE_META,
-  OPP_META,
-  QUALITY_META,
-  REPORT_KIND_LABEL,
-  REPORT_STATUS_META,
-  STATUS_META,
-  canRunPipeline,
-  eur,
-  m2,
-  decSk,
-} from "../lib/domain";
+import { JOB_STATE_META, OPP_META, QUALITY_META, REPORT_KIND_LABEL, REPORT_STATUS_META, canRunPipeline, eur, m2, decSk, statusMeta } from "../lib/domain";
 import { Badge, Card, Disclaimer, Icon, Meter, SectionHeader } from "../components/kit";
 import { useRole } from "../lib/role-context";
 import { useAuth } from "../lib/auth-context";
@@ -39,7 +28,7 @@ function DatasetDetail() {
   // Stráž až POD všetkými hookmi — skorý return nad nimi by porušil pravidlá hookov.
   if (!data?.dataset) return <Card className="p-6 text-center text-sm text-muted">Načítavam dataset…</Card>;
   const d = data.dataset;
-  const meta = STATUS_META[d.status];
+  const meta = statusMeta(d.status);
 
   async function doRecheck() {
     setBusy(true);

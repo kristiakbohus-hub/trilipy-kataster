@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
 import { getDatasets, importDataset, importEknParcels, runReadinessRecheck } from "../lib/api/kataster.functions";
-import { STATUS_META, canRunPipeline } from "../lib/domain";
+import { canRunPipeline, statusMeta } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import type { ImportParcel } from "../lib/vgi-import";
 import { Badge, Card, Disclaimer, Icon, SectionHeader } from "../components/kit";
@@ -302,7 +302,7 @@ function ImportPage() {
           <SectionHeader title="Datasety & readiness" hint={canRunPipeline(role) ? "Spusti re-check pre aktuálny stav." : "Rola nemá oprávnenie spúšťať pipeline."} />
           <Card className="divide-y divide-line">
             {datasets.map((d) => {
-              const meta = STATUS_META[d.status];
+              const meta = statusMeta(d.status);
               return (
                 <div key={d.id} className="p-3">
                   <div className="flex items-center justify-between gap-2">
