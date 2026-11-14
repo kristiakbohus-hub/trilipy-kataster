@@ -6,7 +6,7 @@ import type { LvOwner, Parcel, Role } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
 import { QUALITY_META, canRunPipeline, m2 } from "../lib/domain";
 import { saveRasterLegend, UP_KAT_LABEL } from "../lib/api/kataster.functions";
-import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listMapLayers, type MapLayerFeature, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, mapIdentify, parcelBuildings, type EsknParcel, type MapRing } from "../lib/api/kataster.functions";
+import { getLvDetail, getLvVypis, listRasters, getRasterData, uploadRaster, saveGeoref, updateRaster, deleteRaster, listUpInfo, addUpInfo, listBpejZones, listMapLayers, type MapLayerFeature, listUpZones, getParcelZone, importUpZones, getParcelAccessibility, getParcelLimits, getUpDocs, getUpChanges, importUpDocs, refreshUpRegistry, getUpRegulativ, setUpRegulativ, deleteUpRegulativ, getLocalityMedian, getMarketListingsNear, esknIdentify, mapIdentify, parcelBuildings, type EsknParcel, type MapRing, type SubdivisionOverlayItem } from "../lib/api/kataster.functions";
 import { LimitsPanel } from "./limits-panel";
 import { LvCard } from "./lv-card";
 import { exportOutline, fmtSjtsk, type Ring as OutRing } from "../lib/sjtsk";
@@ -312,6 +312,7 @@ export function MapView({
   flyTo = null,
   highlight = null,
   identifyAt = null,
+  subdivision = null,
 }: {
   parcels: Parcel[];
   datasetName?: string;
@@ -327,6 +328,8 @@ export function MapView({
   highlight?: { rings: MapRing[]; nonce: number } | null;
   // otvor panel parcely v bode (výsledok vyhľadávania mimo načítaného k.ú.) — ESKN + naše dáta + LV
   identifyAt?: { lat: number; lng: number; nonce: number } | null;
+  // GOLD-12: navrhnuté pozemky a prístupové cesty (zhoda plnou čiarou, na preskúmanie prerušovanou) — len zobrazenie
+  subdivision?: SubdivisionOverlayItem[] | null;
 }) {
   // token pre serverové funkcie, ktoré vydávajú mená vlastníkov (rola sa berie zo session)
   const { token } = useAuth();
@@ -1508,6 +1511,42 @@ export function MapView({
               const d = pts.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ") + " Z";
               return <g><path d={d} fill="none" stroke="#fffdf8" strokeWidth="4" strokeOpacity="0.7" /><path d={d} fill="none" stroke="#e0561f" strokeWidth="2.4" strokeDasharray="5 3" /></g>;
             })() : null}
+
+            {/* GOLD-12 návrhy delenia — pod obrysmi výberu, bez zachytávania klikov (klik ide na parcelu) */}
+            {subdivision && subdivision.length ? (
+              <g pointerEvents="none">
+                {subdivision.map((it, i) => {
+                  const prov = it.classification !== "MATCH";
+                  const col = prov ? "#9a7b3e" : "#5b7a58";
+                  const proj = (ring: MapRing) => ring.map(([lng, lat]) => project(lng, lat));
+                  const toD = (pts: { x: number; y: number }[]) => pts.map((p, j) => (j === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ") + " Z";
+                  const all = it.lots.flatMap((l) => proj(l.ring));
+                  if (!all.length || all.every((p) => p.x < -50) || all.every((p) => p.x > size.w + 50) || all.every((p) => p.y < -50) || all.every((p) => p.y > size.h + 50)) return null;
+                  return (
+                    <g key={`sd-${i}`}>
+                      {it.road ? <path d={toD(proj(it.road))} fill="#8a8a8a" fillOpacity="0.55" stroke="#4a4a4a" strokeWidth="1" /> : null}
+                      {it.lots.map((l, j) => {
+                        const pts = proj(l.ring);
+                        const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+                        const w = Math.max(...xs) - Math.min(...xs), h = Math.max(...ys) - Math.min(...ys);
+                        const cx = xs.reduce((a, b) => a + b, 0) / xs.length, cy = ys.reduce((a, b) => a + b, 0) / ys.length;
+                        return (
+                          <g key={j}>
+                            <path d={toD(pts)} fill={col} fillOpacity="0.2" stroke={col} strokeWidth="1.8" strokeDasharray={prov ? "5 3" : undefined} />
+                            {w > 44 && h > 22 ? (
+                              <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central" fontSize="11" fill="#333333"
+                                style={{ paintOrder: "stroke", stroke: "#fffdf8", strokeWidth: 2.5 }}>
+                                {j + 1} · {Math.round(l.area).toLocaleString("sk-SK")} m²
+                              </text>
+                            ) : null}
+                          </g>
+                        );
+                      })}
+                    </g>
+                  );
+                })}
+              </g>
+            ) : null}
 
             {/* Nájdený objekt (vyhľadávanie) — obrys navrchu */}
             {highlight && highlight.rings.length ? (

@@ -9493,7 +9493,7 @@ export const createScenarioVariant = createServerFn({ method: "POST" })
 export const getScenarioVariantRows = createServerFn({ method: "POST" })
   // classification: voliteľne len jedna kategória (GOLD-12 má tisíce riadkov s náčrtmi — „na preskúmanie" sa načíta až na klik)
   .validator(z.object({ variantId: z.number().int(), kodKu: z.string().regex(/^\d{6}$/).optional(),
-    classification: z.enum(["MATCH", "PROVISIONAL"]).optional() }))
+    classification: z.enum(["MATCH", "PROVISIONAL"]).optional(), withGeo: z.boolean().optional() }))
   // riadky ako JSON text: tvar sa líši podľa scenára a server funkcia nevie preniesť typ `unknown`
   .handler(async ({ data }): Promise<{ variant: ScenarioVariant | null; rowsJson: string }> => {
     const v = (await q<ScenarioVariant>(
@@ -9509,10 +9509,81 @@ export const getScenarioVariantRows = createServerFn({ method: "POST" })
       [data.variantId, ...(data.kodKu ? [data.kodKu] : []), ...(data.classification ? [data.classification] : [])]).catch(() => []);
     const rows: Record<string, unknown>[] = [];
     for (const r of rs) {
-      try { rows.push({ ...(JSON.parse(r.data_json) as Record<string, unknown>), _datasetId: r.dataset_id, _kuName: r.ds_ku_name }); }
+      try {
+        const o = JSON.parse(r.data_json) as Record<string, unknown>;
+        if (!data.withGeo) delete o.geo;   // súradnice pozemkov (GOLD-12) potrebuje len mapa — karta by ťahala megabajty navyše
+        rows.push({ ...o, _datasetId: r.dataset_id, _kuName: r.ds_ku_name });
+      }
       catch { /* poškodený riadok vynechať */ }
     }
     return { variant: v, rowsJson: JSON.stringify(rows) };
+  });
+
+// ——— GOLD-12 DELENIE CELKOV: predvolený beh pre mapu a list nehnuteľnosti (2026-11-14) ———
+async function defaultVariant(scenario: string): Promise<{ id: number; status: string; finished_at: string | null } | null> {
+  // predvolený beh zakladá Mac (author); prednosť má hotový, pri prepočte ostane posledný hotový
+  return (await q<{ id: number; status: string; finished_at: string | null }>(
+    `SELECT id, status, finished_at FROM scenario_variants WHERE scenario=? AND author='Mac — predvolený beh'
+     ORDER BY (status='done') DESC, id DESC LIMIT 1`, [scenario]).catch(() => []))[0] ?? null;
+}
+
+export type SubdivisionLot = { ring: MapRing; area: number };
+export type SubdivisionOverlayItem = {
+  site: string[]; classification: string; kind: string | null; label: string | null; lots: SubdivisionLot[]; road: MapRing | null;
+  pt: [number, number] | null;
+};
+/** Navrhnuté pozemky a cesty (GOLD-12, predvolený beh) pre jedno k.ú. — vrstva mapy. Bez údajov o vlastníkoch. */
+export const getSubdivisionOverlay = createServerFn({ method: "POST" })
+  .validator(z.object({ kodKu: z.string().regex(/^\d{6}$/) }))
+  .handler(async ({ data }): Promise<{ variantId: number | null; status: string | null; finishedAt: string | null; items: SubdivisionOverlayItem[] }> => {
+    const v = await defaultVariant("GOLD12");
+    if (!v) return { variantId: null, status: null, finishedAt: null, items: [] };
+    const rs = await q<{ data_json: string }>(
+      "SELECT data_json FROM scenario_variant_results WHERE variant_id=? AND kod_ku=? ORDER BY classification, id LIMIT 4000",
+      [v.id, data.kodKu]).catch(() => []);
+    const items: SubdivisionOverlayItem[] = [];
+    for (const r of rs) {
+      try {
+        const o = JSON.parse(r.data_json) as {
+          site?: string[]; classification?: string; best?: { kind?: string; label?: string; lotAreas?: number[] } | null;
+          geo?: { lots?: MapRing[]; road?: MapRing | null } | null; pt?: [number, number] | null;
+        };
+        const rings = o.geo?.lots ?? [];
+        if (!rings.length) continue;
+        const areas = o.best?.lotAreas ?? [];
+        items.push({ site: o.site ?? [], classification: o.classification ?? "", kind: o.best?.kind ?? null, label: o.best?.label ?? null,
+          lots: rings.map((ring, i) => ({ ring, area: Number(areas[i] ?? 0) })), road: o.geo?.road ?? null, pt: o.pt ?? null });
+      } catch { /* poškodený riadok vynechať */ }
+    }
+    return { variantId: v.id, status: v.status, finishedAt: v.finished_at, items };
+  });
+
+export type ParcelSubdivision = {
+  classification: string; site: string[]; siteM2: number; best: Record<string, unknown> | null; variants: Record<string, unknown>[];
+  value: Record<string, unknown> | null; reason: string | null; notes: string[]; pt: [number, number] | null;
+  sketch: { w: number; h: number; site: string; lots: string[]; road: string | null; front: string | null } | null;
+};
+/** Je parcela súčasťou celku, ktorý sa dá rozdeliť (GOLD-12, predvolený beh)? — list nehnuteľnosti (interná verzia). */
+export const getParcelSubdivision = createServerFn({ method: "POST" })
+  .validator(z.object({ kodKu: z.string().regex(/^\d{6}$/), parcels: z.array(z.string().regex(/^\d{1,6}(\/\d{1,4})?$/)).min(1).max(12) }))
+  .handler(async ({ data }): Promise<{ variantId: number | null; finishedAt: string | null; items: ParcelSubdivision[] }> => {
+    const v = await defaultVariant("GOLD12");
+    if (!v) return { variantId: null, finishedAt: null, items: [] };
+    const like = data.parcels.map(() => "data_json LIKE ?").join(" OR ");
+    const rs = await q<{ data_json: string }>(
+      `SELECT data_json FROM scenario_variant_results WHERE variant_id=? AND kod_ku=? AND (${like}) ORDER BY classification LIMIT 5`,
+      [v.id, data.kodKu, ...data.parcels.map((p) => `%"C:${p}"%`)]).catch(() => []);
+    const items: ParcelSubdivision[] = [];
+    for (const r of rs) {
+      try {
+        const o = JSON.parse(r.data_json) as Record<string, unknown>;
+        items.push({ classification: String(o.classification ?? ""), site: (o.site as string[]) ?? [], siteM2: Number(o.siteM2 ?? 0),
+          best: (o.best as Record<string, unknown>) ?? null, variants: (o.variants as Record<string, unknown>[]) ?? [],
+          value: (o.value as Record<string, unknown>) ?? null, reason: (o.reason as string) ?? null, notes: (o.notes as string[]) ?? [],
+          pt: (o.pt as [number, number]) ?? null, sketch: (o.sketch as ParcelSubdivision["sketch"]) ?? null });
+      } catch { /* poškodený riadok vynechať */ }
+    }
+    return { variantId: v.id, finishedAt: v.finished_at, items };
   });
 
 /** Mac (brief_worker → scenario_variants.py): fronta variantov, zverejnenie prepínačov a zápis výsledkov. */

@@ -5,6 +5,7 @@ import { Card, CriteriaMatrix, Disclaimer, SectionHeader, Stat } from "../compon
 import { ScenarioSwitches, variantParams } from "../components/scenario-switches";
 import { kuLabel } from "../lib/domain";
 import { ReasonFilter, reasonCounts, reasonFromKeys } from "../components/reason-filter";
+import { SketchSvg, type Sketch } from "../components/subdivision-sketch";
 
 // GOLD-12 — DELENIE CELKOV NA VIAC STAVEBNÝCH PARCIEL (2026-11-14). Engine 21_NL_SEARCH/gold12_find.py + gold12_solver.py
 // + gold12_live.py (mapa KN, SPI, pôdorysy ZBGIS, DMR 5.0, ÚP). Varianty: FRONT (pozdĺž existujúcej cesty) a ROAD (nová
@@ -19,13 +20,17 @@ type VarSum = {
   kind: "FRONT" | "ROAD"; label: string; lots: number; lotAreas: number[]; lotWidths: number[]; minLot: number;
   roadM2: number; roadLenM: number; remainderM2: number; remainderPct: number | null;
 };
-type Sketch = { w: number; h: number; site: string; lots: string[]; road: string | null; front: string | null };
+type Value = {
+  available: boolean; note?: string; lotPpm2?: number; lotP25?: number; lotP75?: number; lotN?: number; lotSrc?: string; lotYears?: string | null;
+  nowPpm2?: number | null; nowN?: number; nowSrc?: string; nowKind?: string; valueNow?: number | null; valueAfter?: number;
+  roadCost?: number; surveyCost?: number; utilitiesCost?: number; ppfLevy?: number; ppfLevyKnown?: boolean; net?: number; uplift?: number | null;
+};
 type G12 = {
   kodKu: string; kuName: string | null; datasetId: string | null; classification: string; score: number | null;
   site: string[]; siteM2: number; devM2: number; ownerType: string | null; nHouses: number; houseKeepM2: number;
   best: VarSum | null; variants: VarSum[]; sketch: Sketch | null; zone: string | null; zoneSrc: string | null;
   slopePct: number | null; zuobShare: number | null; reason: string | null; notes: string[]; actions: string[];
-  criteriaJson: string | null; openKeys: string[];
+  criteriaJson: string | null; openKeys: string[]; value: Value | null; pt: [number, number] | null;
 };
 
 function rowOf(r: Record<string, unknown>): G12 {
@@ -40,6 +45,7 @@ function rowOf(r: Record<string, unknown>): G12 {
     sketch: (r.sketch ?? null) as Sketch | null, zone: (r.zone ?? null) as string | null, zoneSrc: (r.zoneSrc ?? null) as string | null,
     slopePct: opt(r.slopePct), zuobShare: opt(r.zuobShare), reason: (r.reason ?? null) as string | null, notes: arr(r.notes),
     actions: arr(r.actions), criteriaJson: (r.criteriaJson ?? null) as string | null, openKeys: arr(r.openKeys),
+    value: (r.value ?? null) as Value | null, pt: Array.isArray(r.pt) ? (r.pt as [number, number]) : null,
   };
 }
 
@@ -56,35 +62,6 @@ function isDefault(v: ScenarioVariant, schema: ScenarioSchema | null) {
   if (!schema) return false;
   const p = variantParams(v);
   return schema.params.every((d) => p[d.key] === undefined || p[d.key] === d.default);
-}
-
-/** Stred polygónu z cesty náčrtu (priemer vrcholov) — na číslo pozemku. */
-function pathCenter(d: string): [number, number] | null {
-  const pts = [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])] as [number, number]);
-  if (!pts.length) return null;
-  return [pts.reduce((s, p) => s + p[0], 0) / pts.length, pts.reduce((s, p) => s + p[1], 0) / pts.length];
-}
-
-// Náčrt najlepšieho variantu: cesta (styk s ňou) dole, pozemky očíslované v poradí zoznamu výmer.
-function SketchSvg({ s, label }: { s: Sketch; label: string }) {
-  const pad = Math.max(s.w, s.h) * 0.04 + 2;
-  const fs = Math.max(s.w, s.h) / 16;
-  return (
-    <svg viewBox={`${-pad} ${-pad} ${s.w + 2 * pad} ${s.h + 2 * pad}`} role="img" aria-label={label}
-      className="h-44 w-full rounded-md border border-line bg-cream">
-      <path d={s.site} fill="var(--color-surface-2)" stroke="var(--color-ink)" strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
-      {s.lots.map((d, i) => (
-        <path key={i} d={d} fill={i % 2 ? "rgba(91,122,88,.32)" : "rgba(91,122,88,.18)"} stroke="var(--color-green)"
-          strokeWidth={1} vectorEffect="non-scaling-stroke" />
-      ))}
-      {s.road ? <path d={s.road} fill="var(--color-muted)" fillOpacity={0.55} stroke="var(--color-ink-soft)" strokeWidth={0.8} vectorEffect="non-scaling-stroke" /> : null}
-      {s.front ? <path d={s.front} fill="var(--color-ink)" /> : null}
-      {s.lots.map((d, i) => {
-        const c = pathCenter(d);
-        return c ? <text key={i} x={c[0]} y={c[1]} fontSize={fs} textAnchor="middle" dominantBaseline="central" fill="var(--color-ink)">{i + 1}</text> : null;
-      })}
-    </svg>
-  );
 }
 
 function VariantTable({ r }: { r: G12 }) {
@@ -117,6 +94,39 @@ function VariantTable({ r }: { r: G12 }) {
   );
 }
 
+const eur = (n: number | null | undefined) => (n === null || n === undefined ? "—" : `${Math.round(n).toLocaleString("sk-SK")} €`);
+
+// Orientačná hodnota po rozdelení — z cien v zmluvách katastra (Mac: gold12_value.py). Nie je to ocenenie.
+function ValueBlock({ v }: { v: Value | null }) {
+  if (!v) return null;
+  if (!v.available) return <p className="mt-2 text-[11px] text-muted">Hodnota po rozdelení: {v.note ?? "nedá sa odhadnúť"}.</p>;
+  const up = v.uplift ?? null;
+  return (
+    <details className="mt-2 rounded-md border border-line px-2 py-1.5 text-[11px]">
+      <summary className="flex cursor-pointer items-center justify-between gap-2 text-fg">
+        <span>Hodnota po rozdelení (orientačne)</span>
+        {up !== null ? <span className={`tabular-nums ${up >= 0 ? "text-green" : "text-danger"}`}>{up >= 0 ? "+" : ""}{eur(up)}</span> : <span className="tabular-nums">{eur(v.net)}</span>}
+      </summary>
+      <table className="mt-1 w-full tabular-nums text-muted">
+        <tbody>
+          <tr><td className="py-0.5 pr-2">Pozemky po rozdelení</td><td className="text-right text-fg">{eur(v.valueAfter)}</td></tr>
+          <tr><td colSpan={2} className="pb-1 text-[10px]">medián {v.lotPpm2} €/m² za stavebné pozemky 400–1 500 m² ({v.lotSrc}, {v.lotN} zmlúv {v.lotYears ?? ""}; polovica medzi {v.lotP25} a {v.lotP75} €/m²)</td></tr>
+          <tr><td className="py-0.5 pr-2">− nová cesta</td><td className="text-right">{eur(v.roadCost)}</td></tr>
+          <tr><td className="py-0.5 pr-2">− geodet</td><td className="text-right">{eur(v.surveyCost)}</td></tr>
+          <tr><td className="py-0.5 pr-2">− prípojky</td><td className="text-right">{eur(v.utilitiesCost)}</td></tr>
+          <tr><td className="py-0.5 pr-2">− odvod za vyňatie pôdy (najviac)</td><td className="text-right">{v.ppfLevyKnown ? eur(v.ppfLevy) : "BPEJ nepoznáme"}</td></tr>
+          <tr className="border-t border-line"><td className="py-0.5 pr-2 text-fg">Po rozdelení spolu</td><td className="text-right text-fg">{eur(v.net)}</td></tr>
+          <tr><td className="py-0.5 pr-2">Celok dnes ako celok</td><td className="text-right">{v.valueNow != null ? eur(v.valueNow) : "málo predajov"}</td></tr>
+          {v.valueNow != null ? <tr><td colSpan={2} className="pb-1 text-[10px]">medián {v.nowPpm2} €/m² za pozemky podobné celku ({v.nowKind}; {v.nowSrc}, {v.nowN} zmlúv)</td></tr> : null}
+        </tbody>
+      </table>
+      <p className="mt-1 text-[10px] leading-relaxed text-muted">
+        Ceny zo zmlúv v katastri; bez predĺženia sietí, projektu a poplatkov. Cena cesty, geodeta a prípojok sú predpoklady (prepínače). Nie je to ocenenie ani znalecký posudok.
+      </p>
+    </details>
+  );
+}
+
 const REASON_KEYS: Record<string, string> = {
   zone_housing: "ÚP", site_access: "prístup", fragmentation: "drobenie mimo ZÚ", house_keeps_access: "vjazd domu",
   owner_identity: "vlastníci na viacerých LV", passage_easement: "vecné bremeno", planned_road_overlap: "plocha dopravy v ÚP",
@@ -135,6 +145,7 @@ function SubdivisionPage() {
   const [kind, setKind] = useState<"" | "FRONT" | "ROAD">("");
   const [limit, setLimit] = useState(30);
   const [reason, setReason] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<"score" | "uplift">("score");
 
   const effective = variantId ? variant : defaultV;
   const load = useCallback((c: "MATCH" | "PROVISIONAL") => {
@@ -165,8 +176,10 @@ function SubdivisionPage() {
   const reasonCountsList = useMemo(() => (cls === "PROVISIONAL" ? reasonCounts(vKu.filter((r) => r.classification === "PROVISIONAL"), reasonOf) : []), [vKu, cls]); // eslint-disable-line react-hooks/exhaustive-deps
   const shownAll = useMemo(
     () => vKu.filter((r) => r.classification === cls && (!kind || r.best?.kind === kind) && (cls !== "PROVISIONAL" || !reason || reasonOf(r) === reason))
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || (b.best?.lots ?? 0) - (a.best?.lots ?? 0) || b.devM2 - a.devM2),
-    [vKu, cls, kind, reason], // eslint-disable-line react-hooks/exhaustive-deps
+      .sort((a, b) => sortBy === "uplift"
+        ? (b.value?.uplift ?? -Infinity) - (a.value?.uplift ?? -Infinity) || (b.score ?? 0) - (a.score ?? 0)
+        : (b.score ?? 0) - (a.score ?? 0) || (b.best?.lots ?? 0) - (a.best?.lots ?? 0) || b.devM2 - a.devM2),
+    [vKu, cls, kind, reason, sortBy], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const shown = shownAll.slice(0, limit);
   const btn = (on: boolean) => `px-3 py-1 ${on ? "bg-ink text-cream" : "bg-paper text-muted hover:text-fg"}`;
@@ -208,6 +221,11 @@ function SubdivisionPage() {
               <button key={k} onClick={() => { setKind(k); setLimit(30); }} className={btn(kind === k)}>{l}</button>
             ))}
           </div>
+          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as "score" | "uplift")}
+            className="rounded-md border border-line bg-paper px-2 py-1 text-fg" aria-label="Radenie">
+            <option value="score">Podľa skóre</option>
+            <option value="uplift">Podľa prínosu delenia</option>
+          </select>
           <select value={kuFilter} onChange={(e) => { setKuFilter(e.target.value); setLimit(30); }}
             className="rounded-md border border-line bg-paper px-2 py-1 text-fg">
             <option value="">Všetky k.ú.</option>
@@ -248,6 +266,7 @@ function SubdivisionPage() {
                 </div>
               ) : null}
               <div className="mt-2"><VariantTable r={r} /></div>
+              <ValueBlock v={r.value} />
               <div className="mt-3 flex flex-wrap gap-1.5 text-[11px]">
                 {r.zone ? <span className="rounded-full border border-line px-2 py-0.5 text-muted">ÚP: {r.zone}</span> : null}
                 {r.slopePct !== null ? <span className="rounded-full border border-line px-2 py-0.5 text-muted">sklon {num1(r.slopePct)} %</span> : null}
@@ -258,6 +277,7 @@ function SubdivisionPage() {
               <div className="mt-3 text-xs text-muted">
                 Parcely celku: {r.site.slice(0, 6).map((p, j) => <span key={p}>{j ? ", " : ""}<ParcelLink ds={r.datasetId} refC={p} /></span>)}
                 {r.site.length > 6 ? ` … +${r.site.length - 6}` : ""}
+                {r.pt && r.datasetId ? <> · <a className="text-green hover:underline" href={`/mapa?ds=${encodeURIComponent(r.datasetId)}&ll=${r.pt[0]},${r.pt[1]}&delenie=1`}>na mape →</a></> : null}
               </div>
               {r.notes.filter((n) => n.startsWith("Otvorené")).map((n, j) => <p key={j} className="mt-2 text-[11px] leading-relaxed text-warning">{n}</p>)}
               {r.actions.length ? (

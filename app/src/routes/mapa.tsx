@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, geocodePlace, mapSearch, mapFeature, ownerPortfolio, type GeoPlace, type MapHit, type MapRing } from "../lib/api/kataster.functions";
+import { addWmsSource, getDatasets, getMapData, getMapOpportunities, getMapTexts, listWmsSources, geocodePlace, mapSearch, mapFeature, ownerPortfolio, getSubdivisionOverlay, type GeoPlace, type MapHit, type MapRing, type SubdivisionOverlayItem } from "../lib/api/kataster.functions";
 import { LvCard } from "../components/lv-card";
 import { canRunPipeline, type Dataset, type MapText, type Parcel, type Role, statusMeta } from "../lib/domain";
 import { useAuth } from "../lib/auth-context";
@@ -31,12 +31,20 @@ function MapPage() {
   const [texts, setTexts] = useState<MapText[]>([]);
   const [wms, setWms] = useState<WmsRow[]>([]);
   const [opps, setOpps] = useState<Awaited<ReturnType<typeof getMapOpportunities>>>([]);
+  // GOLD-12 návrhy delenia celkov (predvolený beh) — vrstva na prepnutie
+  const [showSub, setShowSub] = useState(false);
+  const [subItems, setSubItems] = useState<SubdivisionOverlayItem[] | null>(null);
+  const [subMsg, setSubMsg] = useState<string | null>(null);
   // Zoznam datasetov + voľba prvého použiteľného; samotné vrstvy k.ú. doťahuje efekt nižšie
   // podľa datasetId (rovnaká cesta, akou sa prepína dataset v UI).
   useEffect(() => {
     getDatasets().then((ds) => {
       setDatasets(ds);
-      const first = ds.find((d) => d.status !== "blocked") ?? ds[0];
+      // deep link /mapa?ds=<dataset>&delenie=1 (karta Delenie celkov, list nehnuteľnosti)
+      const sp = typeof window === "undefined" ? null : new URLSearchParams(window.location.search);
+      const want = sp?.get("ds");
+      if (sp?.get("delenie") === "1") setShowSub(true);
+      const first = (want ? ds.find((d) => d.id === want) : undefined) ?? ds.find((d) => d.status !== "blocked") ?? ds[0];
       if (first) { setDatasetId(first.id); void loadLayers(first.id); }
     }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -113,6 +121,21 @@ function MapPage() {
   const [wBusy, setWBusy] = useState(false);
 
   const current = datasets.find((d) => d.id === datasetId) ?? null;
+  const curKu = current?.ku_code ?? null;
+  useEffect(() => {
+    if (!showSub || !curKu) { setSubItems(null); setSubMsg(null); return; }
+    let alive = true;
+    setSubMsg("Načítavam návrhy delenia…");
+    getSubdivisionOverlay({ data: { kodKu: curKu } }).then((r) => {
+      if (!alive) return;
+      setSubItems(r.items);
+      const nm = r.items.filter((x) => x.classification === "MATCH").length;
+      setSubMsg(r.variantId == null ? "Predvolený beh delenia ešte nie je spočítaný."
+        : r.status !== "done" && !r.items.length ? "Delenie sa práve prepočítava na Macu."
+        : `${nm} zhôd a ${r.items.length - nm} na preskúmanie v tomto k.ú. (plná čiara = zhoda, prerušovaná = na preskúmanie)`);
+    }).catch(() => { if (alive) { setSubItems(null); setSubMsg("Návrhy delenia sa nepodarilo načítať."); } });
+    return () => { alive = false; };
+  }, [showSub, curKu]);
 
   // Permalink — zdieľateľný odkaz /mapa?ds=<dataset>&p=<parcela> (fokus po načítaní)
   useEffect(() => {
@@ -208,6 +231,10 @@ function MapPage() {
       {current ? (
         <div className="flex flex-wrap items-center gap-3 text-sm">
           <Badge color={statusMeta(current.status).color}>{statusMeta(current.status).label}</Badge>
+          <label className="flex items-center gap-1 text-muted" title="Navrhnuté rozdelenie celkov na stavebné pozemky (GOLD-12, predvolené nastavenie)">
+            <input type="checkbox" checked={showSub} onChange={(e) => setShowSub(e.target.checked)} /> Návrhy delenia
+          </label>
+          {showSub && subMsg ? <span className="text-xs text-muted">{subMsg}</span> : null}
           <span className="text-muted">Coverage <span className="tabular-nums text-fg">{current.geometry_coverage} %</span></span>
           <span className="text-muted">Parcely <span className="tabular-nums text-fg">{parcels.length}</span></span>
           <span className="text-muted">Názvy <span className="tabular-nums text-fg">{texts.length}</span></span>
@@ -279,6 +306,7 @@ function MapPage() {
             flyTo={flyTo}
             highlight={highlight}
             identifyAt={identifyAt}
+            subdivision={showSub ? subItems : null}
           />
         ) : (
           <div className="grid h-full place-items-center rounded-xl border border-dashed border-line bg-surface/50 text-sm text-muted">

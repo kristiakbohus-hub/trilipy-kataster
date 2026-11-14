@@ -19,6 +19,7 @@ import { wgsToSjtskKn } from "../lib/sjtsk";
 import { GROUP_GUIDE } from "../lib/sheet-guide";
 import { clientView } from "../lib/share-client";
 import { Terrain3D } from "./terrain3d";
+import { SubdivisionProposal } from "./subdivision-proposal";
 import { addressOf, checklist, completeness, connectionLength, fact, mainKey, offices, parseFact, riskyHit, sellPropensity, semafor, shapeOf, suitability, zoneOf, type Light, type SheetData } from "../lib/property-eval";
 
 export type SheetMode = "internal" | "client";
@@ -687,6 +688,7 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
   const teren = mk ? fact(c, "teren", mk) : null;
   const elev = elevOf(teren);
   const isClient = mode === "client";
+  const [hasProposal, setHasProposal] = useState(false);   // GOLD-12 návrh delenia nahradí hrubý odhad (interná verzia)
   const mainParcel = c.parcels.find((p) => p.parcel_no === c.main.parcelNo && p.register === c.main.register) ?? c.parcels[0];
   const totalArea = c.parcels.reduce((s, p) => s + (p.area_m2 ?? 0), 0);
   const flatsByLv = Object.entries(c.facts.byty ?? {}).filter(([k]) => k.startsWith("flat:"));
@@ -967,7 +969,11 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
             rows={c.comparables.map((x) => [date(x.cas), x.ku ?? "—", (x.items ?? "").slice(0, 40), m2(x.land_m2 ?? x.flat_m2), eur(x.cen), x.ppm2 ? nf(x.ppm2) : "—", dist(x.distM)])} /></>)
           : c.clientAgg?.comps ? <CompsAggBlock d={d} /> : <Muted>V okrese sme nenašli dosť porovnateľných zmlúv.</Muted>}
         <CompsMap d={d} />
-        <SubdivisionBlock d={d} fin={fin} />
+        {!isClient ? (
+          <SubdivisionProposal kodKu={c.dataset?.ku_code ?? null} datasetId={c.dataset?.id ?? null} onFound={setHasProposal}
+            parcels={c.parcels.filter((p) => p.register === "C" && p.parcel_no).map((p) => String(p.parcel_no))} />
+        ) : null}
+        {isClient || !hasProposal ? <SubdivisionBlock d={d} fin={fin} /> : null}
         {c.market.trend.length ? (<><Sub>Vývoj cien zo zmlúv v okrese ({c.compStats?.kind ?? "rovnaký druh"})</Sub>
           <Table head={["Rok", "Zmlúv", "Medián €/m²", "Medián ceny"]} rows={c.market.trend.map((t) => [t.year, t.n, t.medPpm2 != null ? nf(t.medPpm2) : "—", eur(t.medCen)])} /></>) : null}
         {c.market.kuSales.length ? <Grid rows={[["Predaje rovnakého druhu v tomto k.ú. (zmluvy za rok)", c.market.kuSales.slice(-5).map((k) => `${k.year}: ${k.n}`).join(" · ")]]} /> : null}
