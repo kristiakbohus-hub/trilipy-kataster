@@ -9529,6 +9529,8 @@ export const scenarioVariantQueue = createServerFn({ method: "POST" })
     schema: z.string().max(20000).optional(),
     kodKu: z.string().regex(/^\d{6}$/).optional(),
     rows: z.array(z.record(z.string(), z.unknown())).max(2000).optional(),
+    // action=results: prvá dávka k.ú. najprv zmaže jeho riadky → opakovaný zápis k.ú. po výpadku siete nezdvojí riadky
+    replace: z.boolean().optional(),
     progress: z.string().max(300).optional(),
     error: z.string().max(1000).optional(),
     stats: z.string().max(100000).optional(),
@@ -9577,6 +9579,7 @@ export const scenarioVariantQueue = createServerFn({ method: "POST" })
     }
     if (data.action === "results") {
       if (!data.kodKu || !data.rows) return { ok: false, message: "Chýba k.ú. alebo riadky." };
+      if (data.replace) await q("DELETE FROM scenario_variant_results WHERE variant_id=? AND kod_ku=?", [data.id, data.kodKu]);
       const stmt = DB.prepare("INSERT INTO scenario_variant_results (variant_id,kod_ku,classification,data_json) VALUES (?,?,?,?)");
       const batch = data.rows.map((r) => stmt.bind(data.id, data.kodKu, String((r as { classification?: unknown }).classification ?? "MATCH"), JSON.stringify(r)));
       for (let i = 0; i < batch.length; i += 100) await DB.batch(batch.slice(i, i + 100));
