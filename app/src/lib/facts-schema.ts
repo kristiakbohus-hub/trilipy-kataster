@@ -2434,6 +2434,36 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "kind": "list",
       "note": "doslovné znenie zmien regulatívu v neskorších zmenách a doplnkoch (VZN)"
     },
+    "nazov_plochy": {
+      "label": "Funkčná plocha (záväzná časť)",
+      "kind": "text",
+      "note": "názov funkčnej plochy v záväznej časti ÚP obce"
+    },
+    "doplnkove": {
+      "label": "Doplnkové funkcie",
+      "kind": "text",
+      "note": "funkcie, ktoré môžu dopĺňať hlavnú funkciu plochy"
+    },
+    "podmienecne": {
+      "label": "Podmienečne prípustné",
+      "kind": "text",
+      "note": "funkcie prípustné len za podmienok uvedených v záväznej časti"
+    },
+    "limity": {
+      "label": "Limity (podlažnosť, IZP, zeleň…)",
+      "kind": "text",
+      "note": "kvantitatívne regulatívy plochy zo záväznej časti"
+    },
+    "pozor_zad": {
+      "label": "Pozor — zmenené zmenou a doplnkom",
+      "kind": "text",
+      "note": "časť textu limitu neskoršia ZaD zrušila alebo zmenila; platí znenie po zmene"
+    },
+    "moznosti": {
+      "label": "Možné regulatívy plochy",
+      "kind": "list",
+      "note": "obec má viac plôch tejto funkcie; ktorá platí pre parcelu, určuje kód vpísaný vo výkrese ÚP"
+    },
     "vps_v_okoli": {
       "label": "Verejnoprospešné stavby v okolí (do 50 m)",
       "kind": "list",
