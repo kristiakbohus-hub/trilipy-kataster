@@ -866,16 +866,17 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
         <Grid rows={[["Funkčná zóna", prettyZone(z.name) ?? "nemáme zónu ÚP pre parcelu"]]} />
         <RequestAnswers d={d} kinds={["up_obec"]} title="Územnoplánovacia informácia od obce" isClient={isClient} />
         <UpdVersions data={fact(c, "upd", kuKey)} />
-        {mk && fact(c, "up", mk) ? (<><Sub>Zóna z výkresu ÚP (georeferencovaný výkres, orientačné)</Sub><FactsBlock grp="up" data={fact(c, "up", mk)} /></>) : null}
+        {mk && fact(c, "up", mk) ? (<><Sub>Zóna a regulatív z územného plánu</Sub><FactsBlock grp="up" data={fact(c, "up", mk)} /></>) : null}
         {fact(c, "up", kuKey) ? <FactsBlock grp="up" data={Object.fromEntries(Object.entries(fact(c, "up", kuKey) ?? {}).filter(([k]) => ["zdroj", "dokumenty", "metoda", "presnost_m", "poznamka"].includes(k)))} /> : null}
         {d.dev ? (
           <Grid rows={[
-            [d.dev.proxy ? "Regulatív (odvodený, nie z ÚP)" : "Regulatív (z ÚP)", `${d.dev.regName ?? "—"} (IZP ${d.dev.izp ?? "—"} · KZ ${d.dev.kz ?? "—"} · IPP ${d.dev.ipp ?? "—"})`],
+            [d.dev.proxy ? "Regulatív (odvodený, nie z ÚP)" : d.dev.upKat ? "Regulatív (kategória z ÚP, IZP/IPP orientačne)" : "Regulatív (z ÚP)", `${d.dev.regName ?? "—"} (IZP ${d.dev.izp ?? "—"} · KZ ${d.dev.kz ?? "—"} · IPP ${d.dev.ipp ?? "—"})`],
             ["Zastavateľná plocha (IZP)", m2(d.dev.izpArea)], ["Hrubá podlažná plocha", m2(d.dev.hpp)], ["Čistá predajná plocha", m2(d.dev.cpp)],
             ["Odhad počtu bytov", d.dev.byty != null ? String(d.dev.byty) : "—"], ["Hodnota po výstavbe (GDV, orientačne)", eur(d.dev.gdv)],
           ]} />
         ) : null}
         {d.dev?.proxy ? <Muted>Zónu z územného plánu pre túto parcelu nemáme; regulatív je odvodený z druhu pozemku a umiestnenia — orientačný odhad, nie výrok ÚP.</Muted> : null}
+        {d.dev?.upKat ? <Muted>Kategória zóny je z územného plánu. IZP a IPP sú orientačné hodnoty pre túto kategóriu, nie zo záväznej časti; KZ je zo záväznej časti, ak je pri bloku uvedený (min. index ozelenenia).</Muted> : null}
         {d.upDocs.length ? (<><Sub>Dokumenty ÚP obce</Sub><ul className="list-disc pl-5 text-xs">{d.upDocs.slice(0, 12).map((x) => <li key={String(x.id)}><a href={x.url ?? "#"} target="_blank" rel="noopener noreferrer" className="text-brand underline">{x.title ?? "dokument"}</a></li>)}</ul></>) : null}
         {fact(c, "eia", kuKey) ? (<><Sub>Zámery EIA a plány SEA v obci (Enviroportál)</Sub><EiaBlock data={fact(c, "eia", kuKey)} /></>) : null}
         {c.obec.upChanges.length || c.obec.changes.length ? (<><Sub>Zmeny a oznámenia obce</Sub>
@@ -1236,9 +1237,12 @@ type UpdDoc = { typ: string; c: number | null; nazov: string; schvalene: string 
 function UpdVersions({ data }: { data: Record<string, unknown> | null }) {
   const today = new Date().toISOString().slice(0, 10);
   const [day, setDay] = useState(today);
-  if (!data) return null;
+  if (!data) return <><Sub>Verzie územného plánu</Sub><Muted>Prehľad verzií ÚP z registra ÚPD pre toto k.ú. zatiaľ nie je spracovaný.</Muted></>;
   const docs = (Array.isArray(data.dokumenty) ? data.dokumenty : []) as UpdDoc[];
-  if (!docs.length) return null;
+  if (!docs.length) {
+    const st = String(data.stav_registra ?? "");
+    return (<><Sub>Verzie územného plánu</Sub><Muted>V registri územnoplánovacej dokumentácie (ÚÚPV SR) nie je pre obec evidovaný žiadny územný plán{st ? ` (stav registra ${st.split("-").reverse().join(". ")})` : ""}. Podmienky umiestnenia stavby over na obci — územnoplánovacia informácia.</Muted></>);
+  }
   const src = (data.zdroj_zon ?? null) as { typ?: string; nazov?: string | null; zhoda?: string; dokument?: number | null } | null;
   const later = new Set((Array.isArray(data.nezapracovane) ? data.nezapracovane : []) as number[]);
   const srcDoc = src && typeof src.dokument === "number" ? docs[src.dokument] : null;

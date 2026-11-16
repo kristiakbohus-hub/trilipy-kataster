@@ -15,7 +15,7 @@ export type SheetData = {
   upDocs: { id: string | number; title: string | null; url: string | null; kind: string | null }[];
   ext: ExtHit[] | null;
   /** development výpočet (regulatív z ÚP alebo odvodený) — počíta stránka, v klientskej verzii uložený v snapshote */
-  dev: { regName: string | null; proxy: boolean; izp: number | null; kz: number | null; ipp: number | null; izpArea: number; hpp: number; cpp: number; byty: number | null; gdv: number | null } | null;
+  dev: { regName: string | null; proxy: boolean; upKat?: boolean; izp: number | null; kz: number | null; ipp: number | null; izpArea: number; hpp: number; cpp: number; byty: number | null; gdv: number | null } | null;
   generatedAt: string;
   /** pre koho je dokument (klientska verzia zostavená na serveri) */
   client?: string | null;
@@ -102,7 +102,7 @@ export function zoneOf(d: SheetData): { name: string | null; fromUp: boolean } {
   const p = d.core.parcels.find((x) => x.parcel_no === d.core.main.parcelNo) ?? d.core.parcels[0];
   if (p?.zone) return { name: p.zone, fromUp: true };
   const up = p ? fact(d.core, "up", `${p.register === "E" ? "parcel_e" : "parcel_c"}:${p.parcel_no}`) : null;
-  if (up?.zona) return { name: `${String(up.zona)} — ÚP z výkresu, orientačné`, fromUp: true };
+  if (up?.zona) return { name: up.jednoznacne === false ? `${String(up.zona)} — odhad (v parcele viac zón)` : `${String(up.zona)} — ÚP z výkresu, orientačné`, fromUp: true };
   const z = d.zone ? str(d.zone.label ?? d.zone.name ?? d.zone.zone_code) : "";
   return z ? { name: z, fromUp: true } : { name: null, fromUp: false };
 }

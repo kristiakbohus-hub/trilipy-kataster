@@ -80,6 +80,31 @@ export function regulativFromZone(z: ZoneLike | null | undefined): Regulativ | n
   };
 }
 
+// Zóna ÚP z výkresu/vektora/sútlače (fakty „up“ z Mac modulu 49_LIST_NEHNUTELNOSTI/up, 2026-11-16): kategória zóny je z ÚP,
+// IZP/IPP sú orientačné hodnoty číselníka pre túto kategóriu; KZ zo záväznej časti, ak je pri bloku uvedený (Žilina).
+const KAT_GENERIC: Record<string, string> = {
+  byvanie_rd: "OB", byvanie_bd: "102", zmiesane: "ZM", ov: "ZM", vyroba: "VY", polno_vyroba: "VY", tech: "VY",
+  orna: "PP", ttp: "PP", pol_poda: "PP", les: "LP", zelen: "ZR", zahrady: "ZR", sport: "ZR", rekreacia: "ZR",
+};
+export function regulativFromUpFact(up: Record<string, unknown> | null | undefined): Regulativ | null {
+  if (!up || !up.kat || up.jednoznacne === false) return null;
+  const base = regulativByCode(KAT_GENERIC[String(up.kat)]);
+  if (!base) return null;
+  const rg = (up.regulativ && typeof up.regulativ === "object" ? up.regulativ : null) as Record<string, unknown> | null;
+  const kzv = rg ? rg.min_index_ozelenenia : undefined;
+  const kz = typeof kzv === "number" ? kzv : base.kz;
+  const blok = rg && rg.kod_bloku ? String(rg.kod_bloku) : null;
+  const prip = rg && rg.pripustne ? String(rg.pripustne) : null;
+  const neprip = rg && rg.nepripustne ? String(rg.nepripustne) : null;
+  return {
+    ...base, code: blok ?? base.code, municipality: "ÚP kategória",
+    name: `${String(up.zona ?? base.name)}${blok ? ` (blok ${blok})` : ""}`,
+    kz, izp: Math.min(base.izp, Math.max(0, 1 - kz)),
+    pripustne: prip ?? base.pripustne,
+    nepripustne: neprip ?? base.nepripustne,
+  };
+}
+
 // Proxy zóna z katastra, keď nie je formálny ÚP (orientačné): druh pozemku + umiestnenie → kód.
 export function proxyZone(useType: string | null | undefined, placement: string | null | undefined): string {
   const t = (useType ?? "").toLowerCase();

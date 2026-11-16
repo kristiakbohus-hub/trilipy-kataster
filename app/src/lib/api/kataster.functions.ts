@@ -22,7 +22,7 @@ import type {
 } from "../domain";
 import { phraseIssues, type PhraseIssue } from "../phrases";
 import { accessTimesLabel, ownerKey, plural, zoneLabel, canExport, canRunPipeline, canSeeOwners, canSign, ownerAccess, parcelLabel, type OwnerAccess, type Role } from "../domain";
-import { regulativByCode, regulativFromZone, proxyZone, developmentCalc, DEV_DEFAULTS } from "../development";
+import { regulativByCode, regulativFromZone, regulativFromUpFact, proxyZone, developmentCalc, DEV_DEFAULTS } from "../development";
 import { EXT_DEFS, type ExtDef } from "../ext-sources";
 import { financeMarketCore } from "../fin-market.server";
 import type { FinMarket } from "../finance";
@@ -9383,11 +9383,15 @@ export const buildClientShare = createServerFn({ method: "POST" })
     const upDocs = await q<{ id: string; title: string | null; url: string | null; kind: string | null }>("SELECT id,title,url,kind FROM up_docs WHERE dataset_id=? AND (change_state IS NULL OR change_state <> 'removed') ORDER BY kind, id", [core.dataset.id]).catch(() => []);
     const areaC = core.parcels.filter((p) => p.register === "C").reduce((t, p) => t + (p.area_m2 ?? 0), 0);
     const regUp = regulativFromZone(zone as never);
-    const reg = regUp ?? (mp ? regulativByCode(proxyZone(mp.use_type, mp.placement)) : undefined);
+    const upFactRaw = mp ? core.facts?.["up"]?.[`${mp.register === "E" ? "parcel_e" : "parcel_c"}:${mp.parcel_no}`] : null;
+    let upFact: Record<string, unknown> | null = null;
+    try { upFact = typeof upFactRaw === "string" ? JSON.parse(upFactRaw) as Record<string, unknown> : null; } catch { upFact = null; }
+    const regKat = regUp ? null : regulativFromUpFact(upFact);
+    const reg = regUp ?? regKat ?? (mp ? regulativByCode(proxyZone(mp.use_type, mp.placement)) : undefined);
     let dev: Record<string, unknown> | null = null;
     if (reg && areaC) {
       const r = developmentCalc(areaC, reg, { ...DEV_DEFAULTS, predajEurM2: medPoz ?? DEV_DEFAULTS.predajEurM2 });
-      dev = { regName: reg.name ?? null, proxy: !regUp, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
+      dev = { regName: reg.name ?? null, proxy: !regUp && !regKat, upKat: !!regKat, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
     }
     const declRow = (await q<{ data_json: string }>("SELECT data_json FROM property_declarations WHERE dataset_id=? AND subject_type=? AND subject_ref=?", [core.dataset.id, core.kind === "byt" ? "flat" : "lv", core.kind === "byt" ? (core.main.flat ?? "") : String(core.main.lvNo ?? core.lvs[0] ?? "")]).catch(() => []))[0];
     const fin = await financeMarketCore().catch(() => null);

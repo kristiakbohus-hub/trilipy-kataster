@@ -11,13 +11,13 @@ import {
 import { useAuth } from "../lib/auth-context";
 import { useRole } from "../lib/role-context";
 import { useCalibDev } from "../lib/calib";
-import { developmentCalc, proxyZone, regulativByCode, regulativFromZone } from "../lib/development";
+import { developmentCalc, proxyZone, regulativByCode, regulativFromUpFact, regulativFromZone } from "../lib/development";
 import { PropertySheet } from "../components/property-sheet";
 import { BuyersSection } from "../components/parcel-buyers";
 import { CommentsPanel, WatchButton } from "../components/collab";
 import { DocumentsPanel } from "../components/documents-panel";
 import { PropertyShareBox } from "../components/property-share";
-import type { SheetData } from "../lib/property-eval";
+import { fact, type SheetData } from "../lib/property-eval";
 import type { FinInputs } from "../lib/finance";
 import { loadPhotos } from "../lib/photos";
 import { DeclarationForm } from "../components/property-decl";
@@ -93,10 +93,11 @@ function PropertyPage() {
     const area = core.parcels.filter((x) => x.register === "C").reduce((t, x) => t + (x.area_m2 ?? 0), 0);
     if (!p || !area) return null;
     const regUp = regulativFromZone(rawZone);
-    const reg = regUp ?? regulativByCode(proxyZone(p.use_type, p.placement));
+    const regKat = regUp ? null : regulativFromUpFact(fact(core, "up", `${p.register === "E" ? "parcel_e" : "parcel_c"}:${p.parcel_no}`));
+    const reg = regUp ?? regKat ?? regulativByCode(proxyZone(p.use_type, p.placement));
     if (!reg) return null;
     const r = developmentCalc(area, reg, { ...calibDev.normal, predajEurM2: env.medPoz ?? calibDev.normal.predajEurM2 });
-    return { regName: reg.name ?? null, proxy: !regUp, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
+    return { regName: reg.name ?? null, proxy: !regUp && !regKat, upKat: !!regKat, izp: reg.izp ?? null, kz: reg.kz ?? null, ipp: reg.ipp ?? null, izpArea: r.izpArea, hpp: r.hpp, cpp: r.cpp, byty: r.byty ?? null, gdv: r.ekonomika?.gdv ?? null };
   }, [core, rawZone, env.medPoz, calibDev]);
 
   const sheet = useMemo<SheetData | null>(() => (core?.ok ? { core, ...env, dev, generatedAt: new Date().toISOString() } : null), [core, env, dev]);
