@@ -2452,13 +2452,13 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
     "podiel": {
       "label": "Podiel dominantnej zóny na parcele",
       "unit": "%",
-      "kind": "number",
+      "kind": "share",
       "note": "0–1; podiel zo zaradených pixelov výkresu v obryse parcely"
     },
     "pokrytie": {
       "label": "Čitateľnosť výkresu v parcele",
       "unit": "%",
-      "kind": "number",
+      "kind": "share",
       "note": "0–1; podiel plochy parcely, kde výkres má rozpoznateľnú farbu legendy (zvyšok čiary, text, biela)"
     },
     "jednoznacne": {

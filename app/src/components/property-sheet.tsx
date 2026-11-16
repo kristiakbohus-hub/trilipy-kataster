@@ -53,6 +53,7 @@ function fmtVal(v: unknown, f?: FactField): ReactNode {
   if (v == null || v === "") return "—";
   const unit = f?.unit && f.unit !== "MM-DD" ? `\u00a0${f.unit}` : "";
   if (typeof v === "boolean") return v ? "áno" : "nie";
+  if (typeof v === "number" && f?.kind === "share") return `${nf(v * 100, 0)}\u00a0%`;   // podiel 0–1 (ÚP: podiel zóny, čitateľnosť)
   if (typeof v === "number") {
     if (Number.isInteger(v) && /\brok\b|\broku\b|\byear\b|\bLV\b|list vlastníctva|súpisn|číslo|kód/i.test(f?.label ?? "")) return `${v}${unit}`;
     if (f?.unit === "m" && Math.abs(v) >= 1000) return `${nf(v / 1000, 1)}\u00a0km`;
