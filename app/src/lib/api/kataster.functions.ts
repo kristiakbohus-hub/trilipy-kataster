@@ -1040,7 +1040,20 @@ export const setSavedAlert = createServerFn({ method: "POST" })
     await q("UPDATE saved_search SET alert=?, channels=COALESCE(?,channels) WHERE id=? AND user_id=?", [data.alert ? 1 : 0, data.channels ?? null, data.id, u.id]);
     return { ok: true };
   });
+// Kópia upozornenia aj e-mailom (pokyn vlastníka 2026-11-16): Resend, CF secrets RESEND_API_KEY + ALERT_EMAIL_TO.
+// Bez nich sa e-mail ticho preskočí; chyba e-mailu nikdy nezastaví Telegram ani alert.
+async function sendEmailAlert(text: string): Promise<void> {
+  const e = bindings() as ReturnType<typeof bindings> & { RESEND_API_KEY?: string; ALERT_EMAIL_TO?: string; ALERT_EMAIL_FROM?: string };
+  if (!e.RESEND_API_KEY || !e.ALERT_EMAIL_TO) return;
+  const first = text.split("\n").map((x) => x.trim()).find(Boolean) ?? "upozornenie";
+  await fetch("https://api.resend.com/emails", {
+    method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${e.RESEND_API_KEY}` },
+    body: JSON.stringify({ from: e.ALERT_EMAIL_FROM || "TRI LIPY <onboarding@resend.dev>", to: [e.ALERT_EMAIL_TO],
+      subject: `TRI LIPY: ${first}`.slice(0, 150), text: `${text}\n\n— TRI LIPY · kópia upozornenia z appky` }),
+  }).catch(() => {});
+}
 async function sendTelegramAlert(text: string): Promise<void> {
+  await sendEmailAlert(text);
   const e = bindings() as ReturnType<typeof bindings> & { TG_BOT_TOKEN?: string; TG_CHAT_ID?: string };
   if (!e.TG_BOT_TOKEN || !e.TG_CHAT_ID) return; // Telegram funguje až po nastavení CF secrets TG_BOT_TOKEN/TG_CHAT_ID
   await fetch(`https://api.telegram.org/bot${e.TG_BOT_TOKEN}/sendMessage`, {
