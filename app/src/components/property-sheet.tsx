@@ -1242,7 +1242,9 @@ function UpdVersions({ data }: { data: Record<string, unknown> | null }) {
   const docs = (Array.isArray(data.dokumenty) ? data.dokumenty : []) as UpdDoc[];
   if (!docs.length) {
     const st = String(data.stav_registra ?? "");
-    return (<><Sub>Verzie územného plánu</Sub><Muted>V registri územnoplánovacej dokumentácie (ÚÚPV SR) nie je pre obec evidovaný žiadny územný plán{st ? ` (stav registra ${st.split("-").reverse().join(". ")})` : ""}. Podmienky umiestnenia stavby over na obci — územnoplánovacia informácia.</Muted></>);
+    const z0 = (data.zdroj_zon ?? null) as { nazov?: string | null; zhoda?: string } | null;
+    return (<><Sub>Verzie územného plánu</Sub><Muted>V registri územnoplánovacej dokumentácie (ÚÚPV SR) nie je pre obec evidovaný žiadny schválený územný plán{st ? ` (stav registra ${st.split("-").reverse().join(". ")})` : ""}. Podmienky umiestnenia stavby over na obci — územnoplánovacia informácia.</Muted>
+      {z0 ? <Muted>Zóny na tomto liste: {z0.nazov ?? "výkres ÚP"}{z0.zhoda ? ` (${z0.zhoda})` : ""} — nie je to schválený územný plán, len podklad na orientáciu.</Muted> : null}</>);
   }
   const src = (data.zdroj_zon ?? null) as { typ?: string; nazov?: string | null; zhoda?: string; dokument?: number | null } | null;
   const later = new Set((Array.isArray(data.nezapracovane) ? data.nezapracovane : []) as number[]);
