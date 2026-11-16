@@ -2434,6 +2434,16 @@ export const FACT_SCHEMA: Record<string, Record<string, FactField>> = {
       "kind": "list",
       "note": "doslovné znenie zmien regulatívu v neskorších zmenách a doplnkoch (VZN)"
     },
+    "vps_v_okoli": {
+      "label": "Verejnoprospešné stavby v okolí (do 50 m)",
+      "kind": "list",
+      "note": "značky VPS zo schémy záväzných častí a VPS územného plánu: kód, skupina, popis stavby, vzdialenosť od parcely"
+    },
+    "vps_poznamka": {
+      "label": "Poznámka k VPS",
+      "kind": "text",
+      "note": "značka označuje stavbu, nie jej presný rozsah; pri VPS je možné vyvlastnenie alebo obmedzenie vlastníckeho práva"
+    },
     "poznamka_regulativu": {
       "label": "Poznámka k regulatívu",
       "kind": "text",
