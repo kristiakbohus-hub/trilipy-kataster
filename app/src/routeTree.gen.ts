@@ -33,6 +33,7 @@ import { Route as MedzeryVZastavbeRouteImport } from './routes/medzery-v-zastavb
 import { Route as DelenieCelkovRouteImport } from './routes/delenie-celkov'
 import { Route as ApiUpRasterRouteImport } from './routes/api.up-raster'
 import { Route as ApiUpVectorRouteImport } from './routes/api.up-vector'
+import { Route as ApiMacFactsRouteImport } from './routes/api.mac-facts'
 import { Route as ApiUpDrawingsRouteImport } from './routes/api.up-drawings'
 import { Route as PozemokZoZahradyRouteImport } from './routes/pozemok-zo-zahrady'
 import { Route as StrategickeParcelyRouteImport } from './routes/strategicke-parcely'
@@ -231,6 +232,11 @@ const ApiUpRasterRoute = ApiUpRasterRouteImport.update({
 const ApiUpVectorRoute = ApiUpVectorRouteImport.update({
   id: '/api/up-vector',
   path: '/api/up-vector',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMacFactsRoute = ApiMacFactsRouteImport.update({
+  id: '/api/mac-facts',
+  path: '/api/mac-facts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiUpDrawingsRoute = ApiUpDrawingsRouteImport.update({
@@ -666,6 +672,7 @@ export interface FileRoutesByFullPath {
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-vector': typeof ApiUpVectorRoute
+  '/api/mac-facts': typeof ApiMacFactsRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
@@ -771,6 +778,7 @@ export interface FileRoutesByTo {
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-vector': typeof ApiUpVectorRoute
+  '/api/mac-facts': typeof ApiMacFactsRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
@@ -877,6 +885,7 @@ export interface FileRoutesById {
   '/delenie-celkov': typeof DelenieCelkovRoute
   '/api/up-raster': typeof ApiUpRasterRoute
   '/api/up-vector': typeof ApiUpVectorRoute
+  '/api/mac-facts': typeof ApiMacFactsRoute
   '/api/up-drawings': typeof ApiUpDrawingsRoute
   '/pozemok-zo-zahrady': typeof PozemokZoZahradyRoute
   '/strategicke-parcely': typeof StrategickeParcelyRoute
@@ -984,6 +993,7 @@ export interface FileRouteTypes {
     | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-vector'
+    | '/api/mac-facts'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
@@ -1089,6 +1099,7 @@ export interface FileRouteTypes {
     | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-vector'
+    | '/api/mac-facts'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
@@ -1194,6 +1205,7 @@ export interface FileRouteTypes {
     | '/delenie-celkov'
     | '/api/up-raster'
     | '/api/up-vector'
+    | '/api/mac-facts'
     | '/api/up-drawings'
     | '/pozemok-zo-zahrady'
     | '/strategicke-parcely'
@@ -1296,6 +1308,7 @@ export interface RootRouteChildren {
   DelenieCelkovRoute: typeof DelenieCelkovRoute
   ApiUpRasterRoute: typeof ApiUpRasterRoute
   ApiUpVectorRoute: typeof ApiUpVectorRoute
+  ApiMacFactsRoute: typeof ApiMacFactsRoute
   ApiUpDrawingsRoute: typeof ApiUpDrawingsRoute
   PozemokZoZahradyRoute: typeof PozemokZoZahradyRoute
   StrategickeParcelyRoute: typeof StrategickeParcelyRoute
@@ -1660,6 +1673,13 @@ declare module '@tanstack/react-router' {
       path: '/api/up-vector'
       fullPath: '/api/up-vector'
       preLoaderRoute: typeof ApiUpVectorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mac-facts': {
+      id: '/api/mac-facts'
+      path: '/api/mac-facts'
+      fullPath: '/api/mac-facts'
+      preLoaderRoute: typeof ApiMacFactsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/up-drawings': {
@@ -2131,6 +2151,7 @@ const rootRouteChildren: RootRouteChildren = {
   DelenieCelkovRoute: DelenieCelkovRoute,
   ApiUpRasterRoute: ApiUpRasterRoute,
   ApiUpVectorRoute: ApiUpVectorRoute,
+  ApiMacFactsRoute: ApiMacFactsRoute,
   ApiUpDrawingsRoute: ApiUpDrawingsRoute,
   PozemokZoZahradyRoute: PozemokZoZahradyRoute,
   StrategickeParcelyRoute: StrategickeParcelyRoute,

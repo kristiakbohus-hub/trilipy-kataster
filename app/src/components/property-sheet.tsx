@@ -720,6 +720,12 @@ export function PropertySheet({ d: d0, mode, internal, onFinInputs }: { d: Sheet
         <h1 className="text-2xl font-semibold leading-tight">{c.title}</h1>
         <div className="text-sm text-muted">{c.subtitle}</div>
         {c.celokNote ? <div className="text-xs text-muted">{c.celokNote}</div> : null}
+        {c.factsOffline && !isClient ? (
+          <div className="no-print rounded border px-2 py-1 text-xs" style={{ borderColor: "#c9a227", background: "#fff8e1", color: "#5c4a00" }}>
+            Rozšírené údaje (terén a slnko, okolie, susedia, prístup, adresy…) sú uložené na počítači TRI LIPY, ktorý je teraz vypnutý
+            alebo offline. Vlastníci, právny stav a ÚP sú kompletné — po zapnutí počítača sa list doplní sám.
+          </div>
+        ) : null}
         {internal?.actions ? <div className="no-print pt-1">{internal.actions}</div> : null}
       </header>
 

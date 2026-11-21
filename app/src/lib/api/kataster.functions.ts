@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { bindings } from "../bindings.server";
+import { fetchMacFacts } from "../mac-facts.server";
 import type {
   AuditRow,
   Case,
@@ -8384,6 +8385,7 @@ export type PropertyCore = {
   /** skupina -> parcel_c:1234/5 -> JSON text (rozbalí property-eval.fact; server fn nesmie vracať unknown) */
   facts: Record<string, Record<string, string>>;
   factMeta: Record<string, { source: string | null; asOf: string | null; n: number }>;
+  factsOffline?: boolean;   // 2026-11-21: Mac s rozšírenými údajmi neodpovedal — list je bez nich
   owners: { access: OwnerAccess; perLv: { lvNo: number; count: number; companies: number; persons: number; owners: { name: string; share: string | null; is_company: number; ico: string | null }[] }[] };
   legal: { lvNo: number; hasData: boolean; titlesCount: number; tarchyCount: number; titles: string[]; tarchy: string[]; items?: TarchaItem[] }[];
   legalYears: { lvNo: number; inh_max: number | null; exek_max: number | null; lien_max: number | null; sale_max: number | null; gift_max: number | null }[];
@@ -8668,6 +8670,14 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
         const m = (factMeta[r.grp] ??= { source: r.source, asOf: r.as_of, n: 0 }); m.n += 1;
       }
     }
+    // 2026-11-21: objemné skupiny (terén, slnko, OSM, susedia, prístup…) bývajú na Macu — doplnia sa, keď Mac beží
+    const mac = await fetchMacFacts(kod, subj);
+    for (const r of mac.rows) {
+      const g = (facts[r.grp] ??= {}); const key = `${r.subject_type}:${r.subject_ref}`;
+      const isNew = g[key] === undefined; g[key] = r.data_json;
+      const m = (factMeta[r.grp] ??= { source: r.source, asOf: r.as_of, n: 0 }); if (isNew) m.n += 1;
+    }
+    const factsOffline = mac.configured && mac.offline;
 
     // ——— 4) vlastníci, právny stav, problémy, ceny ———
     const namesOnly = access !== "full" && !!opts?.namesOnly;
@@ -8914,7 +8924,7 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       ok: true, kind, ref: data.ref, title, subtitle, celokNote,
       dataset: { id: ds.id, ku_code: ds.ku_code, ku_name: ds.ku_name, region: ds.region, okres, updated_at: ds.updated_at },
       main: { parcelNo: main?.parcel_no ?? null, register: main?.register ?? null, lvNo: main?.lv_no ?? lvNo, lat: main?.lat ?? null, lng: main?.lng ?? null, sc, flat },
-      parcels, lvs, buildings, facts, factMeta,
+      parcels, lvs, buildings, facts, factMeta, factsOffline,
       owners: { access, perLv }, legal, legalYears, flags, prices, comparables, compStats, listings, nearby, rentals, auctions, unregistered, acquisitions,
       construction: { ku: cku, near },
       signals: { settlement, landsearch, za, up, briefs, deal, cases },
