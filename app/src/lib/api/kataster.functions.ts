@@ -9457,7 +9457,9 @@ export type ScenarioVariant = {
   error: string | null; n_match: number | null; n_provisional: number | null; author: string | null;
   created_at: string; finished_at: string | null;
 };
-const SCENARIO_KEYS = ["ZA", "GOLD19", "GOLD04", "UP", "BU", "GOLD10", "GOLD12", "GOLD11"] as const;
+// GOLD13/07/24/29/08 = skupina „Investičné celky“ (2026-11-21, karta /investicne-celky)
+const SCENARIO_KEYS = ["ZA", "GOLD19", "GOLD04", "UP", "BU", "GOLD10", "GOLD12", "GOLD11", "GOLD13", "GOLD07", "GOLD24", "GOLD29", "GOLD08"] as const;
+export type ScenarioKey = (typeof SCENARIO_KEYS)[number];
 
 async function scenarioSchema(sc: string): Promise<ScenarioSchema | null> {
   const v = (await q<{ value: string }>("SELECT value FROM market_meta WHERE key=?", [`scenario_params:${sc}`]).catch(() => []))[0]?.value;

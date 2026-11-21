@@ -24,6 +24,7 @@ export type AppPath =
   | "/pozemok-zo-zahrady"
   | "/delenie-celkov"
   | "/medzery-v-zastavbe"
+  | "/investicne-celky"
   | "/poda-na-byvanie"
   | "/import"
   | "/reporty"
@@ -499,6 +500,53 @@ const CRIT_LABEL: Record<string, string> = {
   both_sides: "Domy na oboch stranách",
   single_lv: "Jeden vlastník na jednom LV",
   comfortable: "Priestranná zastavateľná plocha",
+  // Investičné celky — GOLD-13 / 24 / 07 / 29 / 08 (2026-11-21)
+  contiguity: "Parcely tvoria súvislý celok (spoločná hranica, nie dotyk v bode)",
+  parcel_count: "Počet parciel v limite",
+  usable_area: "Použiteľná plocha zostavy",
+  multi_owner: "Zostava spája viac okruhov vlastníkov",
+  owner_fragmentation: "Počet vlastníkov (osôb) v limite",
+  owners_identified: "Vlastníci sú určení na LV",
+  compact_site: "Kompaktný tvar",
+  few_owner_groups: "Málo okruhov vlastníkov",
+  no_public_owner: "Bez pozemkov obce, štátu a SPF",
+  plan_feasible: "Plochu sa dá poskladať so vjazdom z cesty",
+  consents_limit: "Počet potrebných súhlasov v limite",
+  multi_owner_plan: "Plán spája viac okruhov vlastníkov",
+  plan_owners_identified: "Vlastníci plánu sú určení",
+  no_critical_owner: "Každý okruh plánu má náhradu",
+  plan_no_public: "Plán bez pozemkov obce, štátu a SPF",
+  plan_no_tiny_shares: "Plán bez drobných podielov",
+  plan_exact: "Plán je najlepší možný",
+  large_area: "Veľký súvislý celok",
+  land_use: "Využitie: poľnohospodárska alebo ostatná plocha",
+  coowner_count: "Počet spoluvlastníkov v limite",
+  shares_complete: "Podiely sú úplné, bez nezistených spoluvlastníkov",
+  division_feasible: "Aspoň jeden variant delenia spĺňa minimá",
+  zone_housing_pref: "Územný plán dovoľuje bývanie",
+  majority_holder: "Väčšinový podielnik",
+  few_coowners: "Málo spoluvlastníkov",
+  no_public_coowner: "Bez podielu obce, štátu a SPF",
+  is_areal: "Areál s nebytovými stavbami",
+  complex_ownership: "Viac okruhov vlastníkov stavieb a pozemkov",
+  land_resolved: "Vlastník pozemku pod stavbami je určený",
+  areal_access: "Areál hraničí s verejnou cestou",
+  access_documented: "Prístup k stavbám je priamy alebo doložený vecným bremenom",
+  buildings_on_foreign_land: "Stavby na pozemku iného vlastníka",
+  shared_roads: "Spoločné cesty a nádvoria",
+  unregistered_buildings: "Budovy v ZBGIS bez zápisu v katastri",
+  land_settled: "Pozemky pod stavbami vysporiadané",
+  few_circles: "Málo okruhov vlastníkov",
+  small_area: "Malý pozemok (výmera v rozpätí)",
+  garage_fits: "Zmestí sa obdĺžnik garáže kolmo na cestu",
+  maneuver_space: "Manipulačný priestor na vlastnom pozemku",
+  sight_lines: "Vjazd nie na cestu I.–III. triedy (rozhľady, pripojenie)",
+  protection_zone: "Mimo ochranného pásma",
+  zone_garage: "Územný plán pripúšťa garáž",
+  parking_demand: "Dopyt po státí (byty v okolí)",
+  garage_context: "Garáže v okolí",
+  several_garages: "Viac garáží vedľa seba",
+  single_owner_small: "Málo vlastníkov",
 };
 export function critLabel(key: string): string {
   return CRIT_LABEL[key] ?? key.replace(/_/g, " ");

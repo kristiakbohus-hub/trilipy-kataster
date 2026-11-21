@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   createScenarioVariant, getScenarioSwitches,
-  type ScenarioParamDef, type ScenarioSchema, type ScenarioVariant,
+  type ScenarioKey, type ScenarioParamDef, type ScenarioSchema, type ScenarioVariant,
 } from "../lib/api/kataster.functions";
 import { useAuth } from "../lib/auth-context";
 import { useRole } from "../lib/role-context";
@@ -33,7 +33,7 @@ export function variantParams(v: ScenarioVariant | null | undefined): Vals {
 const STATUS: Record<string, string> = { pending: "čaká na Mac", running: "počíta sa", done: "hotové", failed: "zlyhalo" };
 
 export function ScenarioSwitches({ scenario, selected, onSelect, onVariants }: {
-  scenario: "ZA" | "GOLD19" | "GOLD04" | "UP" | "BU" | "GOLD10" | "GOLD12" | "GOLD11";
+  scenario: ScenarioKey;
   selected: number | null;
   onSelect: (id: number | null, v: ScenarioVariant | null, schema: ScenarioSchema | null) => void;
   /** scenár bez vlastnej tabuľky (GOLD19): karta si z variantov nájde predvolený beh */
