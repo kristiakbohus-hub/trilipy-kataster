@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { bindings } from "../bindings.server";
-import { fetchMacFacts } from "../mac-facts.server";
+import { fetchMacFacts, MAC_GROUPS } from "../mac-facts.server";
 import type {
   AuditRow,
   Case,
@@ -8677,7 +8677,8 @@ async function buildPropertyCore(data: { datasetId: string; kind: PropertyKind; 
       const isNew = g[key] === undefined; g[key] = r.data_json;
       const m = (factMeta[r.grp] ??= { source: r.source, asOf: r.as_of, n: 0 }); if (isNew) m.n += 1;
     }
-    const factsOffline = mac.configured && mac.offline;
+    // upozornenie len keď objemné skupiny naozaj chýbajú (počas prechodu ich ešte môže mať D1)
+    const factsOffline = mac.configured && mac.offline && !MAC_GROUPS.some((g) => facts[g] !== undefined);
 
     // ——— 4) vlastníci, právny stav, problémy, ceny ———
     const namesOnly = access !== "full" && !!opts?.namesOnly;
