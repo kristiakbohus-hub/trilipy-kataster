@@ -82,7 +82,7 @@ function SketchOf({ r, label }: { r: Row; label: string }) {
   return <div className="mt-3"><SketchSvg s={s as unknown as Sketch} label={label} numbered={false} /></div>;
 }
 
-const ACCESS: Record<string, string> = { direct: "priamy z cesty", documented: "cez cudzí pozemok, vecné bremeno zapísané",
+const ACCESS: Record<string, string> = { direct: "priamy z cesty", documented: "cez cudzí pozemok so zapísaným vecným bremenom prechodu (rozsah overiť)",
   undocumented: "cez cudzí pozemok bez zapísaného práva", none: "bez cesty v areáli" };
 
 // ——— karty jednotlivých scenárov ———
